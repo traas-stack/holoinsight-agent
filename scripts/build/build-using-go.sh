@@ -7,6 +7,8 @@ project_root=`realpath $script_dir/../..`
 os=`go env GOOS`
 arch=`go env GOARCH`
 
+go env
+
 version=`cat $project_root/VERSION`
 buildTime=`TZ='Asia/Shanghai' date +'%Y-%m-%dT%H:%M:%S_%Z'`
 gitcommit=`cat $project_root/gitcommit`

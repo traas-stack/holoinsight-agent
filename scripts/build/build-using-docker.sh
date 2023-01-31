@@ -18,4 +18,16 @@ $script_dir/agent-builder/build.sh
 builder_image=holoinsight-agent-builder:` cat $script_dir/agent-builder/VERSION `
 
 echo '[build agent bin using docker]' docker run --network host --platform=linux/amd64 --rm -v $project_root:/a -v $HOME/.cache/go-build:/root/.cache/go-build $builder_image bash -c " sh /a/scripts/build/build-in-container.sh "
-docker run --network host --platform=linux/amd64 --rm -v $project_root:/a -v $HOME/.cache/go-build:/root/.cache/go-build $builder_image bash -c " sh /a/scripts/build/build-in-container.sh "
+set -x
+
+docker run \
+  --network host \
+  --platform=linux/amd64 \
+  --rm \
+  -v $project_root:/a \
+  -v $HOME/.cache/go-build:/root/.cache/go-build \
+  -v $HOME/go/pkg:/root/go/pkg \
+  $builder_image \
+  bash -c " sh /a/scripts/build/build-in-container.sh "
+
+set +x

@@ -5,7 +5,7 @@ if [ "$USESUPERVISOR" = "true" ]; then
   exec /usr/bin/supervisord -n
 fi
 
-# TODO 日志滚动呢?
+# TODO stdout log rotate
 exec >>/usr/local/holoinsight/agent/logs/stdout.log
 exec 2>&1
 

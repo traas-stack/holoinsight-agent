@@ -1,8 +1,6 @@
 FROM centos:7
 
-# 为了独立起见, agent 没有依赖其他的 cloudmonitor-xxx 的基础镜像 手动定期维护 Dockerfile 的一致性
-
-# 安装常用软件
+# install common softwares
 RUN ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
   yum -q -y install epel-release && yum install -q -y sudo net-tools iproute dstat which supervisor stress unzip jq screen nginx wget telnet less && \
   yum -y clean all && \
@@ -16,7 +14,7 @@ COPY scripts/docker/ensure_supervisord.sh /usr/local/bin/
 COPY scripts/docker/supervisord.conf /etc/supervisord.conf
 COPY gitcommit /usr/local/bin/holoinsight/bin/gitcommit
 
-# 其他初始化
+# setup bash
 RUN echo 'export LANG=zh_CN.UTF-8' >> /etc/profile && \
   echo 'LC_ALL=zh_CN.UTF-8' >> /etc/profile && \
   echo 'PS1="\n\e[1;37m[\e[m\e[1;32m\u\e[m\e[1;33m@\e[m\e[1;35m\h\e[m \e[1;35m`hostname`\e[m \e[4m\`pwd\`\e[m\e[1;37m]\e[m\e[1;36m\e[m\n\\$ "' >> /etc/bashrc && \
