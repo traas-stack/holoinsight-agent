@@ -1,0 +1,94 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "_doc": "这是注释信息, 由于是count聚合, 因此不需要elect",
+        "agg": "count"
+      },
+      {
+        "as": "cost",
+        "elect": {
+          "type": "refName",
+          "refName": {
+            "name": "cost"
+          }
+        },
+        "agg": "sum"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": "/home/admin/logs/gateway/common-default.log",
+      "charset": "utf-8, 不写默认就是utf-8",
+      "parse": {
+        "type": "regexp",
+        "regexp": {
+          "_doc": "2022-03-22 17:43:48,131 INFO  [common-scheduler-4] c.a.c.g.c.t.PressureGenerator - result=683.7297745504324",
+          "expression": "^(?P<time>.*?),.*? (?P<level>\\w+)\\s+\\[(?P<thread>.*?)]\\s+c\\.a\\.c\\.g\\.c\\.t\\.PressureGenerator - result=(?P<cost>.*)$"
+        }
+      },
+      "time": {
+        "type": "elect",
+        "elect": {
+          "type": "refName",
+          "refName": {
+            "name": "time"
+          }
+        },
+        "format": "golangLayout",
+        "layout": "2006-01-02 15:04:05"
+      }
+    }
+  },
+  "where": {
+    "in": {
+      "elect": {
+        "type": "refName",
+        "refName": {
+          "name": "level"
+        }
+      },
+      "values": [
+        "INFO"
+      ]
+    }
+  },
+  "groupBy": {
+    "maxKeySize": 100,
+    "groups": [
+      {
+        "name": "level",
+        "elect": {
+          "type": "refName",
+          "refName": {
+            "name": "level"
+          }
+        }
+      },
+      {
+        "name": "thread",
+        "elect": {
+          "type": "refName",
+          "refName": {
+            "name": "thread"
+          }
+        }
+      }
+    ]
+  },
+  "window": {
+    "interval": "5s"
+  },
+  "executeRule": {
+  },
+  "output": {
+    "type": "cmgateway",
+    "cmgateway": {
+      "_doc": "如果强制指定了, 则会写数据到这个metric下",
+      "metricName": "foobar"
+    }
+  }
+}

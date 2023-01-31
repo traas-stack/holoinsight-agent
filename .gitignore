@@ -1,0 +1,10 @@
+# Created by .ignore support plugin (hsz.mobi)
+.idea
+.git
+*.iml
+*.log
+.DS_Store
+/build
+*.db
+ignoreme
+/gitversion

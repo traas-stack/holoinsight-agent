@@ -1,0 +1,97 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "agg": "count"
+      },
+      {
+        "as": "sum",
+        "agg": "sum",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 0,
+            "left": "b=",
+            "right": " "
+          }
+        }
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": [
+        {
+          "type": "path",
+          "dir": "/Users/xzchaoo/logs",
+          "pattern": "/Users/xzchaoo/logs/a.log"
+        }
+      ],
+      "charset": "utf-8",
+      "parse": {
+        "where": {
+          "and": [
+            {
+              "contains": {
+                "elect": {
+                  "type": "line"
+                },
+                "value": "flag=true"
+              }
+            },
+            {
+              "contains": {
+                "elect": {
+                  "type": "line"
+                },
+                "value": "flag=true"
+              }
+            }
+          ]
+        },
+        "type": "separator",
+        "separator": {
+          "separator": " "
+        }
+      },
+      "time": {
+        "type": "auto"
+      }
+    }
+  },
+  "where": {
+    "contains": {
+      "elect": {
+        "type": "line"
+      },
+      "value": "a=123"
+    }
+  },
+  "groupBy": {
+    "maxKeys": -1,
+    "groups": [
+      {
+        "name": "level",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 1,
+            "left": " ",
+            "right": " "
+          }
+        }
+      }
+    ]
+  },
+  "window": {
+    "interval": 5000
+  },
+  "output": {
+    "type": "console"
+  },
+  "executeRule": {
+    "fixedRate": 0
+  }
+}

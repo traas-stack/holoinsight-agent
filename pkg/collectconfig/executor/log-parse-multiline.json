@@ -1,0 +1,68 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "_doc": "这是注释信息, 由于是count聚合, 因此不需要elect",
+        "agg": "count"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": "/home/admin/logs/gateway/common-error.log",
+      "time": {
+        "type": "auto"
+      },
+      "multiline": {
+        "_doc": "multiline为null时表示禁用多行",
+        "match": {
+          "regexp": {
+            "elect": {
+              "type": "line"
+            },
+            "expression": "^\\d{4}-\\d{2}-\\d{2}"
+          }
+        },
+        "what": "previous或next, 解释见文档"
+      }
+    }
+  },
+  "where": {
+    "and": [
+      {
+        "contains": {
+          "elect": {
+            "type": "line"
+          },
+          "value": "PressureGenerator"
+        }
+      },
+      {
+        "contains": {
+          "elect": {
+            "type": "line"
+          },
+          "value": "bad3",
+          "multiline": true
+        }
+      }
+    ]
+  },
+  "groupBy": {
+    "maxKeySize": 100
+  },
+  "window": {
+    "interval": "5s"
+  },
+  "executeRule": {
+  },
+  "output": {
+    "type": "cmgateway",
+    "cmgateway": {
+      "_doc": "如果强制指定了, 则会写数据到这个metric下",
+      "metricName": "foobar"
+    }
+  }
+}

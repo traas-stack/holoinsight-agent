@@ -1,0 +1,28 @@
+{
+  "from": {
+    "type": "cpu"
+  },
+  "groupBy": {
+    "groups": [
+      {
+        "name": "ip",
+        "elect": {
+          "type": "refMeta",
+          "refMeta": {
+            "name": "ip"
+          }
+        }
+      }
+    ]
+  },
+  "executeRule": {
+    "interval": 5000
+  },
+  "output": {
+    "type": "cmgateway",
+    "cmgateway": {
+      "_doc": "如果强制指定了, 则会写数据到这个metric下",
+      "metricName": "foobar"
+    }
+  }
+}

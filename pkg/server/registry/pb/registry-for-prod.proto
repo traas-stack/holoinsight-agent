@@ -1,0 +1,216 @@
+syntax = "proto3";
+
+package io.holoinsight.server.registry.grpc.prod;
+
+option java_multiple_files = true;
+option java_package = "io.holoinsight.server.registry.grpc.prod";
+option go_package = "github.com/TRaaSStack/holoinsight-agent/server/registry/pb";
+option java_outer_classname = "RegistryForProdProtos";
+
+// 这样写生成代码没问题, 但编辑器不认识
+import "common.proto";
+
+message TargetIdentifier {
+  string tenant = 1;
+  string target_uk = 2;
+}
+
+// 通知配置变更
+message NotifyCollectConfigUpdatedRequest {
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  // 以下参数二选一
+  // 涉及的id
+  repeated string ids = 2;
+  // 变更的表名
+  repeated string table_names = 3;
+}
+
+message NotifyCollectConfigUpdatedResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+}
+
+message ListFilesRequest {
+  // request header
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  // agent id
+  string agent_id = 2;
+  // dir path
+  string name = 3;
+  // max depths
+  int32 max_depth = 4;
+  repeated string include_exts = 5;
+  // 如果为true则显示父目录
+  bool include_parents = 6;
+}
+
+message ListFilesResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+  repeated io.holoinsight.server.common.grpc.FileNode nodes = 2;
+}
+
+message PreviewFileRequest {
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  string agent_id = 2;
+  // 日志路径
+  string path = 3;
+  // 如果没有提供编码则agent会猜测编码
+  string charset = 4;
+  // 最多的行数
+  int32 maxLines = 5;
+  // 最多的字节数
+  int32 maxBytes = 6;
+}
+
+message PreviewFileResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+  // 解析好的日志行
+  repeated string content = 2;
+  // 日志使用的编码
+  // 如果用户请求里没有提供编码, 那么此时该编码是猜测的编码
+  string charset = 3;
+}
+
+
+// 试切分
+message SplitLogRequest {
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  string agent_id = 2;
+  string content = 3;
+  string regexp = 4;
+}
+
+message SplitLogResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+  map<string, string> result = 2;
+}
+
+message InspectRequest {
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  string agent_id = 2;
+}
+
+message InspectResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+  string result = 2;
+}
+
+message MatchFilesRequest {
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  string agent_id = 2;
+  // path/format/glob/regexp
+  string type = 3;
+  // used when type in (path,format,glob,regexp)
+  string pattern = 4;
+  // used when type=regexp
+  string dir = 5;
+  // used when glob&regexp
+  int32 maxVisited = 6;
+  // used when glob&regexp
+  int32 maxMatched = 7;
+}
+
+message MatchFilesResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+  repeated string files = 2;
+  int32 visited = 3;
+}
+
+// dry run
+message DryRunRequest {
+  // common request header
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  // 配置信息
+  CollectConfig config = 2;
+  // 最终运行的目标, 在元数据里必须能找到
+  TargetIdentifier target = 3;
+  // 输入信息
+  Input input = 4;
+
+  message CollectConfig {
+    // tableName: 从 db 里读取配置, 根据 tableName 匹配
+    // temp:
+    string type = 1;
+    string table_name = 2;
+    // 字段对应 gaea_collect_config 里的 记录
+    CollectConfigTemp temp = 3;
+  }
+  message Input {
+    // plain: 从请求里读
+    // read: 从pod里读
+    string type = 1;
+    InputPlain plain = 2;
+  }
+  message InputPlain {
+    // 原始日志
+    repeated string lines = 1;
+    // Timezone to use when parsing timestamp of log lines.
+    // Defaults to local timezone of agent.
+    string timezone = 2 ;
+  }
+  // message InputRead {}
+  message CollectConfigTemp {
+    // 字段对应 gaea_collect_config 里的 字段
+    string type = 1;
+    string json = 2;
+    string executor_selector = 3;
+    string collect_range = 4;
+  }
+}
+
+message DryRunResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+  Event event = 2;
+  repeated GroupResult group_results = 3;
+
+  message Event {
+    string title = 1;
+    map<string, string> params = 2;
+    repeated Message message = 3;
+    repeated Event children = 4;
+  }
+  message Message {
+    string level = 1;
+    string content = 2;
+  }
+  message GroupResult {
+    repeated string group_lines = 1;
+    bool success = 2;
+    map<string, double> selected_values = 3;
+    map<string, string> group_by = 4;
+  }
+}
+
+
+message HttpProxyRequest {
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  string agent_id = 2;
+  //TargetIdentifier target = 3;
+  string method = 4;
+  string url = 5;
+  map<string, string> headers = 6;
+  bytes body = 7;
+}
+
+message HttpProxyResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+  int32 code = 2;
+  map<string, string> headers = 3;
+  bytes body = 4;
+  int32 cost = 5;
+}
+
+message CheckConfigTaskDistributionRequest {
+  io.holoinsight.server.common.grpc.CommonRequestHeader header = 1;
+  repeated SubTask sub_tasks = 2;
+  message SubTask {
+    string config_key = 1;
+    string config_version = 2;
+    string target_key = 3;
+    string target_version = 4;
+  }
+}
+
+message CheckConfigTaskDistributionResponse {
+  io.holoinsight.server.common.grpc.CommonResponseHeader header = 1;
+  repeated int32 status = 2;
+}

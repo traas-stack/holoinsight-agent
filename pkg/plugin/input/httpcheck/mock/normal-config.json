@@ -1,0 +1,15 @@
+{
+  "executeRule": {
+    "type": "fixedRate",
+    "fixedRate": 5000
+  },
+  "schema": "http",
+  "port": 8080,
+  "path": "/path",
+  "timeout": 3000,
+  "method": "GET",
+  "successCodes": [
+    200
+  ],
+  "networkMode": "POD"
+}

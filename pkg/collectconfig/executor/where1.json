@@ -1,0 +1,43 @@
+{
+  "and": [
+    {
+      "numberOp": {
+        "elect": {
+          "type": "leftRight",
+          "leftRightS": [
+            0,
+            "cost=",
+            ","
+          ]
+        },
+        "gte": 100,
+        "lt": 200
+      }
+    },
+    {
+      "and": [
+        {
+          "regexp": {
+            "elect": {
+              "type": "leftRight",
+              "leftRight": {
+                "leftIndex": 0,
+                "left": ",",
+                "right": ","
+              }
+            },
+            "expr": "^INFO?$"
+          }
+        },
+        {
+          "contains": {
+            "elect": {
+              "type": "$line"
+            },
+            "value": "BAD"
+          }
+        }
+      ]
+    }
+  ]
+}

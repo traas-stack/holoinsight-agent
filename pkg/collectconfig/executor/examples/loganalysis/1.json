@@ -1,0 +1,63 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "loganalysis",
+        "agg": "loganalysis"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": [
+        {
+          "type": "path",
+          "pattern": "/home/admin/logs/holoinsight-server/common-default.log"
+        }
+      ],
+      "charset": "utf-8",
+      "time": {
+        "type": "auto"
+      }
+    }
+  },
+  "where": {},
+  "groupBy": {
+    "logAnalysis": {
+      "patterns": [
+        {
+          "name": "RegistryServiceForAgentImpl",
+          "where": {
+            "contains": {
+              "elect": {
+                "type": "line"
+              },
+              "value": "RegistryServiceForAgentImpl"
+            }
+          }
+        },
+        {
+          "name": "DimDataWriteTask",
+          "where": {
+            "contains": {
+              "elect": {
+                "type": "line"
+              },
+              "value": "DimDataWriteTask"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "window": {
+    "interval": 5000
+  },
+  "output": {
+    "type": "gateway",
+    "gateway": {
+      "metricName": "loganalysis_1"
+    }
+  }
+}

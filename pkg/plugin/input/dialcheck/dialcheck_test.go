@@ -1,0 +1,26 @@
+package dialcheck
+
+import (
+	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/api"
+	"os"
+	"testing"
+	"time"
+)
+
+func TestDialCheck(t *testing.T) {
+	input := &Input{
+		Config: &Config{
+			Network: "tcp",
+			Addr:    "127.0.0.1:22",
+			Timeout: 3 * time.Second,
+			Times:   3,
+		},
+	}
+
+	ma := api.NewMemoryAccumulator()
+	err := input.Collect(ma)
+	if err != nil {
+		panic(err)
+	}
+	ma.PrintTo(os.Stdout)
+}

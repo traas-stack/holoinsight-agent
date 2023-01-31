@@ -1,0 +1,73 @@
+{
+  "select": {
+    "values": [{
+
+    }]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": "/home/admin/logs/a.log",
+      "charset": "UTF-8"
+    }
+  },
+  "where": {
+    "and": [
+      {
+        "not": {
+          "contains": {
+            "elect": {
+              "type": "refName,line,leftRight",
+              "leftRight": {
+                "leftIndex": 0,
+                "left": ",",
+                "right": ","
+              }
+            },
+            "value": "abc"
+          }
+        }
+      },
+      {
+        "or": [
+          {
+            "contains": {
+              "elect": {
+                "type": "$line"
+              },
+              "value": "aaa"
+            }
+          },
+          {
+            "contains": {
+              "elect": {
+                "type": "$line"
+              },
+              "value": "bbb"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "groupBy": {
+    "groups": [
+      {
+        "name": "level",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 0,
+            "left": ",",
+            "right": ","
+          }
+        }
+      }
+    ]
+  },
+  "output": {
+    "type": "push",
+    "push": {
+    }
+  }
+}

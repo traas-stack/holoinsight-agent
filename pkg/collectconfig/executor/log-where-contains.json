@@ -1,0 +1,50 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "_doc": "这是注释信息, 由于是count聚合, 因此不需要elect",
+        "agg": "count"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": "/home/admin/logs/gateway/common-default.log",
+      "parse": {
+        "where": {
+          "regexp": {
+            "elect": {
+              "type": "line"
+            },
+            "expression": "正则表达式"
+          }
+        }
+      }
+    }
+  },
+  "where": {
+    "contains": {
+      "elect": {
+        "type": "line"
+      },
+      "value": "c.a.c.g.c.t.PressureGenerator"
+    }
+  },
+  "groupBy": {
+    "maxKeySize": 100
+  },
+  "window": {
+    "interval": "5s"
+  },
+  "executeRule": {
+  },
+  "output": {
+    "type": "cmgateway",
+    "cmgateway": {
+      "_doc": "如果强制指定了, 则会写数据到这个metric下",
+      "metricName": "foobar"
+    }
+  }
+}

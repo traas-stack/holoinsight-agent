@@ -1,0 +1,4 @@
+curl -sG \
+  --data-urlencode "ns=$1" \
+  --data-urlencode "name=$2" \
+  localhost:9117/api/meta/k8s/pods/get

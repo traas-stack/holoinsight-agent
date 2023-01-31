@@ -1,0 +1,9 @@
+{
+  "executeRule": {
+    "type": "fixedRate",
+    "fixedRate": 5000
+  },
+  "network": "tcp",
+  "port": 8080,
+  "networkMode": "POD"
+}

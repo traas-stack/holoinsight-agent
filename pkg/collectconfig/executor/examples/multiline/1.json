@@ -1,0 +1,49 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "agg": "count"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": [
+        {
+          "type": "path",
+          "pattern": "/tmp/1.log"
+        }
+      ],
+      "charset": "utf-8",
+      "multiline": {
+        "enabled": true,
+        "maxLines": 100,
+        "where": {
+          "not": {
+            "regexp": {
+              "elect": {
+                "type": "line"
+              },
+              "expression": "^\\d{4}-\\d{2}-\\d{2}"
+            }
+          }
+        },
+        "what": "previous"
+      },
+      "time": {
+        "type": "auto"
+      }
+    }
+  },
+  "where": {},
+  "groupBy": {
+  },
+  "window": {
+    "interval": 5000
+  },
+  "output": {
+    "type": "console"
+  }
+}

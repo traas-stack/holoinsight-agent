@@ -1,0 +1,85 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "elapsed_time",
+        "elect": {
+          "type": "refIndex",
+          "refIndex": {
+            "index": 13
+          },
+          "transform": {
+            "transforms": []
+          }
+        },
+        "agg": "avg"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": [
+        {
+          "type": "path",
+          "pattern": "/Users/xzchaoo/logs/1.log"
+        }
+      ],
+      "charset": "utf-8",
+      "parse": {
+        "where": {
+          "and": []
+        },
+        "type": "separator",
+        "separator": {
+          "separator": "|"
+        }
+      },
+      "time": {
+        "type": "auto"
+      }
+    }
+  },
+  "where": {},
+  "groupBy": {
+    "maxKeys": -1,
+    "groups": [
+      {
+        "name": "service",
+        "elect": {
+          "type": "refIndex",
+          "refIndex": {
+            "index": 10
+          },
+          "transform": {
+            "transforms": []
+          }
+        }
+      },
+      {
+        "name": "method",
+        "elect": {
+          "type": "refIndex",
+          "refIndex": {
+            "index": 11
+          },
+          "transform": {
+            "transforms": []
+          }
+        }
+      }
+    ]
+  },
+  "window": {
+    "interval": 5000
+  },
+  "output": {
+    "type": "console",
+    "gateway": {
+      "metricName": "average_time_elapsed_test"
+    }
+  },
+  "executeRule": {
+    "fixedRate": 0
+  }
+}

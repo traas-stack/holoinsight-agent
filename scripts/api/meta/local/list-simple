@@ -1,0 +1,3 @@
+curl -sG \
+ --data-urlencode "type=simple" \
+ localhost:9117/api/meta/local/list

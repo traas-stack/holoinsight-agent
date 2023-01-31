@@ -1,0 +1,94 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "_doc": "这是注释信息, 由于是count聚合, 因此不需要elect",
+        "agg": "count"
+      },
+      {
+        "as": "cost",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 0,
+            "left": "result=",
+            "_doc": "right为空白, 表示匹配到行尾",
+            "right": ""
+          }
+        },
+        "agg": "sum"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": "/home/admin/logs/gateway/common-default.log",
+      "charset": "utf-8, 不写默认就是utf-8",
+      "parse": {
+        "_doc": "none表示为不用日志解析, 意思是elect的风格全都是 antmonitor 的左起右至切分风格",
+        "type": "none"
+      }
+    }
+  },
+  "where": {
+    "and": [
+      {
+        "in": {
+          "elect": {
+            "type": "leftRight",
+            "leftRight": {
+              "leftIndex": 4,
+              "left": " ",
+              "right": " "
+            }
+          },
+          "values": [
+            "c.a.c.g.c.t.PressureGenerator"
+          ]
+        }
+      }
+    ]
+  },
+  "groupBy": {
+    "maxKeySize": 100,
+    "groups": [
+      {
+        "name": "level",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 1,
+            "left": " ",
+            "right": " "
+          }
+        }
+      },
+      {
+        "name": "thread",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 0,
+            "left": "[",
+            "right": "]"
+          }
+        }
+      }
+    ]
+  },
+  "window": {
+    "_doc": "每5秒聚合成一个点",
+    "interval": "5s"
+  },
+  "executeRule": {
+  },
+  "output": {
+    "type": "cmgateway",
+    "cmgateway": {
+      "_doc": "如果强制指定了, 则会写数据到这个metric下, 如果不指定metricName, 则按产品层生成到数据库里的某个名字来确定(在采集侧一般叫做tableName)",
+      "metricName": "foobar"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "_doc": "这是注释信息, 由于是count聚合, 因此不需要elect",
+        "agg": "count"
+      }
+    ]
+  },
+  "from": {
+    "type": "cpu",
+  },
+  "where": {
+    "regexp": {
+      "elect": {
+        "_doc": "type=line表示选取原始日志行, 对于json解析模式, 即对应了原始的json日志",
+        "type": "line"
+      },
+      "expression": "Pressure?Generator"
+    }
+  },
+  "groupBy": {
+    "maxKeySize": 100
+  },
+  "window": {
+    "interval": "5s"
+  },
+  "executeRule": {
+  },
+  "output": {
+    "type": "cmgateway",
+    "cmgateway": {
+      "_doc": "如果强制指定了, 则会写数据到这个metric下",
+      "metricName": "foobar"
+    }
+  }
+}

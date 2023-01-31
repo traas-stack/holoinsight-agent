@@ -1,0 +1,13 @@
+package executor
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestSlice(t *testing.T) {
+	var a []string = nil
+	fmt.Println(a)
+	fmt.Println(a[:0])
+	fmt.Println(a[:])
+}

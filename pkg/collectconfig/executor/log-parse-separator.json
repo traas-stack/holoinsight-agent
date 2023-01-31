@@ -1,0 +1,87 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "_doc": "这是注释信息, 由于是count聚合, 因此不需要elect",
+        "agg": "count"
+      },
+      {
+        "as": "cost",
+        "elect": {
+          "type": "refIndex",
+          "refIndex": {
+            "index": 4
+          }
+        },
+        "agg": "sum"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": [
+        {
+          "type": "path",
+          "pattern": "/home/admin/logs/gateway/common-default.log"
+        }
+      ],
+      "charset": "utf-8, 不写默认就是utf-8",
+      "parse": {
+        "type": "separator",
+        "separator": {
+          "separator": ","
+        }
+      }
+    }
+  },
+  "where": {
+    "in": {
+      "elect": {
+        "type": "refIndex",
+        "refIndex": {
+          "index": 2
+        }
+      },
+      "values": [
+        "INFO"
+      ]
+    }
+  },
+  "groupBy": {
+    "maxKeySize": 100,
+    "groups": [
+      {
+        "name": "level",
+        "elect": {
+          "type": "refIndex",
+          "refIndex": {
+            "index": 2
+          }
+        }
+      },
+      {
+        "name": "thread",
+        "elect": {
+          "type": "refIndex",
+          "refIndex": {
+            "index": 3
+          }
+        }
+      }
+    ]
+  },
+  "window": {
+    "interval": "5s"
+  },
+  "executeRule": {
+  },
+  "output": {
+    "type": "cmgateway",
+    "cmgateway": {
+      "_doc": "如果强制指定了, 则会写数据到这个metric下",
+      "metricName": "foobar"
+    }
+  }
+}

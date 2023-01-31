@@ -1,0 +1,116 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 5,
+            "left": " "
+          }
+        },
+        "agg": "sum"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": [
+        {
+          "type": "path",
+          "pattern": "/Users/xzchaoo/logs/aaa/1.log",
+          "dir": "/home/admin/logs"
+        }
+      ],
+      "charset": "utf-8",
+      "parse": {
+        "where": {
+          "and": [
+            {
+              "in": {
+                "elect": {
+                  "type": "leftRight",
+                  "leftRight": {
+                    "leftIndex": 4,
+                    "left": " ",
+                    "right": " "
+                  }
+                },
+                "values": [
+                  "keys"
+                ]
+              }
+            }
+          ]
+        },
+        "type": "none"
+      },
+      "time": {
+        "type": "auto",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 0,
+            "left": "[",
+            "right": "]"
+          }
+        },
+        "format": "golangLayout",
+        "layout": "2006-01-02_15:04:05"
+      }
+    }
+  },
+  "where": {},
+  "groupBy": {
+    "maxKeys": -1,
+    "groups": [
+      {
+        "name": "cluster",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 1,
+            "left": " ",
+            "right": " "
+          }
+        }
+      },
+      {
+        "name": "tenant",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 2,
+            "left": " ",
+            "right": " "
+          }
+        }
+      },
+      {
+        "name": "instance",
+        "elect": {
+          "type": "leftRight",
+          "leftRight": {
+            "leftIndex": 3,
+            "left": " ",
+            "right": " "
+          }
+        }
+      }
+    ]
+  },
+  "window": {
+    "interval": 6000
+  },
+  "output": {
+    "type": "console",
+    "gateway": {
+      "metricName": "foobar"
+    }
+  },
+  "executeRule": {
+    "fixedRate": 0
+  }
+}
