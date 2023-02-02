@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/agg"
 	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/dryrun/event"
 	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
@@ -150,7 +151,15 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) {
 				// TODO avg case
 				// TODO avg是否应该存2个值?
 				case *storage.AggNumberDataNode:
-					values[v.ValueNames[i]] = x.Value
+					if x.Agg == agg.AggAvg {
+						if x.Count > 0 {
+							values[v.ValueNames[i]] = x.Value / float64(x.Count)
+						} else {
+							values[v.ValueNames[i]] = float64(0)
+						}
+					} else {
+						values[v.ValueNames[i]] = x.Value
+					}
 				default:
 					values[v.ValueNames[i]] = 0
 				}
