@@ -169,9 +169,10 @@ func (p *SysPipeline) emitOnce(alignTs int64) {
 func (p *SysPipeline) emitLoop() {
 	// TODO p.interval 可能会变化
 
-	w := util.NewAlignTsWalker(p.interval.Milliseconds(), 0, 0, 0, false)
+	intervalMs := p.interval.Milliseconds()
+	w := util.NewAlignTsWalker(intervalMs, 0, 0, 0, false)
 
-	alignTs, delay := w.Next()
+	nextTs, delay := w.Next()
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 
@@ -189,6 +190,7 @@ func (p *SysPipeline) emitLoop() {
 					ret = true
 					return
 				}
+				alignTs := nextTs - intervalMs
 				logger.Infoz("[pipeline] [sys] emit", //
 					zap.String("key", p.ct.Key),             //
 					zap.String("type", p.sqlTask.From.Type), //
@@ -201,7 +203,7 @@ func (p *SysPipeline) emitLoop() {
 			if ret {
 				return
 			}
-			alignTs, delay = w.Next()
+			nextTs, delay = w.Next()
 			if delay == 0 {
 				runtime.Gosched()
 			}
