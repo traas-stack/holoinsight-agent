@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/bistream/cmds/inspect"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/inspect"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 )
 
 func inspectHandler(action string, resp *model.Resp) error {

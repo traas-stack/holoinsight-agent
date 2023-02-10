@@ -1,12 +1,12 @@
 package executor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/storage"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/loganalysis"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
+	"github.com/traas-stack/holoinsight-agent/pkg/loganalysis"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 )
 

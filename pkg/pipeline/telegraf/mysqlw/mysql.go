@@ -1,6 +1,6 @@
 package mysqlw
 
-import "github.com/TRaaSStack/holoinsight-agent/pkg/pipeline/integration/base"
+import "github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
 
 type (
 	MySQLConf struct {

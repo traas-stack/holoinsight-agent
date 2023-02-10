@@ -1,17 +1,17 @@
 package processperf
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"strconv"
 	"strings"
 
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input/cpu"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
 	gopsutil_cpu "github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/process"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/cpu"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 )
 

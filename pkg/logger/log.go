@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"os"

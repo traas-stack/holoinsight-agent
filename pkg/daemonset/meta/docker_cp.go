@@ -2,7 +2,7 @@ package meta
 
 import (
 	"context"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/docker/docker/api/types"
 	dockersdk "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"

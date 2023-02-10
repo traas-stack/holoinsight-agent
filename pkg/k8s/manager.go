@@ -2,13 +2,13 @@ package k8s
 
 //
 //import (
-//	"github.com/TRaaSStack/holoinsight-agent/internal/registry"
-//	"github.com/TRaaSStack/holoinsight-agent/pkg/core"
-//	daemonsetmeta "github.com/TRaaSStack/holoinsight-agent/pkg/daemonset/meta"
-//	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8smeta"
-//	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8ssync"
-//	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8ssysmetrics"
-//	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+//	"github.com/traas-stack/holoinsight-agent/internal/registry"
+//	"github.com/traas-stack/holoinsight-agent/pkg/core"
+//	daemonsetmeta "github.com/traas-stack/holoinsight-agent/pkg/daemonset/meta"
+//	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
+//	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssync"
+//	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics"
+//	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 //	"time"
 //)
 //

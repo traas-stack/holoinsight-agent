@@ -1,12 +1,12 @@
 package springboot
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	telegraf2 "github.com/TRaaSStack/holoinsight-agent/pkg/telegraf"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/influxdata/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	telegraf2 "github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 	"go.uber.org/zap"
 	"io"
 	"net/http"

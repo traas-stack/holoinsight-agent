@@ -1,8 +1,8 @@
 package storage
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"sync"
 	"time"
 )

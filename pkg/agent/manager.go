@@ -2,18 +2,18 @@ package agent
 
 import (
 	"context"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/appconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/core"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/nodehostname"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/nodehostname"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"os"
 	"runtime"
 	"time"
 
-	"github.com/TRaaSStack/holoinsight-agent/pkg/agent/agentmeta"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 )
 

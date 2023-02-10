@@ -1,7 +1,7 @@
 package openmetric
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"context"
 	"fmt"
 	"github.com/prometheus/common/model"
@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/run"

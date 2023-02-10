@@ -1,7 +1,7 @@
 package telegraf
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/influxdata/telegraf"
 	"time"
 )

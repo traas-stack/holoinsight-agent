@@ -3,11 +3,11 @@ package traffic
 import (
 	"bytes"
 	"encoding/gob"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
 	"github.com/shirou/gopsutil/v3/net"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 )
 
 type (

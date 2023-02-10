@@ -1,8 +1,8 @@
 package extractor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri/dockerutils"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	v1 "k8s.io/api/core/v1"
 	"strings"
 )

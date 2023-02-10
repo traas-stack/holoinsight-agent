@@ -2,13 +2,13 @@ package executor
 
 import (
 	"encoding/json"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/dryrun/event"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/filematch"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/logstream"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/storage"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/pipeline/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/dryrun/event"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/filematch"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"time"
 )
 

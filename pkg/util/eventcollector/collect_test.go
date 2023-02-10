@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TRaaSStack/holoinsight-agent/pkg/appconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 )
 
 func TestEventCollector(t *testing.T) {

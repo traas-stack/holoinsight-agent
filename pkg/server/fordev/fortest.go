@@ -1,8 +1,8 @@
 package fordev
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/appconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/gateway"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway"
 	"strings"
 )
 

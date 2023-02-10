@@ -1,9 +1,9 @@
 package k8ssysmetrics
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/ioc"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8ssysmetrics/cadvisor"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8ssysmetrics/common"
+	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics/cadvisor"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics/common"
 	"os"
 	"time"
 )

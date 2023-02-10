@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
-	"github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/bistream/cmds/previewlog"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/previewlog"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"os"
 )
 

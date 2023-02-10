@@ -1,13 +1,13 @@
 package cmds
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/bistream/biztypes"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/dryrun/event"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
-	commonpb "github.com/TRaaSStack/holoinsight-agent/pkg/server/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/dryrun/event"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"google.golang.org/protobuf/proto"
 )
 

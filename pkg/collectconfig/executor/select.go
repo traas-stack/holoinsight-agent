@@ -2,8 +2,8 @@ package executor
 
 import (
 	"errors"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/agg"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
 )
 
 // select 并不通用

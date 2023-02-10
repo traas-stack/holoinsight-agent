@@ -1,7 +1,7 @@
 package jvm
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri/crihelper"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/crihelper"
 	"github.com/spf13/cast"
 	"math"
 	"strings"

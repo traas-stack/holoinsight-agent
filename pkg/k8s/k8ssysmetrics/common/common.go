@@ -1,8 +1,8 @@
 package common
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
-	k8smetaextractor "github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	v1 "k8s.io/api/core/v1"
 )
 

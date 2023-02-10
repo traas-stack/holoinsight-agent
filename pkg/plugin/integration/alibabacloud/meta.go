@@ -1,7 +1,7 @@
 package alibabacloud
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	cms20190101 "github.com/alibabacloud-go/cms-20190101/v7/client"
 	"github.com/alibabacloud-go/tea/tea"
 	"go.uber.org/zap"

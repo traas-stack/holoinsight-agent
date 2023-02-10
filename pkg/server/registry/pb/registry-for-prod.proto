@@ -4,7 +4,7 @@ package io.holoinsight.server.registry.grpc.prod;
 
 option java_multiple_files = true;
 option java_package = "io.holoinsight.server.registry.grpc.prod";
-option go_package = "github.com/TRaaSStack/holoinsight-agent/server/registry/pb";
+option go_package = "github.com/traas-stack/holoinsight-agent/server/registry/pb";
 option java_outer_classname = "RegistryForProdProtos";
 
 // 这样写生成代码没问题, 但编辑器不认识

@@ -2,10 +2,10 @@ package inspect
 
 import (
 	"encoding/json"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/agent/agentmeta"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/appconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"

@@ -2,10 +2,10 @@ package cadvisor
 
 import (
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8slabels"
 	cadvisorclientv1 "github.com/google/cadvisor/client"
 	v1 "github.com/google/cadvisor/info/v1"
 	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	"testing"
 )
 

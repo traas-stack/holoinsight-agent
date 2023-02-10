@@ -1,7 +1,7 @@
 package stat
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"strconv"
 	"strings"
 )

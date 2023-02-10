@@ -1,8 +1,8 @@
 package dockerutils
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/core"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"os"
 	"path/filepath"
 	"strings"

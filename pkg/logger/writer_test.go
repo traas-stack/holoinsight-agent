@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"fmt"
 	"math/rand"
 	"path/filepath"

@@ -2,8 +2,8 @@ package collecttask
 
 import (
 	"database/sql"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/golang/protobuf/proto"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

@@ -2,13 +2,13 @@ package gateway
 
 import (
 	"context"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/fordev"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/gateway"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/gateway/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/batch"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/singleton"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/stat"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/fordev"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/batch"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/singleton"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"go.uber.org/zap"
 	"time"
 )

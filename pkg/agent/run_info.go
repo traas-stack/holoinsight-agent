@@ -2,15 +2,15 @@ package agent
 
 import (
 	"context"
-	regpb "github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
+	regpb "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"sync"
 	"time"
 
-	"github.com/TRaaSStack/holoinsight-agent/pkg/agent/agentmeta"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/eventcollector"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/stats"
+	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/eventcollector"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/stats"
 	"go.uber.org/zap"
 )
 

@@ -3,7 +3,7 @@ package executor
 import (
 	"encoding/json"
 	"errors"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/vjeantet/grok"
 	"regexp"
 	"strings"

@@ -1,8 +1,8 @@
 package telegraf
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/output"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
 )
 
 type (

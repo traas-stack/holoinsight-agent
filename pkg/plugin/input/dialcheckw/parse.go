@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/pipeline/telegraf/providers"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input/dialcheck"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/dialcheck"
 	"time"
 )
 

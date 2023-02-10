@@ -20,8 +20,8 @@ echo gitcommit=$gitcommit
 (cd $project_root && \
   go build \
   -ldflags "-s -w" \
-  -ldflags "-X github.com/TRaaSStack/holoinsight-agent/pkg/appconfig.agentVersion=$version \
-  -X github.com/TRaaSStack/holoinsight-agent/pkg/appconfig.agentBuildTime=$buildTime \
-  -X github.com/TRaaSStack/holoinsight-agent/pkg/appconfig.gitcommit=$gitcommit" \
+  -ldflags "-X github.com/traas-stack/holoinsight-agent/pkg/appconfig.agentVersion=$version \
+  -X github.com/traas-stack/holoinsight-agent/pkg/appconfig.agentBuildTime=$buildTime \
+  -X github.com/traas-stack/holoinsight-agent/pkg/appconfig.gitcommit=$gitcommit" \
   -o build/$os-$arch/bin/agent ./cmd/agent && \
   go build -ldflags "-s -w" -o build/$os-$arch/bin/helper ./cmd/containerhelper)

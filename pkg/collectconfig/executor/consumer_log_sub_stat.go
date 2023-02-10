@@ -1,12 +1,12 @@
 package executor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/agg"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/dryrun/event"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/storage"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/dryrun/event"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 	"time"
 )
@@ -134,7 +134,7 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) {
 		shard := timeline.GetShard(expectedTs)
 		if shard == nil {
 			logger.Infoz("[consumer] [log] emit nil", //
-				zap.String("key", c.parent.key),            //
+				zap.String("key", c.parent.key), //
 				zap.Time("ts", time.UnixMilli(expectedTs))) //
 			return
 		}

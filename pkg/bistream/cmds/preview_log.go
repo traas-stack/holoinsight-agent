@@ -2,12 +2,12 @@ package cmds
 
 import (
 	"context"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/bistream/biztypes"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/bistream/cmds/previewlog"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
-	commonpb "github.com/TRaaSStack/holoinsight-agent/pkg/server/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
+	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/previewlog"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"google.golang.org/protobuf/proto"
 )
 

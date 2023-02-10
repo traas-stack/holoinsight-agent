@@ -3,11 +3,11 @@ package cpu
 import (
 	"bytes"
 	"encoding/gob"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
 	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 )
 
 // TODO 问题 系统指标是否作为一个指标存储 还是 作为多个指标(开源倾向)

@@ -1,6 +1,6 @@
 package accumulator
 
-import "github.com/TRaaSStack/holoinsight-agent/pkg/model"
+import "github.com/traas-stack/holoinsight-agent/pkg/model"
 
 type (
 	// Like Telegraf.Accumulator

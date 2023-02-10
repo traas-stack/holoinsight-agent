@@ -2,10 +2,10 @@ package containerlogs
 
 import (
 	"context"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
 	"github.com/docker/docker/api/types"
 	dockersdk "github.com/docker/docker/client"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"time"
 )
 

@@ -7,7 +7,7 @@
 package pb
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"

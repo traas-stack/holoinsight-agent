@@ -2,7 +2,7 @@ package accumulator
 
 import (
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
 )
 
 type (

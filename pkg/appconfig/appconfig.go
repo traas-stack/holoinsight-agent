@@ -4,8 +4,8 @@ package appconfig
 import (
 	"fmt"
 	"github.com/BurntSushi/toml"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/core"
 	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"gopkg.in/yaml.v3"
 	"io/fs"
 	"os"

@@ -1,10 +1,10 @@
 package executor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/utils"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
 	"errors"
 	"fmt"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/utils"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"go.uber.org/zap"
 	"io"
 	"os"
@@ -156,13 +156,13 @@ func (i *FileLogInput) ensureOpened(seekEnd bool) error {
 			logger.Infoz("[input] open and seek to end", //
 				zap.String("path", i.config.Path), //
 				zap.Int64("offset", offset),       //
-				zap.Uint64("inode", i.inode)) //
+				zap.Uint64("inode", i.inode))      //
 			i.offset = offset
 			i.ignoreFirstLine = offset > 0
 		} else {
 			logger.Infoz("[input] open and no seek", //
 				zap.String("path", i.config.Path), //
-				zap.Uint64("inode", i.inode)) //
+				zap.Uint64("inode", i.inode))      //
 		}
 		i.file = file
 		// 重新打开一次文件后 buffer 都要清掉
@@ -259,7 +259,7 @@ func (i *FileLogInput) Pull(req *PullRequest) (*PullResponse, error) {
 				logger.Infoz("file unreadable", //
 					zap.String("path", i.config.Path), //
 					zap.Uint64("inode", i.inode),      //
-					zap.Error(err)) //
+					zap.Error(err))                    //
 
 			} else {
 				// other exception
@@ -267,7 +267,7 @@ func (i *FileLogInput) Pull(req *PullRequest) (*PullResponse, error) {
 				logger.Infoz("file error", //
 					zap.String("path", i.config.Path), //
 					zap.Uint64("inode", i.inode),      //
-					zap.Error(err)) //
+					zap.Error(err))                    //
 			}
 		} else if !os.SameFile(newStat, fileStat) {
 			i.fileEndMode = fileEndModeChanged
@@ -278,7 +278,7 @@ func (i *FileLogInput) Pull(req *PullRequest) (*PullResponse, error) {
 				zap.String("path", i.config.Path),      //文件路径
 				zap.String("to", movedTo),              // 滚动后的文件
 				zap.Int64("fileSize", fileStat.Size()), //
-				zap.Uint64("inode", i.inode)) // 此时的文件大小
+				zap.Uint64("inode", i.inode))           // 此时的文件大小
 		}
 
 		if i.fileEndMode != fileEndModeNone {

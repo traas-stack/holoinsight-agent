@@ -1,4 +1,4 @@
-module github.com/TRaaSStack/holoinsight-agent
+module github.com/traas-stack/holoinsight-agent
 
 go 1.19
 

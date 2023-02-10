@@ -1,9 +1,9 @@
 package ioc
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8smeta"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	"sync"
 )
 

@@ -3,7 +3,7 @@ package logger
 import (
 	"errors"
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"io/fs"
 	"os"
 	"path/filepath"

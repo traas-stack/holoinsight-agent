@@ -4,7 +4,7 @@ package io.holoinsight.server.common.grpc;
 
 option java_multiple_files = true;
 option java_package = "io.holoinsight.server.common.grpc";
-option go_package = "github.com/TRaaSStack/holoinsight-agent/pkg/server/pb";
+option go_package = "github.com/traas-stack/holoinsight-agent/pkg/server/pb";
 option java_outer_classname = "CommonProtos";
 
 // 该文件存放通用模型

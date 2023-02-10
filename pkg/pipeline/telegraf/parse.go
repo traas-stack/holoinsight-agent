@@ -3,12 +3,12 @@ package telegraf
 import (
 	"encoding/json"
 	"errors"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/appconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/pipeline/integration/base"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/output"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 )
 
 func ParsePipeline(task *collecttask.CollectTask) (*Pipeline, error) {

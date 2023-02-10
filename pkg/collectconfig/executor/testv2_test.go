@@ -1,9 +1,9 @@
 package executor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
 	"encoding/json"
 	"fmt"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"io"
 	"os"
 	"testing"

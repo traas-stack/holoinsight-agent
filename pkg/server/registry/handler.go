@@ -2,7 +2,7 @@ package registry
 
 import (
 	"context"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 )
 
 type (

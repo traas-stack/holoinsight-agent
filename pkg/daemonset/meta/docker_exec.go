@@ -7,7 +7,7 @@ import (
 	"github.com/docker/docker/api/types"
 	dockersdk "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"io"
 )
 

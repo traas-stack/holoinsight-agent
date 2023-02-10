@@ -4,7 +4,7 @@ package io.holoinsight.server.registry.grpc.agent;
 
 option java_multiple_files = true;
 option java_package = "io.holoinsight.server.registry.grpc.agent";
-option go_package = "github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb";
+option go_package = "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb";
 option java_outer_classname = "RegistryForAgentProtos";
 
 import "google/protobuf/empty.proto";

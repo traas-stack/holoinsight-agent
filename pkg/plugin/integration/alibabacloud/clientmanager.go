@@ -2,7 +2,7 @@ package alibabacloud
 
 import (
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	cms20190101 "github.com/alibabacloud-go/cms-20190101/v7/client"
 	openapi "github.com/alibabacloud-go/darabonba-openapi/client"
 	"github.com/alibabacloud-go/tea/tea"

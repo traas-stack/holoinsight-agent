@@ -1,6 +1,6 @@
 package handlers
 
-import "github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
+import "github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 
 func init() {
 	model.RegisterHandler("hello", helloHandler)

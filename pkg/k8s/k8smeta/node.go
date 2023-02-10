@@ -2,7 +2,7 @@ package k8smeta
 
 import (
 	"errors"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8sutils"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/tools/cache"

@@ -1,7 +1,7 @@
 package gateway
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/output"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
 )
 
 func init() {

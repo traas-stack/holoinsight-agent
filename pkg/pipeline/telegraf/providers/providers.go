@@ -2,7 +2,7 @@ package providers
 
 import (
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"sync"
 )
 

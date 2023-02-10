@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/cast"
 	"os"

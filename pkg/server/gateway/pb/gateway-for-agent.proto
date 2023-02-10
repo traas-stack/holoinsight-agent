@@ -4,7 +4,7 @@ package io.holoinsight.server.gateway.grpc;
 
 option java_multiple_files = true;
 option java_package = "io.holoinsight.server.gateway.grpc";
-option go_package = "github.com/TRaaSStack/holoinsight-agent/pkg/server/gateway/pb";
+option go_package = "github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb";
 option java_outer_classname = "GatewayProtos";
 
 import "google/protobuf/empty.proto";

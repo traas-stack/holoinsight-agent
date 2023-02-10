@@ -1,9 +1,9 @@
 package crihelper
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/ioc"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"context"
 	"encoding/json"
 	"github.com/spf13/cast"

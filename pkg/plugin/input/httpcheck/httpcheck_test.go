@@ -1,7 +1,7 @@
 package httpcheck
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"net/http"
 	"os"
 	"regexp"

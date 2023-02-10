@@ -2,9 +2,9 @@ package listfiles
 
 import (
 	"errors"
-	commonpb "github.com/TRaaSStack/holoinsight-agent/pkg/server/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/fs2"
+	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/fs2"
 	"os"
 	"path/filepath"
 	"strings"

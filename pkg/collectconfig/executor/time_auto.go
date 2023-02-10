@@ -1,7 +1,7 @@
 package executor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/timeparser"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/timeparser"
 	"time"
 )
 

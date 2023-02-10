@@ -3,8 +3,8 @@ package springboot
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/accumulator"
-	telegraf2 "github.com/TRaaSStack/holoinsight-agent/pkg/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/accumulator"
+	telegraf2 "github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 	"os"
 	"testing"
 )

@@ -1,8 +1,8 @@
 package dialcheck
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"encoding/json"
 	"net"
 	"time"

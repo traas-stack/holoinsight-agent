@@ -2,18 +2,18 @@ package gateway
 
 import (
 	"context"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/agg"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/storage"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/gateway"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/gateway/pb"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/stat"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"strings"
 	"time"
 
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/output"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/batch"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/batch"
 	"github.com/spf13/cast"
 )
 

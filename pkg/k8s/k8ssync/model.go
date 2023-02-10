@@ -1,7 +1,7 @@
 package k8ssync
 
 import (
-	regpb "github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
+	regpb "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 )
 
 type (

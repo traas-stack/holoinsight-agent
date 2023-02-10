@@ -1,8 +1,8 @@
 package k8smeta
 
 import (
-	k8smetaextractor "github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"

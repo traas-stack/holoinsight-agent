@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"errors"
-	"github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"os"
 )
 

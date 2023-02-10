@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	_ "github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/handlers"
-	"github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
+	_ "github.com/traas-stack/holoinsight-agent/cmd/containerhelper/handlers"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"os"
 )
 

@@ -2,9 +2,9 @@ package filematch
 
 import (
 	"errors"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/ioc"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"regexp"
 	"strings"
 )

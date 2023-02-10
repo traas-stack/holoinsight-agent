@@ -1,8 +1,8 @@
 package executor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
 	"github.com/stretchr/testify/assert"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"testing"
 )
 

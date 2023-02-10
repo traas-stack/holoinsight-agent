@@ -2,13 +2,13 @@ package telegraf
 
 import (
 	"errors"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
-	_ "github.com/TRaaSStack/holoinsight-agent/pkg/pipeline/telegraf/mysqlw"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/pipeline/telegraf/providers"
-	_ "github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input/dialcheckw"
-	_ "github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input/httpcheckw"
-	_ "github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input/jvm"
-	_ "github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input/springboot"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/mysqlw"
+	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/dialcheckw"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/httpcheckw"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/jvm"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/springboot"
 	"strings"
 )
 

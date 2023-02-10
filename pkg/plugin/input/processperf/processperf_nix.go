@@ -4,8 +4,8 @@
 package processperf
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/shirou/gopsutil/v3/process"
 	"syscall"
 )

@@ -2,7 +2,7 @@ package nodehostname
 
 import (
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"io/ioutil"
 	"os"
 	"path/filepath"

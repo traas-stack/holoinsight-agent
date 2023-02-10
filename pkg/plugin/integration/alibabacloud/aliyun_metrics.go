@@ -2,11 +2,11 @@ package alibabacloud
 
 import (
 	"encoding/json"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util/stat"
 	cms20190101 "github.com/alibabacloud-go/cms-20190101/v7/client"
 	util "github.com/alibabacloud-go/tea-utils/service"
 	"github.com/alibabacloud-go/tea/tea"
 	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"go.uber.org/ratelimit"
 	"strings"
 	"time"

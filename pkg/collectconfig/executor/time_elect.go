@@ -1,9 +1,9 @@
 package executor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
 	"errors"
 	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"time"
 )
 

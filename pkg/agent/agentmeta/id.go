@@ -2,9 +2,9 @@
 package agentmeta
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/appconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/core"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"fmt"
 	"github.com/google/uuid"
 	"io"

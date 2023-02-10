@@ -3,7 +3,7 @@ package openmetric
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"

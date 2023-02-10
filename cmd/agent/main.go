@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/resources"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/resources"
 	"os"
 )
 

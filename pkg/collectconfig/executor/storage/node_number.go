@@ -2,7 +2,7 @@ package storage
 
 import (
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/agg"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
 	"math"
 )
 

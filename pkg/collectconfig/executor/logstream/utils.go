@@ -2,7 +2,7 @@ package logstream
 
 import (
 	"bytes"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"os"
 )
 

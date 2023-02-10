@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input/httpcheck"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/httpcheck"
 	"io"
 	"os"
 )

@@ -1,11 +1,11 @@
 package extractor
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri/dockerutils"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri/pouch"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/k8s/k8slabels"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/pouch"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	v1 "k8s.io/api/core/v1"
 	"strings"
 )

@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/TRaaSStack/holoinsight-agent/pkg/appconfig"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 )
 
 func TestHttpServer(t *testing.T) {

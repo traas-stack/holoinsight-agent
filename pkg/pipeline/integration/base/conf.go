@@ -1,6 +1,6 @@
 package base
 
-import "github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig"
+import "github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 
 type (
 	Conf struct {

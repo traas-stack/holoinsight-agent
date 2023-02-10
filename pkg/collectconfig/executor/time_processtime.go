@@ -1,6 +1,6 @@
 package executor
 
-import "github.com/TRaaSStack/holoinsight-agent/pkg/util"
+import "github.com/traas-stack/holoinsight-agent/pkg/util"
 
 type (
 	processTimeParser struct {

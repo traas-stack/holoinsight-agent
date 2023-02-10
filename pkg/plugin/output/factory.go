@@ -3,7 +3,7 @@ package output
 import (
 	"errors"
 
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 )
 
 const (

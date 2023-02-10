@@ -8,7 +8,7 @@ package pb
 
 import (
 	context "context"
-	pb "github.com/TRaaSStack/holoinsight-agent/pkg/server/pb"
+	pb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"

@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
-	model2 "github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input"
-	_ "github.com/TRaaSStack/holoinsight-agent/pkg/plugin/input/all"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
+	model2 "github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/all"
 	"os"
 )
 

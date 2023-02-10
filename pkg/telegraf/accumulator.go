@@ -1,9 +1,9 @@
 package telegraf
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/accumulator"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/model"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/accumulator"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/influxdata/telegraf"
 	"github.com/spf13/cast"
 	"time"

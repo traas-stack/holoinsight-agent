@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/cmd/containerhelper/model"
 	"encoding/json"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"net"
 	"os"
 	"time"

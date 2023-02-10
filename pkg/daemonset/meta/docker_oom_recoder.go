@@ -1,7 +1,7 @@
 package meta
 
 import (
-	"github.com/TRaaSStack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"sync"
 )
 

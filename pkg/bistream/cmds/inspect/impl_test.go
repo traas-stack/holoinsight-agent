@@ -3,8 +3,8 @@ package inspect
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/core"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"reflect"
 	"testing"
 )

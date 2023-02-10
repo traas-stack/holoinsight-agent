@@ -3,8 +3,8 @@ package logstream
 import (
 	"errors"
 	"fmt"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/collectconfig/executor/utils"
-	"github.com/TRaaSStack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/utils"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"go.uber.org/zap"
 	"io"
 	"os"
@@ -192,7 +192,7 @@ func (f *FileLogStream) read() *ReadResponse {
 				logger.Infoz("file unreadable", //
 					zap.String("path", f.config.Path), //
 					zap.Uint64("inode", f.inode),      //
-					zap.Error(err))                    //
+					zap.Error(err)) //
 
 			} else {
 				// other exception
@@ -200,7 +200,7 @@ func (f *FileLogStream) read() *ReadResponse {
 				logger.Infoz("file error", //
 					zap.String("path", f.config.Path), //
 					zap.Uint64("inode", f.inode),      //
-					zap.Error(err))                    //
+					zap.Error(err)) //
 			}
 		} else if !os.SameFile(newStat, fileStat) {
 			f.fileEndMode = fileEndModeChanged
@@ -211,7 +211,7 @@ func (f *FileLogStream) read() *ReadResponse {
 				zap.String("path", f.config.Path),      //文件路径
 				zap.String("to", movedTo),              // 滚动后的文件
 				zap.Int64("fileSize", fileStat.Size()), //
-				zap.Uint64("inode", f.inode))           // 此时的文件大小
+				zap.Uint64("inode", f.inode)) // 此时的文件大小
 		}
 
 		if f.fileEndMode != fileEndModeNone {
@@ -477,7 +477,7 @@ func (f *FileLogStream) Clean() {
 			logger.Errorz("clean cursor cache", //
 				zap.Int32("remainCount", resp.remainCount), //
 				zap.Time("ioStartTime", resp.IOStartTime),  //
-				zap.String("path", f.config.Path))          //
+				zap.String("path", f.config.Path)) //
 		}
 		return true
 	})
