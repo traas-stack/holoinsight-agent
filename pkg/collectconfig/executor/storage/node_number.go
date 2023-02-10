@@ -48,7 +48,6 @@ func (n *AggNumberDataNode) MergeNumber(f float64) {
 			n.Value = math.Min(n.Value, f)
 		}
 	case agg.AggMax:
-		n.Value += f
 		if n.Count == 1 {
 			n.Value = f
 		} else {
