@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
+
+# doc: Run this script to build agent-builder image for multi arch.
+
 set -e
 script_dir=`dirname $0`
-version=` cat $script_dir/VERSION `
 
-image=holoinsight-agent-builder:$version
+tag=$1
 
-if docker images $image | grep $version >/dev/null 2>&1; then
-    # image exists, exit
-    echo "[holoinsight-agent-builder] builder image [$image] already exists"
-    exit 0
+if [ -z "$tag" ]; then
+  echo 'usage: build.sh <tag>'
+  exit 1
 fi
 
-echo "[holoinsight-agent-builder] build agent builder image=[$image]"
-
-docker build --network host --platform=linux/amd64 -t $image -f $script_dir/Dockerfile $script_dir
-
-docker tag holoinsight-agent-builder:$version holoinsight-agent-builder:latest
+PLATFORM=linux/amd64 $script_dir/buildx-one.sh $tag-amd64-linux
+PLATFORM=linux/arm64/v8 $script_dir/buildx-one.sh $tag-arm64v8-linux

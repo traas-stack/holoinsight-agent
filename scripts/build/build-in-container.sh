@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-cd /a
+# doc: Run this script in docker to build agent binaries.
 
-sh scripts/build/build-using-go.sh
+cd /workspace && scripts/build/build-using-go.sh
