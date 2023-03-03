@@ -1,33 +1,28 @@
 #!/usr/bin/env bash
 set -e
 
-# 调用这个脚本在镜像里构建出 agent bin
+# doc: Run this script to build agent binaries using docker
 
 script_dir=` dirname $0 `
 project_root=`realpath $script_dir/../..`
 
-echo '[build agent bin using docker]'
+if [ -z "$GOOS" ] || [ -z "$GOARCH" ] || [ -z "$PLATFORM" ]; then
+  echo 'require env: GOOS/GOARCH/PLATFORM'
+  exit 1
+fi
 
-rm -rf $project_root/build/linux-amd64/bin
+echo [$GOOS/$GOARCH] [$PLATFORM] 'build agent bin using docker'
+rm -rf $project_root/build/$GOOS-$GOARCH/bin
 
-$script_dir/agent-builder/build.sh
-
-# 在容器里打出agent bin
-# docker build 时也使用宿主机网络, 避免nat故障时容器连不上网
-
-builder_image=holoinsight-agent-builder:` cat $script_dir/agent-builder/VERSION `
-
-echo '[build agent bin using docker]' docker run --network host --platform=linux/amd64 --rm -v $project_root:/a -v $HOME/.cache/go-build:/root/.cache/go-build $builder_image bash -c " sh /a/scripts/build/build-in-container.sh "
-set -x
+builder_image=holoinsight/agent-builder:1.0.0
 
 docker run \
-  --network host \
-  --platform=linux/amd64 \
+  $DOCKER_OPTS \
+  --platform $PLATFORM \
+  -e GOOS=$GOOS \
+  -e GOARCH=$GOARCH \
   --rm \
-  -v $project_root:/a \
+  -v $project_root:/workspace \
   -v $HOME/.cache/go-build:/root/.cache/go-build \
   -v $HOME/go/pkg:/root/go/pkg \
-  $builder_image \
-  bash -c " sh /a/scripts/build/build-in-container.sh "
-
-set +x
+  $builder_image /workspace/scripts/build/build-in-container.sh
