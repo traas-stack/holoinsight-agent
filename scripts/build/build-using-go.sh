@@ -4,18 +4,19 @@ set -e
 # doc: Run this script to build agent binaries using go.
 
 if [ -z "$GOOS" ] || [ -z "$GOARCH" ]; then
-  echo 'require env: GOOS/GOARCH'
-  exit 1
+  GOOS=`go env GOOS`
+  GOARCH=`go env GOARCH`
 fi
 
 echo [$GOOS/$GOARCH] 'build agent bin using go'
 
 script_dir=`dirname $0`
 project_root=`realpath $script_dir/../..`
+$project_root/scripts/gen-git-info.sh
 
 version=`cat $project_root/VERSION`
 buildTime=`TZ='Asia/Shanghai' date +'%Y-%m-%dT%H:%M:%S_%Z'`
-gitcommit=`cat $project_root/gitcommit`
+gitcommit=`cat $project_root/gitcommit 2>/dev/null || true`
 echo version=$version
 echo buildTime=$buildTime
 echo gitcommit=$gitcommit

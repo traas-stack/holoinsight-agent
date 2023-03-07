@@ -16,7 +16,7 @@ function buildOne() {
 
   echo [$GOOS/$GOARCH] [$PLATFORM] 'build agent docker image'
   local image=holoinsight/agent:$tag
-  $script_dir/buildx.sh build \
+  docker buildx build \
     $DOCKER_OPTS \
     --build-arg GOOS=$GOOS \
     --build-arg GOARCH=$GOARCH \
@@ -27,7 +27,7 @@ function buildOne() {
   echo $image `docker inspect holoinsight/agent:$tag | jq ' .[0].Architecture '`
 }
 
-GOOS=linux GOARCH=arm64 PLATFORM=linux/arm64/v8 buildOne test-arm64v8-linux
 GOOS=linux GOARCH=amd64 PLATFORM=linux/amd64 buildOne test-amd64-linux
+GOOS=linux GOARCH=arm64 PLATFORM=linux/arm64/v8 buildOne test-arm64v8-linux
 
 echo Notice: you should upload holoinsight/agent to your public repository.

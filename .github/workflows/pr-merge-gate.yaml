@@ -1,0 +1,26 @@
+name: PR merge gate
+
+on:
+  pull_request_target:
+    branches: [ "main" ]
+
+jobs:
+  pr-merge-gate:
+    runs-on: ubuntu-latest
+    if: (github.repository == 'traas-stack/holoinsight-agent')
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.19
+        cache: true
+    - name: Build HoloInsight Agent
+      shell: bash
+      run: |
+        export GOOS=linux
+        export GOARCH=amd64
+        ./scripts/gen-git-info.sh
+        ./scripts/build/build-using-go.sh
