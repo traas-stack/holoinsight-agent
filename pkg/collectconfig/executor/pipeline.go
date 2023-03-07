@@ -1,12 +1,12 @@
 package executor
 
 import (
+	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
-	"errors"
 	"go.uber.org/zap"
 	"runtime"
 	"sync"
@@ -17,7 +17,9 @@ const (
 	defaultMonitorFileInterval = 10 * time.Second
 	// 默认每10s拉一次日志
 	defaultPullDelay = 10 * time.Second
-	// 日志延迟打印的容忍时间, 也就是我们假设 t+logDelayTolerance 之后, t的日志才会打印到文件里
+	// Logs generated at T1 may not be printed in the log file until T2.
+	// Our system tolerates a delay(T2 - T1) of up to 300.
+	// If the delay exceeds this value, it may cause these delayed data to be ignored.
 	logDelayTolerance = 300 * time.Millisecond
 )
 
@@ -209,14 +211,14 @@ func (p *LogPipeline) consumeUntilEndForOneInput(iw *inputWrapper) bool {
 				zap.String("path", resp.Path),              //
 				zap.String("fileId", resp.FileId),          //
 				zap.Int64("beginOffset", resp.BeginOffset), //
-				zap.Error(resp.Error)) //
+				zap.Error(resp.Error))                      //
 		} else {
 			logger.Infoz("[pipeline] [log] [input] [event] changed", //
 				zap.String("key", p.st.CT.Key),             //
 				zap.String("path", resp.Path),              //
 				zap.String("fileId", resp.FileId),          //
 				zap.Int64("beginOffset", resp.BeginOffset), //
-				zap.Error(resp.Error)) //
+				zap.Error(resp.Error))                      //
 		}
 	}
 	iw.lastState = iw.state
@@ -375,9 +377,9 @@ func (p *LogPipeline) maybeEmit() {
 		// For data accuracy, we discard first incomplete window data.
 		p.lastEmitWindow = lastFinishedWindow
 	} else if lastFinishedWindow != p.lastEmitWindow {
-		// We just emit lastFinishedWindow window data.
-		// If our process hang '10 x window' and recover, which is rare case, then we only emit last window data, discarding first 9 window data.
+		for ts := lastFinishedWindow; ts > p.lastEmitWindow; ts -= interval {
+			p.consumer.emit(ts)
+		}
 		p.lastEmitWindow = lastFinishedWindow
-		p.consumer.emit(lastFinishedWindow)
 	}
 }
