@@ -14,6 +14,4 @@ fi
 echo [$PLATFORM] build agent-builder iamge $tag
 image=holoinsight/agent-builder:$tag
 
-buildx_bin=$script_dir/../../docker/buildx.sh
-
-$buildx_bin build $DOCKER_OPTS --platform=$PLATFORM -t $image -f $script_dir/Dockerfile $script_dir
+docker buildx build $DOCKER_OPTS --platform=$PLATFORM -t $image -f $script_dir/Dockerfile $script_dir
