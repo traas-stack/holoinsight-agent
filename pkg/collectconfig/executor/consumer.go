@@ -57,8 +57,8 @@ type (
 
 		// 实际遇到过的最大时间戳
 		maxDataTimestamp int64
-		// 估计的最大时间戳, 总是不小于 maxDataTimestamp
-		// 因为文件可能不打印日志, 此时需要有一个估计的时间戳来推动流程
+		// estimatedMaxDataTimestamp is an estimate of the actual log time.
+		// When there is no logs in file this period, this estimatedMaxDataTimestamp value will be treated as maxDataTimestamp as if there is really a log at this time.
 		estimatedMaxDataTimestamp int64
 
 		maxKeySize int
@@ -178,14 +178,16 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 
 	if c.estimatedMaxDataTimestamp < c.maxDataTimestamp {
 		c.estimatedMaxDataTimestamp = c.maxDataTimestamp
-	} else {
-		// 如果hasMore为true, 那么表示还没拉完, 会尽快开始下一次拉取, 时间戳就留着下一次更新
-		if !resp.HasMore {
-			// 如果不存在日志延迟打印的话, 此时时间戳一定已经来到了 ts 了
-			ts := resp.IOStartTime.Add(-logDelayTolerance).UnixMilli()
-			if c.estimatedMaxDataTimestamp < ts {
-				c.estimatedMaxDataTimestamp = ts
-			}
+	}
+
+	// 'HasMore == true' means there is more logs, we will to start next pulling as soon as possible.
+	// Next time when 'HasMore == false' we will update the estimatedMaxDataTimestamp.
+	if !resp.HasMore {
+		// 'HasMore == false' means we have reached the log file end.
+		// So we can safely update the estimatedMaxDataTimestamp to 'IOStartTime - logDelayTolerance'.
+		ts := resp.IOStartTime.Add(-logDelayTolerance).UnixMilli()
+		if c.estimatedMaxDataTimestamp < ts {
+			c.estimatedMaxDataTimestamp = ts
 		}
 	}
 }
