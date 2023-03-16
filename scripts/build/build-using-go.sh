@@ -8,6 +8,10 @@ if [ -z "$GOOS" ] || [ -z "$GOARCH" ]; then
   GOARCH=`go env GOARCH`
 fi
 
+# For cn user, use goproxy to speedup build
+#go env -w GO111MODULE=on
+#go env -w GOPROXY=https://goproxy.cn,direct
+
 echo [$GOOS/$GOARCH] 'build agent bin using go'
 
 script_dir=`dirname $0`
