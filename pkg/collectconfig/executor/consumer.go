@@ -9,6 +9,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
@@ -487,6 +488,9 @@ func (c *Consumer) addCommonTags(d *model.DetailData) {
 		if _, ok := d.Tags["app"]; !ok && appconfig.StdAgentConfig.App != "" {
 			d.Tags["app"] = appconfig.StdAgentConfig.App
 		}
+	}
+	if appconfig.StdAgentConfig.Mode == core.AgentModeDaemonset {
+		d.Tags["workspace"] = appconfig.StdAgentConfig.Workspace
 	}
 }
 
