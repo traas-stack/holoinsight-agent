@@ -131,6 +131,9 @@ func (rs *resourceSyncer) start(stopCh <-chan struct{}) {
 			}
 
 			for _, item := range items {
+				if rs.funcs.delete != nil && rs.funcs.delete(item) {
+					continue
+				}
 				req.Resources = append(req.Resources, rs.funcs.convert(item))
 			}
 
