@@ -3,4 +3,5 @@ set -e
 
 # doc: Run this script in docker to build agent binaries.
 
-cd /workspace && scripts/build/build-using-go.sh
+cd /workspace
+scripts/build/build-using-go.sh

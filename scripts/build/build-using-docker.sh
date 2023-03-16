@@ -14,7 +14,7 @@ fi
 echo [$GOOS/$GOARCH] [$PLATFORM] 'build agent bin using docker'
 rm -rf $project_root/build/$GOOS-$GOARCH/bin
 
-builder_image=holoinsight/agent-builder:1.0.0
+builder_image=holoinsight/agent-builder:1.0.1
 
 docker run \
   $DOCKER_OPTS \

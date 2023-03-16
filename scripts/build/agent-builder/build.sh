@@ -2,6 +2,8 @@
 
 # doc: Run this script to build agent-builder image for multi arch.
 
+cd `dirname $0`
+
 set -e
 script_dir=`dirname $0`
 
@@ -12,5 +14,7 @@ if [ -z "$tag" ]; then
   exit 1
 fi
 
-PLATFORM=linux/amd64 $script_dir/buildx-one.sh $tag-amd64-linux
-PLATFORM=linux/arm64/v8 $script_dir/buildx-one.sh $tag-arm64v8-linux
+docker buildx build \
+  --platform linux/amd64,linux/arm64/v8 \
+  -t holoinsight/agent-builder:$tag \
+  --pull --push .

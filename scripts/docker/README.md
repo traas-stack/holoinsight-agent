@@ -10,7 +10,7 @@
 ```text
 [build agent bin using docker]
 user home is /root
-docker run --network host --platform=linux/amd64 --rm -v /root/workspace/remote/cloudmonitor-agent:/a -v /root/.cache/go-build:/root/.cache/go-build cloudmonitor-agent-build bash -c  cd /a && make agent helper
+docker run --platform=linux/amd64 --rm -v /root/workspace/remote/cloudmonitor-agent:/a -v /root/.cache/go-build:/root/.cache/go-build cloudmonitor-agent-build bash -c  cd /a && make agent helper
 go build -ldflags "-s -w" -o build/linux-amd64/bin/agent -ldflags " -X cmd.goos=linux -X cmd.goarch=amd64" ./cmd/agent
 go build -ldflags "-s -w" -o build/linux-amd64/bin/helper -ldflags " -X cmd.goos=linux -X cmd.goarch=amd64" ./cmd/containerhelper
 [build agent docker image]
