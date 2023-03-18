@@ -1,5 +1,9 @@
 FROM holoinsight/agent-builder:1.0.1 as builder
-
+ARG GO111MODULE=on
+ARG GOPROXY=direct
+# Users in China can use GOPROXY to speed up building.
+# ARG GOPROXY=https://goproxy.cn,direct
+RUN env
 COPY . /workspace
 
 RUN /workspace/scripts/build/build-in-container.sh && \

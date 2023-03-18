@@ -6,23 +6,27 @@ set -e
 script_dir=` dirname $0 `
 project_root=`realpath $script_dir/../..`
 
-if [ -z "$GOOS" ] || [ -z "$GOARCH" ] || [ -z "$PLATFORM" ]; then
-  echo 'require env: GOOS/GOARCH/PLATFORM'
-  exit 1
-fi
-
-echo [$GOOS/$GOARCH] [$PLATFORM] 'build agent bin using docker'
+echo 'build agent bin using docker'
+GOOS=`go env GOOS`
+GOARCH=`go env GOARCH`
 rm -rf $project_root/build/$GOOS-$GOARCH/bin
 
 builder_image=holoinsight/agent-builder:1.0.1
 
+mkdir -p $HOME/.cache/go-build $HOME/go/pkg
+
+# If user defines GOPROXY env, then pass it to docker build using --build-arg.
+build_opts=""
+source $script_dir/detect-goproxy.sh
+build_opts=""
+if [ -n "$GOPROXY" ]; then
+  build_opts="-e GOPROXY=$GOPROXY"
+fi
+
 docker run \
-  $DOCKER_OPTS \
-  --platform $PLATFORM \
-  -e GOOS=$GOOS \
-  -e GOARCH=$GOARCH \
   --rm \
+  $build_opts \
   -v $project_root:/workspace \
   -v $HOME/.cache/go-build:/root/.cache/go-build \
   -v $HOME/go/pkg:/root/go/pkg \
-  $builder_image /workspace/scripts/build/build-in-container.sh
+  $builder_image /workspace/scripts/build/build-using-go.sh
