@@ -10,8 +10,10 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
@@ -116,9 +118,12 @@ type (
 )
 
 func (c *Consumer) AddBatchDetailDatus(datum []*model.DetailData) {
-	for _, d := range datum {
-		c.addCommonTags(d)
+	if len(datum) == 0 {
+		return
 	}
+
+	c.addCommonTags(datum)
+
 	c.output.WriteBatchAsync(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum)
 }
 
@@ -330,6 +335,19 @@ func (c *Consumer) getTargetTimezone() *time.Location {
 	return nil
 }
 
+func (c *Consumer) getTargetPod() *cri.Pod {
+	crii := ioc.Crii
+	if crii == nil {
+		return nil
+	}
+	if c.ct.Target.IsTypePod() {
+		if pod, ok := crii.GetPod(c.ct.Target.GetNamespace(), c.ct.Target.GetPodName()); ok {
+			return pod
+		}
+	}
+	return nil
+}
+
 func (c *Consumer) consume(resp *logstream.ReadResponse, iw *inputWrapper) int64 {
 	maxTs := int64(-1)
 	c.sub.Update(func() {
@@ -455,42 +473,41 @@ func (c *Consumer) printStat() {
 	)
 }
 
-func (c *Consumer) addCommonTags(d *model.DetailData) {
-	if d.Tags == nil {
-		d.Tags = make(map[string]string)
-	}
+func (c *Consumer) getCommonTags() map[string]string {
+	tags := make(map[string]string)
 	if c.ct.Target.IsTypePod() {
-		if _, ok := d.Tags["ip"]; !ok {
-			d.Tags["ip"] = c.ct.Target.GetIP()
+		tags["ip"] = c.ct.Target.GetIP()
+		tags["hostname"] = c.ct.Target.GetHostname()
+		tags["app"] = c.ct.Target.GetApp()
+		tags["namespace"] = c.ct.Target.GetNamespace()
+		tags["pod"] = c.ct.Target.GetPodName()
+
+		if pod := c.getTargetPod(); pod != nil {
+			meta.RefLabels(appconfig.StdAgentConfig.Data.Metric.RefLabels.Items, pod.Labels, tags)
 		}
-		if _, ok := d.Tags["hostname"]; !ok {
-			d.Tags["hostname"] = c.ct.Target.GetHostname()
-		}
-		if _, ok := d.Tags["app"]; !ok {
-			d.Tags["app"] = c.ct.Target.GetApp()
-		}
-		if _, ok := d.Tags["namespace"]; !ok {
-			d.Tags["namespace"] = c.ct.Target.GetNamespace()
-		}
-		if _, ok := d.Tags["pod"]; !ok {
-			d.Tags["pod"] = c.ct.Target.GetPodName()
-		}
+
 	} else {
-		if _, ok := d.Tags["ip"]; !ok {
-			d.Tags["ip"] = util.GetLocalIp()
-		}
-		if _, ok := d.Tags["host"]; !ok {
-			d.Tags["host"] = util.GetHostname()
-		}
-		if _, ok := d.Tags["hostname"]; !ok {
-			d.Tags["hostname"] = util.GetHostname()
-		}
-		if _, ok := d.Tags["app"]; !ok && appconfig.StdAgentConfig.App != "" {
-			d.Tags["app"] = appconfig.StdAgentConfig.App
-		}
+		tags["ip"] = util.GetLocalIp()
+		tags["hostname"] = util.GetHostname()
+		tags["app"] = appconfig.StdAgentConfig.App
 	}
 	if appconfig.StdAgentConfig.Mode == core.AgentModeDaemonset {
-		d.Tags["workspace"] = appconfig.StdAgentConfig.Workspace
+		tags["workspace"] = appconfig.StdAgentConfig.Workspace
+	}
+
+	return tags
+}
+
+func (c *Consumer) addCommonTags(datum []*model.DetailData) {
+	commonTags := c.getCommonTags()
+
+	for _, d := range datum {
+		if d.Tags == nil {
+			d.Tags = make(map[string]string, len(commonTags))
+		}
+		for k, v := range commonTags {
+			d.Tags[k] = v
+		}
 	}
 }
 
