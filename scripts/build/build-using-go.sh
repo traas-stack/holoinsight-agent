@@ -27,10 +27,10 @@ echo gitcommit=$gitcommit
 
 # https://www.digitalocean.com/community/tutorials/using-ldflags-to-set-version-information-for-go-applications
 (cd $project_root && \
-  go build \
+  CGO_ENABLED=1 go build \
   -ldflags "-s -w" \
   -ldflags "-X github.com/traas-stack/holoinsight-agent/pkg/appconfig.agentVersion=$version \
   -X github.com/traas-stack/holoinsight-agent/pkg/appconfig.agentBuildTime=$buildTime \
   -X github.com/traas-stack/holoinsight-agent/pkg/appconfig.gitcommit=$gitcommit" \
   -o build/$GOOS-$GOARCH/bin/agent ./cmd/agent && \
-  go build -ldflags "-s -w" -o build/$GOOS-$GOARCH/bin/helper ./cmd/containerhelper)
+  CGO_ENABLED=0 go build -ldflags "-s -w" -o build/$GOOS-$GOARCH/bin/helper ./cmd/containerhelper)
