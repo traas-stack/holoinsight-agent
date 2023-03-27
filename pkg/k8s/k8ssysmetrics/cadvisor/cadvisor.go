@@ -5,6 +5,7 @@ import (
 	"fmt"
 	cadvisorclient "github.com/google/cadvisor/client"
 	cv1 "github.com/google/cadvisor/info/v1"
+	appconfig2 "github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
@@ -12,6 +13,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics/common"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
@@ -371,7 +373,9 @@ func (c *cadvisorSysCollector) collectPodResourcesWithCAdvisor(alignT time.Time,
 }
 
 func (c *cadvisorSysCollector) extractPodCommonTags(pod *v1.Pod) map[string]string {
-	return common.ExtractPodCommonTags(pod)
+	tags := common.ExtractPodCommonTags(pod)
+	meta.RefLabels(appconfig2.StdAgentConfig.Data.Metric.RefLabels.Items, pod.Labels, tags)
+	return tags
 }
 
 func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics []*model.Metric, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {

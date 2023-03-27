@@ -47,6 +47,7 @@ type (
 		K8s       K8sConfig     `json:"k8s" yaml:"k8s" toml:"k8s"`
 		Workspace string        `json:"workspace" yaml:"workspace" toml:"workspace"`
 		Cluster   string        `json:"cluster" yaml:"cluster" toml:"cluster"`
+		Data      DataConfig    `json:"data" yaml:"data" toml:"data"`
 	}
 	BasicConfig struct {
 		App       string         `json:"app" yaml:"app" toml:"app"`
@@ -90,6 +91,24 @@ type (
 	}
 	PrometheusConfig struct {
 		AutoScapeK8s bool `json:"autoScapeK8s,omitempty" yaml:"autoScapeK8s" toml:"autoScapeK8s"`
+	}
+	DataConfig struct {
+		Metric DataConfig_Metric `json:"metric" yaml:"metric" toml:"metric"`
+	}
+	DataConfig_Metric struct {
+		RefLabels DataConfig_Metric_RefLabels `json:"refLabels" yaml:"refLabels" toml:"refLabels"`
+	}
+	DataConfig_Metric_RefLabels struct {
+		Items []*DataConfig_Metric_RefLabels_Item `json:"items" yaml:"items" toml:"items"`
+	}
+	// Ref a label as a tag
+	DataConfig_Metric_RefLabels_Item struct {
+		// Tag key
+		Key string `json:"key" yaml:"key" toml:"key" `
+		// Find first non-empty label
+		Labels []string `json:"labels" yaml:"labels" toml:"labels" `
+		// If all label values are empty, this DefaultValue will be used
+		DefaultValue string `json:"defaultValue" yaml:"defaultValue" toml:"defaultValue" `
 	}
 )
 
