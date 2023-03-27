@@ -1,0 +1,91 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "agg": "count"
+      },
+      {
+        "as": "cost_sum",
+        "agg": "sum",
+        "elect": {
+          "type": "refName",
+          "refName": {
+            "name": "cost"
+          }
+        }
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": [
+        {
+          "type": "path",
+          "pattern": "/tmp/1.log"
+        }
+      ],
+      "charset": "utf-8",
+      "parse": {
+        "where2": {
+          "and": [
+            {
+              "contains": {
+                "elect": {
+                  "type": "line"
+                },
+                "value": "flag=true"
+              }
+            },
+            {
+              "contains": {
+                "elect": {
+                  "type": "line"
+                },
+                "value": "flag=true"
+              }
+            }
+          ]
+        },
+        "type": "json"
+      },
+      "time": {
+        "type": "elect",
+        "elect": {
+          "type": "refName",
+          "refName": {
+            "name": "time"
+          }
+        },
+        "format": "golangLayout",
+        "layout": "2006-01-02 15:04:05"
+      }
+    }
+  },
+  "where": {
+  },
+  "groupBy": {
+    "maxKeys": -1,
+    "groups": [
+      {
+        "name": "level",
+        "elect": {
+          "type": "refName",
+          "refName": {
+            "name": "level"
+          }
+        }
+      }
+    ]
+  },
+  "window": {
+    "interval": 5000
+  },
+  "output": {
+    "type": "console"
+  },
+  "executeRule": {
+    "fixedRate": 0
+  }
+}
