@@ -4,12 +4,14 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 )
 
+// RefLabels ref labels as tags
 func RefLabels(items []*appconfig.DataConfig_Metric_RefLabels_Item, labels map[string]string, to map[string]string) {
 	for _, item := range items {
 		RefLabel(item, labels, to)
 	}
 }
 
+// RefLabel ref labels as tags
 func RefLabel(item *appconfig.DataConfig_Metric_RefLabels_Item, labels map[string]string, to map[string]string) bool {
 	var labelValue string
 	for _, label := range item.Labels {
