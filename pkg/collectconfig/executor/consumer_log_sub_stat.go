@@ -62,6 +62,13 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 		return
 	}
 
+	if !c.parent.executeVarsProcess(ctx) {
+		if processGroupEvent != nil {
+			processGroupEvent.Info("parseVars error, break")
+		}
+		return
+	}
+
 	// execute time parse
 	ts, b := c.parent.executeTimeParse(ctx)
 	if !b {

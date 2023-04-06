@@ -25,6 +25,12 @@ type (
 		event        *event.Event
 		whereEvent   *event.WhereEvent
 		periodStatus *PeriodStatus
+		vars         map[string]interface{}
+
+		// Value is a value related to this context.
+		// It is used when doing transform.
+		contextValue interface {
+		}
 	}
 )
 
@@ -53,4 +59,7 @@ func (c *LogContext) clearData() {
 	c.event = nil
 	c.whereEvent = nil
 	c.periodStatus = nil
+	c.contextValue = nil
+	c.vars = nil
+	c.tz = nil
 }

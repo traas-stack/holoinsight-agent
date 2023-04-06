@@ -36,6 +36,46 @@ var (
 	DebugEnabled = false
 )
 
+// init initializes default loggers (to console)
+func init() {
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:          "time",
+		LevelKey:         "level",
+		NameKey:          "logger",
+		CallerKey:        "caller",
+		MessageKey:       "msg",
+		StacktraceKey:    "stacktrace",
+		ConsoleSeparator: " ",
+		LineEnding:       zapcore.DefaultLineEnding,
+		EncodeLevel:      zapcore.LowercaseLevelEncoder,
+		EncodeTime:       zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05.000"),
+	}
+
+	newZapLogger2 := func() *zap.Logger {
+		return zap.New(
+			zapcore.NewTee(
+				zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), zapcore.AddSync(os.Stdout), alwaysLevel{}),
+			),
+		)
+	}
+
+	zapLogger = &loggerComposite{
+		debug:  newZapLogger2(),
+		info:   newZapLogger2(),
+		warn:   newZapLogger2(),
+		error:  newZapLogger2(),
+		stat:   newZapLogger2(),
+		config: newZapLogger2(),
+		meta:   newZapLogger2(),
+	}
+	zapLogger.debugS = zapLogger.debug.Sugar()
+	zapLogger.infoS = zapLogger.info.Sugar()
+	zapLogger.warnS = zapLogger.warn.Sugar()
+	zapLogger.errorS = zapLogger.error.Sugar()
+	zapLogger.configS = zapLogger.config.Sugar()
+	zapLogger.metaS = zapLogger.meta.Sugar()
+}
+
 func (a alwaysLevel) Enabled(level zapcore.Level) bool {
 	return true
 }

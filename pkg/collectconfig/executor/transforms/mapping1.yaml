@@ -1,0 +1,6 @@
+filters:
+- mappingV1:
+    mappings:
+      a: aa
+      b: bb
+    defaultValue: xx

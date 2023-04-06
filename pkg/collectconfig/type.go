@@ -12,6 +12,8 @@ const (
 	EElectRegexp    = "regexp"
 	EElectRefMeta   = "refMeta"
 	EElectPathVar   = "pathvar"
+	EElectContext   = "context"
+	EElectRefVar    = "refVar"
 )
 
 type (
@@ -23,33 +25,13 @@ type (
 		Type      string
 		Separator string
 	}
-
-	// 定义变量
+	// Vars
 	Vars struct {
-		Vars []Var
+		Vars []*Var `json:"vars"`
 	}
 	Var struct {
-		Name  string
-		Elect *Elect
-		// 这里支持流水线
-		Pipeline *Pipeline
-	}
-	// TODO 改个名字 容易误解
-	Pipeline struct {
-		// 对值做转换
-		Transform []*Transform
-		// 当转换结果是nil或empty时, 使用使用该默认值代替
-		DefaultValue string
-		// 执行出错是否丢弃记录
-		DiscardRecordWhenError bool
-		// 如果执行完pipeline的结果是null
-		DiscardRecordWhenResultIsNil bool
-	}
-	// 这里定义很多转换, 可以对原有的值进行转换
-	// 入参一般是 string 或 float64, 或其他(需要明确指出)
-	Transform struct {
-		Type string
-		Arg  string
+		Name  string `json:"name"`
+		Elect *Elect `yaml:"elect"`
 	}
 	Select struct {
 		Values []*SelectOne `json:"values"`
@@ -105,6 +87,8 @@ type (
 		// 定义时间戳如何解析
 		Time      *TimeConf         `json:"time"`
 		Multiline *FromLogMultiline `json:"multiline"`
+		// Vars define vars for log processing
+		Vars *Vars `json:"vars,omitempty"`
 	}
 	// TODO 用于支持多文件
 	FromLogPaths struct {
@@ -150,9 +134,8 @@ type (
 		// 有的parse代价太大, 可以在parse前做一次过滤减少parse的量
 		// 此时where里仅能使用 leftRight 类型的切分
 		Where *Where `json:"where,omitempty"`
-		// free/separator/regexp/json
-		Type string `json:"type,omitempty"`
-		// 基于分隔符
+		// free/separator/regexp/json/leftRight
+		Type      string             `json:"type,omitempty"`
 		Separator *LogParseSeparator `json:"separator,omitempty"`
 		Regexp    *LogParseRegexp    `json:"regexp,omitempty"`
 		Grok      *LogParseGrok      `json:"grok,omitempty"`
@@ -187,16 +170,20 @@ type (
 		// refIndex/refName: 引用一个已有的字段
 		// leftRight: 使用左起右至切出一个字段
 		// regexp
-		Type      string       `json:"type,omitempty"`
-		Line      *ElectLine   `json:"line,omitempty"`
-		RefIndex  *RefIndex    `json:"refIndex,omitempty"`
-		RefName   *RefName     `json:"refName,omitempty"`
-		LeftRight *LeftRight   `json:"leftRight,omitempty"`
-		Regexp    *ElectRegexp `json:"regexp,omitempty"`
-		// TODO 切出来字段后可以做流水线 待实现
-		Pipeline *Pipeline     `json:"pipeline,omitempty"`
-		RefMeta  *ElectRegMeta `json:"refMeta,omitempty"`
-		PathVar  *ElectPathVar `json:"pathVar,omitempty"`
+		// context: fetch string value from context
+		Type      string        `json:"type,omitempty"`
+		Line      *ElectLine    `json:"line,omitempty"`
+		RefIndex  *RefIndex     `json:"refIndex,omitempty"`
+		RefName   *RefName      `json:"refName,omitempty"`
+		RefVar    *RefVar       `json:"refVar,omitempty"`
+		LeftRight *LeftRight    `json:"leftRight,omitempty"`
+		Regexp    *ElectRegexp  `json:"regexp,omitempty"`
+		RefMeta   *ElectRegMeta `json:"refMeta,omitempty"`
+		PathVar   *ElectPathVar `json:"pathVar,omitempty"`
+
+		// Every elect can have its own transform, named adhoc transform.
+		// It will be executed everytime elect is called.
+		Transform *TransformConf `json:"transform,omitempty"`
 	}
 	ElectPathVar struct {
 		Name string `json:"name"`
@@ -227,6 +214,9 @@ type (
 		Index int `json:"index"`
 	}
 	RefName struct {
+		Name string `json:"name"`
+	}
+	RefVar struct {
 		Name string `json:"name"`
 	}
 	LeftRight struct {
@@ -320,5 +310,9 @@ var (
 
 	CElectLine = &Elect{
 		Type: EElectLine,
+	}
+	// CElectContext is a const for EElectContext
+	CElectContext = &Elect{
+		Type: EElectContext,
 	}
 )

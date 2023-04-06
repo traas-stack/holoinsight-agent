@@ -55,6 +55,7 @@ type (
 		Window               *XWindow
 		LogParser            LogParser
 		TimeParser           TimeParser
+		varsProcessor        *varsProcessor
 		BeforeParseWhere     XWhere
 		stat                 consumerStat
 		multilineAccumulator *multilineAccumulator
@@ -833,6 +834,22 @@ func (c *Consumer) executeLogParse(ctx *LogContext) bool {
 		c.stat.filterLogParseError++
 		return false
 	}
+
+	return true
+}
+
+func (c *Consumer) executeVarsProcess(ctx *LogContext) bool {
+	if c.varsProcessor == nil {
+		return true
+	}
+	if vars, err := c.varsProcessor.process(ctx); err != nil {
+		logger.Debugz("parse vars error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.Error(err))
+		c.stat.filterLogParseError++
+		return false
+	} else {
+		ctx.vars = vars
+	}
+
 	return true
 }
 
