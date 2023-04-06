@@ -1,0 +1,5 @@
+filters:
+- substringV1:
+    begin: 4
+    end: -1
+    emptyIfError: true
