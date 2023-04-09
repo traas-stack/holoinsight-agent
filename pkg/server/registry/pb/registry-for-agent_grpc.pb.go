@@ -41,6 +41,7 @@ type RegistryServiceForAgentClient interface {
 	BiStreams(ctx context.Context, opts ...grpc.CallOption) (RegistryServiceForAgent_BiStreamsClient, error)
 	MetaFullSync(ctx context.Context, in *MetaSync_FullSyncRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	MetaDeltaSync(ctx context.Context, in *MetaSync_DeltaSyncRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ReportEvents(ctx context.Context, in *ReportEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type registryServiceForAgentClient struct {
@@ -163,6 +164,15 @@ func (c *registryServiceForAgentClient) MetaDeltaSync(ctx context.Context, in *M
 	return out, nil
 }
 
+func (c *registryServiceForAgentClient) ReportEvents(ctx context.Context, in *ReportEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, "/io.holoinsight.server.registry.grpc.agent.RegistryServiceForAgent/report_events", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RegistryServiceForAgentServer is the server API for RegistryServiceForAgent service.
 // All implementations must embed UnimplementedRegistryServiceForAgentServer
 // for forward compatibility
@@ -184,6 +194,7 @@ type RegistryServiceForAgentServer interface {
 	BiStreams(RegistryServiceForAgent_BiStreamsServer) error
 	MetaFullSync(context.Context, *MetaSync_FullSyncRequest) (*emptypb.Empty, error)
 	MetaDeltaSync(context.Context, *MetaSync_DeltaSyncRequest) (*emptypb.Empty, error)
+	ReportEvents(context.Context, *ReportEventRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedRegistryServiceForAgentServer()
 }
 
@@ -220,6 +231,9 @@ func (UnimplementedRegistryServiceForAgentServer) MetaFullSync(context.Context, 
 }
 func (UnimplementedRegistryServiceForAgentServer) MetaDeltaSync(context.Context, *MetaSync_DeltaSyncRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MetaDeltaSync not implemented")
+}
+func (UnimplementedRegistryServiceForAgentServer) ReportEvents(context.Context, *ReportEventRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportEvents not implemented")
 }
 func (UnimplementedRegistryServiceForAgentServer) mustEmbedUnimplementedRegistryServiceForAgentServer() {
 }
@@ -423,6 +437,24 @@ func _RegistryServiceForAgent_MetaDeltaSync_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RegistryServiceForAgent_ReportEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegistryServiceForAgentServer).ReportEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/io.holoinsight.server.registry.grpc.agent.RegistryServiceForAgent/report_events",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegistryServiceForAgentServer).ReportEvents(ctx, req.(*ReportEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RegistryServiceForAgent_ServiceDesc is the grpc.ServiceDesc for RegistryServiceForAgent service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -465,6 +497,10 @@ var RegistryServiceForAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "meta_delta_sync",
 			Handler:    _RegistryServiceForAgent_MetaDeltaSync_Handler,
+		},
+		{
+			MethodName: "report_events",
+			Handler:    _RegistryServiceForAgent_ReportEvents_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

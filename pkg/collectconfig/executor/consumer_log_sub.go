@@ -6,7 +6,9 @@ type (
 		setParent(parent *Consumer)
 		Update(f func())
 		ProcessGroup(iw *inputWrapper, ctx *LogContext, maxTs *int64)
-		Emit(expectedTs int64)
+		// Emit emits data with timestamp equals to expectedTs
+		// Returns true if data is not empty
+		Emit(expectedTs int64) bool
 		init()
 	}
 )

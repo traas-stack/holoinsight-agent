@@ -1,7 +1,10 @@
 package executor
 
 import (
+	json2 "encoding/json"
 	"errors"
+	"fmt"
+	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
@@ -16,6 +19,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
+	pb2 "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 	"math"
@@ -26,6 +30,8 @@ import (
 
 const (
 	hardMaxKeySize = 100_000
+	// ReportTaskInfoInterval indicates the time interval of reporting task info.
+	ReportTaskInfoInterval = 10
 )
 
 type (
@@ -68,6 +74,11 @@ type (
 		sub        SubConsumer
 
 		debugEvent *event.Event
+		runInLock  func(f func())
+
+		// printStatCalledCounter records the number of calls to `printStat`
+		printStatCalledCounter int
+		firstIOSuccessTime     int64
 	}
 
 	consumerStat struct {
@@ -93,8 +104,10 @@ type (
 		filterGroup            int32
 		filterGroupMaxKeys     int32
 		filterIgnore           int32
-		hasLogDelay            bool
+		filterDelay            int32
 		emit                   int32
+		emitSuccess            int32
+		emitError              int32
 		// error count when agg
 		aggWhereError int32
 		// error count when select
@@ -115,23 +128,102 @@ type (
 	DataAccumulator interface {
 		AddBatchDetailDatus([]*model.DetailData)
 	}
+
+	PeriodStatus struct {
+		Broken                    bool
+		NoContinued               bool
+		EmitSuccess               bool
+		EmitError                 int
+		estimatedMaxDataTimestamp int64
+	}
 )
 
-func (c *Consumer) AddBatchDetailDatus(datum []*model.DetailData) {
+func (c *Consumer) reportUpEvent(expectedTs int64, ps *PeriodStatus) {
+	// ok means data in expectedTs time window is complete, the following conditions must be met:
+	// 1. emit success
+	// 2. log consumption is not lagging behind
+	// 3. the task is not started in the middle of the cycle
+	ok := ps.EmitSuccess &&
+		ps.estimatedMaxDataTimestamp >= expectedTs+c.Window.Interval.Milliseconds() &&
+		c.firstIOSuccessTime < expectedTs
+
+	ioc.RegistryService.ReportEventAsync(&pb2.ReportEventRequest_Event{
+		BornTimestamp:  time.Now().UnixMilli(),
+		EventTimestamp: expectedTs,
+		EventType:      "STAT",
+		PayloadType:    "log_monitor_up",
+		Tags:           c.getCommonEventTags(),
+		Numbers: map[string]int64{
+			// up==1 means task is running
+			"up": 1,
+			"ok": util.BoolToInt64(ok), //
+		},
+		Strings: nil,
+	})
+}
+
+func (c *Consumer) updatePeriodStatus(expectedTs int64, callback func(status *PeriodStatus)) {
+	c.timeline.Update(func(timeline *storage.Timeline) {
+		c.updatePeriodStatusWithoutLock(expectedTs, callback)
+	})
+}
+
+func (c *Consumer) updatePeriodStatusWithoutLock(expectedTs int64, callback func(status *PeriodStatus)) {
+	shard := c.timeline.GetOrCreateShard(expectedTs)
+	if shard.Data2 == nil {
+		shard.Data2 = &PeriodStatus{}
+	}
+	callback(shard.Data2.(*PeriodStatus))
+}
+
+func (c *Consumer) reportLogs(eventTs int64, logs ...string) {
+	event := &pb2.ReportEventRequest_Event{
+		EventTimestamp: eventTs,
+		EventType:      "DIGEST",
+		PayloadType:    "log_conumser_digest",
+		Tags:           c.getCommonEventTags(),
+		Logs:           logs,
+	}
+	ioc.RegistryService.ReportEventAsync(event)
+}
+
+func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailData) {
 	if len(datum) == 0 {
+		c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
+			status.EmitSuccess = true
+			c.reportUpEvent(expectedTs, status)
+		})
 		return
 	}
 
 	c.addCommonTags(datum)
 
-	c.output.WriteBatchAsync(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum)
+	go func() {
+		err := c.output.WriteBatchSync(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum)
+		c.runInLock(func() {
+			c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
+				if err != nil {
+					status.EmitError += len(datum)
+				} else {
+					status.EmitSuccess = true
+				}
+				c.reportUpEvent(expectedTs, status)
+			})
+
+			if err == nil {
+				c.stat.emitSuccess += int32(len(datum))
+			} else {
+				c.stat.emitError += int32(len(datum))
+				c.reportLogs(expectedTs, fmt.Sprintf("emit error %+v", err))
+				logger.Errorz("[log] [consumer] emit error", zap.String("key", c.key), zap.Error(err))
+			}
+		})
+	}()
 }
 
 func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err error) {
 	c.stat.ioTotal++
 	if err != nil {
-		// 丢弃
-		// c.singleLine.reset()
 		c.stat.ioError++
 		logger.Errorz("[consumer] [log] digest",
 			zap.String("key", c.key),
@@ -141,12 +233,18 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 	}
 	fileNotExists := os.IsNotExist(resp.Error)
 	if fileNotExists {
+		// There is no need to stat ioError when file misses.
+		// This is helpful to reduce server log size.
 		c.stat.miss = true
 		logger.Infoz("[consumer] [log] digest, file not exist", //
 			zap.String("key", c.key),    //
 			zap.String("path", iw.path), //
 		)
 		return
+	}
+
+	if c.firstIOSuccessTime == 0 {
+		c.firstIOSuccessTime = resp.IOStartTime.UnixMilli()
 	}
 
 	// 说明end不完整
@@ -170,18 +268,6 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 		c.maxDataTimestamp = maxTs
 	}
 
-	logger.Infoz("[consumer] [log] digest", //
-		zap.String("key", c.key),                    //
-		zap.String("path", resp.Path),               //
-		zap.Int64("beginOffset", resp.BeginOffset),  //
-		zap.Int64("endOffset", resp.EndOffset),      //
-		zap.Bool("continued", resp.Continued),       //
-		zap.Bool("more", resp.HasMore),              //
-		zap.String("fileId", resp.FileId),           //
-		zap.Time("dataTime", time.UnixMilli(maxTs)), //
-		zap.Error(resp.Error),                       //
-	)
-
 	if c.estimatedMaxDataTimestamp < c.maxDataTimestamp {
 		c.estimatedMaxDataTimestamp = c.maxDataTimestamp
 	}
@@ -196,6 +282,18 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 			c.estimatedMaxDataTimestamp = ts
 		}
 	}
+
+	logger.Infoz("[consumer] [log] digest", //
+		zap.String("key", c.key),                    //
+		zap.String("path", resp.Path),               //
+		zap.Int64("beginOffset", resp.BeginOffset),  //
+		zap.Int64("endOffset", resp.EndOffset),      //
+		zap.Bool("continued", resp.Continued),       //
+		zap.Bool("more", resp.HasMore),              //
+		zap.String("fileId", resp.FileId),           //
+		zap.Time("dataTime", time.UnixMilli(maxTs)), //
+		zap.Error(resp.Error),                       //
+	)
 }
 
 func (c *Consumer) SetStorage(s *storage.Storage) {
@@ -240,6 +338,13 @@ func getCapacity(interval int64) int64 {
 }
 
 func (c *Consumer) Start() {
+	ioc.RegistryService.ReportEventAsync(&pb2.ReportEventRequest_Event{
+		BornTimestamp:  time.Now().UnixMilli(),
+		EventTimestamp: time.Now().UnixMilli(),
+		EventType:      "DIGEST",
+		PayloadType:    "log_monitor_start",
+		Tags:           c.getCommonEventTags(),
+	})
 	logger.Infoz("[consumer] start", zap.String("key", c.key), zap.String("version", c.ct.Version))
 	if c.task.Output != nil {
 		out, err := output.Parse(c.task.Output.Type, c.task.Output)
@@ -268,6 +373,17 @@ func (c *Consumer) maybeReleaseTimeline() {
 }
 
 func (c *Consumer) Stop() {
+	ioc.RegistryService.ReportEventAsync(&pb2.ReportEventRequest_Event{
+		BornTimestamp:  time.Now().UnixMilli(),
+		EventTimestamp: time.Now().UnixMilli(),
+		EventType:      "DIGEST",
+		PayloadType:    "log_monitor_stop",
+		Tags:           c.getCommonEventTags(),
+		Strings: map[string]string{
+			"c_content": string(c.ct.Config.Content),
+			"c_version": c.ct.Config.Version,
+		},
+	})
 	logger.Infoz("[consumer] stop", zap.String("key", c.key), zap.String("version", c.ct.Version))
 
 	if !c.updated {
@@ -281,6 +397,19 @@ func (c *Consumer) Stop() {
 
 func (c *Consumer) Update(o *Consumer) {
 	logger.Infoz("[consumer] [log] update", zap.String("consumer", c.key))
+	ioc.RegistryService.ReportEventAsync(&pb2.ReportEventRequest_Event{
+		BornTimestamp:  time.Now().UnixMilli(),
+		EventTimestamp: time.Now().UnixMilli(),
+		EventType:      "DIGEST",
+		PayloadType:    "log_monitor_update",
+		Tags:           c.getCommonEventTags(),
+		Strings: map[string]string{
+			"c_old_version": o.ct.Config.Version,
+			"c_old_content": string(o.ct.Config.Content),
+			"c_new_version": c.ct.Config.Version,
+			"c_new_content": string(c.ct.Config.Content),
+		},
+	})
 
 	// 继承一些属性 这样状态不会丢失
 	c.stat = o.stat
@@ -295,6 +424,9 @@ func (c *Consumer) Update(o *Consumer) {
 		c.tsWalker = o.tsWalker
 		c.storage = o.storage
 		c.timeline = o.timeline
+		// TODO when file path changed, the firstIOSuccessTime need to be reset to zero
+		c.firstIOSuccessTime = o.firstIOSuccessTime
+		c.printStatCalledCounter = o.printStatCalledCounter
 	}
 
 	// 设置为true, 表明它已经被继承了, 此后stop时不要删除timeline之类的
@@ -443,9 +575,112 @@ func (c *Consumer) createPoint(alignTs int64, groupKeyValues []string) *storage.
 	}
 }
 
+func (c *Consumer) getCommonEventTags() map[string]string {
+	tags := map[string]string{
+		"agent":       agentmeta.GetAgentId(),
+		"t_key":       c.ct.Key,
+		"t_c_key":     c.ct.Config.Key,
+		"t_c_version": c.ct.Config.Version,
+	}
+
+	if pod := c.getTargetPod(); pod != nil {
+		tags["t_ip"] = pod.IP()
+		tags["t_agentIP"] = util.GetLocalIp()
+	} else {
+		tags["t_ip"] = util.GetLocalIp()
+	}
+	return tags
+}
+
+func (c *Consumer) createTaskInfoEvent(stat consumerStat) *pb2.ReportEventRequest_Event {
+	parsedContent := make(map[string]interface{})
+	json2.Unmarshal(c.ct.Config.Content, &parsedContent)
+
+	json := map[string]interface{}{
+		"t_key":    c.key,
+		"in_mdt":   c.maxDataTimestamp,
+		"in_emdt":  c.estimatedMaxDataTimestamp,
+		"c_config": parsedContent,
+		"c_target": c.ct.Target,
+	}
+
+	now := time.Now().UnixMilli()
+	if !stat.miss {
+		lag := (now - c.estimatedMaxDataTimestamp) / 1000
+		if lag > 30 {
+			json["in_lag"] = (now - c.estimatedMaxDataTimestamp) / 1000
+		}
+	}
+
+	if pod := c.getTargetPod(); pod != nil {
+		if c := pod.MainBiz(); c != nil {
+			json["t_tz"] = c.EtcLocaltime
+		}
+	} else {
+		json["t_tz"] = util.GetLocalTimezone()
+	}
+
+	return &pb2.ReportEventRequest_Event{
+		BornTimestamp: now,
+		EventType:     "DIGEST",
+		PayloadType:   "log_monitor_task_info",
+		Tags:          c.getCommonEventTags(),
+		Json:          util.ToJsonString(json),
+	}
+}
+
+func (c *Consumer) createStatEvent(stat consumerStat) *pb2.ReportEventRequest_Event {
+	event := &pb2.ReportEventRequest_Event{
+		BornTimestamp: time.Now().UnixMilli(),
+		EventType:     "STAT",
+		PayloadType:   "log_monitor_stat",
+		Tags:          c.getCommonEventTags(),
+		Numbers: map[string]int64{
+			"in_io_error": int64(stat.ioError),
+
+			"in_bytes":  stat.bytes,
+			"in_lines":  int64(stat.lines),
+			"in_groups": int64(stat.groups),
+
+			"in_miss": util.BoolToInt64(stat.miss),
+
+			"in_broken":    util.BoolToInt64(stat.broken),
+			"in_skip":      util.BoolToInt64(stat.noContinued),
+			"in_processed": int64(stat.processed),
+
+			"f_logparse":  int64(stat.filterLogParseError),
+			"f_ignore":    int64(stat.filterIgnore),
+			"f_timeparse": int64(stat.filterTimeParseError),
+			"f_bwhere":    int64(stat.filterBeforeParseWhere),
+			"f_group":     int64(stat.filterGroup),
+			"f_gkeys":     int64(stat.filterGroupMaxKeys),
+			"f_where":     int64(stat.filterWhere),
+			"f_delay":     int64(stat.filterDelay),
+
+			"out_emit":  int64(stat.emit),
+			"out_error": int64(stat.emitError),
+		},
+		Strings: map[string]string{},
+	}
+	removeZeroNumbers(event)
+	return event
+}
+
 func (c *Consumer) printStat() {
 	stat := c.stat
 	c.stat = consumerStat{}
+
+	{
+		events := []*pb2.ReportEventRequest_Event{c.createStatEvent(stat)}
+		if c.printStatCalledCounter == 0 {
+			events = append(events, c.createTaskInfoEvent(stat))
+		}
+		ioc.RegistryService.ReportEventAsync(events...)
+		c.printStatCalledCounter++
+		if c.printStatCalledCounter > ReportTaskInfoInterval {
+			c.printStatCalledCounter = 0
+		}
+	}
 
 	logger.Infoz("[consumer] [log] stat", //
 		zap.String("key", c.key), //
@@ -466,8 +701,7 @@ func (c *Consumer) printStat() {
 		zap.Int32("flogparse", stat.filterLogParseError),
 		zap.Int32("ftimeparse", stat.filterTimeParseError),
 		zap.Int32("fignore", stat.filterIgnore),
-		zap.Bool("hasLogDelay", stat.hasLogDelay),
-		zap.Bool("miss", stat.miss),
+		zap.Int32("filterDelay", stat.filterDelay),
 		zap.Time("maxDataTime", time.UnixMilli(c.maxDataTimestamp)),
 		zap.Time("estimatedMaxDataTime", time.UnixMilli(c.estimatedMaxDataTimestamp)),
 	)
@@ -516,6 +750,9 @@ func (c *Consumer) SetOutput(output output.Output) {
 }
 
 func (c *Consumer) emit(expectedTs int64) {
+	c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
+		status.estimatedMaxDataTimestamp = c.estimatedMaxDataTimestamp
+	})
 	c.sub.Emit(expectedTs)
 }
 
@@ -726,4 +963,13 @@ func (c *Consumer) executeGroupBy(ctx *LogContext) ([]string, bool) {
 		return nil, false
 	}
 	return groups, true
+}
+
+func removeZeroNumbers(event *pb2.ReportEventRequest_Event) {
+	for key, value := range event.Numbers {
+		if key != "ok" && value == 0 {
+			// this is safe in Golang
+			delete(event.Numbers, key)
+		}
+	}
 }

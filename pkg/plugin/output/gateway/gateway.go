@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
@@ -11,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/batch"
-	"github.com/spf13/cast"
 )
 
 const (
@@ -24,6 +25,7 @@ const (
 type (
 	gatewayOutput struct {
 		processor batch.Processor
+		service   *gateway.Service
 	}
 )
 
@@ -45,13 +47,15 @@ func (c *gatewayOutput) WriteMetrics(metrics []*model.Metric, oe output.Extensio
 }
 
 func newGatewayOutput(config output.Config) (output.Output, error) {
-	pI, err := gatewayProcessorSingletonHolder.Acquire()
+	iiI, err := gatewayProcessorSingletonHolder.Acquire()
 	if err != nil {
 		return nil, err
 	}
-	processor := pI.(batch.Processor)
+	ii := iiI.([]interface{})
+	processor := ii[0].(batch.Processor)
 	return &gatewayOutput{
 		processor: processor,
+		service:   ii[1].(*gateway.Service),
 	}, nil
 }
 
@@ -64,19 +68,27 @@ func (c *gatewayOutput) Stop() {
 }
 
 func (c *gatewayOutput) WriteBatchAsync(configKey, targetKey, metricName string, array []*model.DetailData) error {
-	go c.WriteBatchSync(configKey, targetKey, metricName, array)
+	go c.writeBatchAsync0(configKey, targetKey, metricName, array)
 	return nil
 }
 
 var outputStat = stat.DefaultManager1S.Counter("output.gateway")
 
 func (c *gatewayOutput) WriteBatchSync(configKey, targetKey, metricName string, array []*model.DetailData) error {
-	// TODO 要在这里做攒批吗?
+	converted := convertToTaskResult2(configKey, targetKey, metricName, array)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	resp, err := c.service.WriteMetrics(ctx, converted)
+	if err != nil {
+		return err
+	}
+	if resp.Header.Code != 0 {
+		return fmt.Errorf("server error: %+v", resp)
+	}
+	return nil
+}
 
-	// TODO 大部分场景 异步化 不要阻塞 但失败了要记录日志
-	// TODO 对于重要指标 要同步化 如果返回了可重试的失败则立即重试 并记录日志
-
-	// c.processor.Put(convertToTaskResult(configKey, targetKey, metricName, array))
+func (c *gatewayOutput) writeBatchAsync0(configKey, targetKey, metricName string, array []*model.DetailData) error {
 	converted := convertToTaskResult2(configKey, targetKey, metricName, array)
 	outputStat.Add([]string{
 		configKey,
@@ -86,9 +98,6 @@ func (c *gatewayOutput) WriteBatchSync(configKey, targetKey, metricName string, 
 	for _, tr := range converted {
 		c.processor.Put(tr)
 	}
-
-	// 	c.processor.Put(convertToTaskResult(configKey, targetKey, metricName, array))
-
 	return nil
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/bistream"
+	pb2 "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -109,10 +110,21 @@ func bootstrap() error {
 		CaCertBase64: regConfig.CaCert,
 		Apikey:       appconfig.StdAgentConfig.ApiKey,
 		AgentId:      agentmeta.GetAgentId(),
+		Workspace:    appconfig.StdAgentConfig.Workspace,
 	})
 	if err != nil {
 		return err
 	}
+	ioc.RegistryService = rs
+	rs.ReportEventAsync(&pb2.ReportEventRequest_Event{
+		BornTimestamp: time.Now().UnixMilli(),
+		EventType:     "DIGEST",
+		PayloadType:   "agent_bootstrap",
+		Tags: map[string]string{
+			"agent": agentmeta.GetAgentId(),
+			"ip":    util.GetLocalIp(),
+		},
+	})
 
 	// 开启agent与registry之间的注册/心跳模块
 	am := agent.NewManager(rs)

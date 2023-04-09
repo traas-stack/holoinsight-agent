@@ -49,6 +49,8 @@ type (
 		lastEmitWindow int64
 	}
 	inputWrapperState int8
+	// RunInLock makes a func running in the write lock of the pipeline
+	RunInLock func(func())
 )
 
 const (
@@ -129,6 +131,12 @@ func (p *LogPipeline) setupConsumer0(st *api.SubTask) (ret error) {
 
 	if c.timeline == nil {
 		c.SetStorage(p.s)
+	}
+
+	c.runInLock = func(f func()) {
+		p.Update(func(_ api.Pipeline) {
+			f()
+		})
 	}
 
 	// 启动新consumer

@@ -6,9 +6,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"github.com/golang/protobuf/proto"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	pb2 "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/credentials/insecure"
 	"strings"
@@ -68,6 +68,7 @@ type (
 		Apikey             string
 		CompressionEnabled bool
 		AgentId            string
+		Workspace          string
 	}
 	// registry 服务
 	Service struct {
@@ -77,6 +78,7 @@ type (
 		mutex                         sync.Mutex
 		listeners                     []ReconnectListener
 		lastGetControlConfigsResponse *pb2.GetControlConfigsResponse
+		eventManager                  *eventManager
 	}
 	ReconnectListener interface {
 		OnReconnect()
@@ -101,6 +103,10 @@ func New(config Config) (*Service, error) {
 
 	rs.syncControlConfigsOnce()
 	go rs.internalLoop()
+
+	rs.eventManager = newEventManager(rs.reportEventBatchSync)
+	rs.eventManager.start()
+
 	return rs, nil
 }
 
@@ -205,7 +211,8 @@ func (s *Service) Ping(ctx context.Context) error {
 // 创建通用请求头
 func (s *Service) createReqHeader() *commonpb.CommonRequestHeader {
 	return &commonpb.CommonRequestHeader{
-		Apikey: s.config.Apikey,
+		Apikey:    s.config.Apikey,
+		Workspace: s.config.Workspace,
 	}
 }
 
@@ -334,9 +341,7 @@ func (s *Service) reconnect() error {
 
 	if old != nil {
 		// 延迟关闭, 足够安全了
-		time.AfterFunc(delayCloseDuration, func() {
-			old.Close()
-		})
+		s.delayClose(old)
 	}
 
 	return nil
@@ -352,7 +357,15 @@ func ping(ctx context.Context, conn *grpc.ClientConn) error {
 // Stop 停止实例, 只能被调用一次
 func (s *Service) Stop() {
 	close(s.stop)
-	s.conn.Close()
+	// delay close the underlying conn
+	time.AfterFunc(delayCloseDuration, func() {
+		s.mutex.Lock()
+		defer s.mutex.Unlock()
+
+		s.delayClose(s.conn)
+		s.conn = nil
+	})
+	s.eventManager.stop()
 }
 
 func (s *Service) ListenReconnect(listener ReconnectListener) {
@@ -409,9 +422,7 @@ func (s *Service) MetaFullSync(request *pb2.MetaSync_FullSyncRequest) error {
 	defer cancel()
 
 	opts := s.getCallOptions()
-	request.Header = &commonpb.CommonRequestHeader{
-		Apikey: s.config.Apikey,
-	}
+	request.Header = s.createReqHeader()
 	_, err := pb2.NewRegistryServiceForAgentClient(s.conn).MetaFullSync(ctx, request, opts...)
 	return err
 }
@@ -421,9 +432,31 @@ func (s *Service) MetaDeltaSync(request *pb2.MetaSync_DeltaSyncRequest) error {
 	defer cancel()
 
 	opts := s.getCallOptions()
-	request.Header = &commonpb.CommonRequestHeader{
-		Apikey: s.config.Apikey,
-	}
+	request.Header = s.createReqHeader()
 	_, err := pb2.NewRegistryServiceForAgentClient(s.conn).MetaDeltaSync(ctx, request, opts...)
 	return err
+}
+
+func (s *Service) ReportEventAsync(events ...*pb2.ReportEventRequest_Event) {
+	s.eventManager.add(events)
+}
+
+func (s *Service) reportEventBatchSync(events []*pb2.ReportEventRequest_Event) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	opts := s.getCallOptions()
+	request := &pb2.ReportEventRequest{Events: events}
+	request.Header = s.createReqHeader()
+	_, err := pb2.NewRegistryServiceForAgentClient(s.conn).ReportEvents(ctx, request, opts...)
+	return err
+}
+
+func (s *Service) delayClose(conn *grpc.ClientConn) {
+	if conn == nil {
+		return
+	}
+	time.AfterFunc(delayCloseDuration, func() {
+		conn.Close()
+	})
 }

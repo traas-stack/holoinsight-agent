@@ -72,6 +72,12 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 	if *maxTs < ts {
 		*maxTs = ts
 	}
+
+	c.parent.updatePeriodStatusWithoutLock(alignTs, func(status *PeriodStatus) {
+		status.Broken = c.parent.stat.broken
+		status.NoContinued = c.parent.stat.noContinued
+	})
+
 	if processGroupEvent != nil {
 		processGroupEvent.Set("timestamp", ts)
 	}
@@ -88,8 +94,6 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 		return
 	}
 	ctx.whereEvent = nil
-
-	c.parent.stat.processed++
 
 	groups, b := c.parent.executeGroupBy(ctx)
 	if !b {
@@ -110,7 +114,7 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 	// get data shard
 	shard := c.parent.timeline.GetOrCreateShard(alignTs)
 	if shard.Frozen {
-		c.parent.stat.hasLogDelay = true
+		c.parent.stat.filterDelay++
 		// has log delay there is no need to process it
 		return
 	}
@@ -120,10 +124,11 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 		return
 	}
 
+	c.parent.stat.processed++
 	c.parent.executeSelectAgg(processGroupEvent, ctx, point)
 }
 
-func (c *logStatSubConsumer) Emit(expectedTs int64) {
+func (c *logStatSubConsumer) Emit(expectedTs int64) bool {
 
 	// TODO 取走数据后给shard打一个标记, 表示已经取走数据了
 	// 下次如果还往该shard写数据, 这这些数据是旧的
@@ -134,7 +139,7 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) {
 		shard := timeline.GetShard(expectedTs)
 		if shard == nil {
 			logger.Infoz("[consumer] [log] emit nil", //
-				zap.String("key", c.parent.key), //
+				zap.String("key", c.parent.key),            //
 				zap.Time("ts", time.UnixMilli(expectedTs))) //
 			return
 		}
@@ -175,15 +180,8 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) {
 
 	})
 
-	if len(datum) > 0 && c.parent.output != nil {
-		c.parent.stat.emit += int32(len(datum))
-		c.parent.AddBatchDetailDatus(datum)
-	}
+	c.parent.stat.emit += int32(len(datum))
+	c.parent.AddBatchDetailDatus(expectedTs, datum)
 
-	// logger.Infof("[consumer] [log] [%s] emit ts=[%s] count=[%d]", c.key, time.UnixMilli(expectedTs).Format(time.RFC3339), len(datum))
-	logger.Infoz("[consumer] [log] emit", //
-		zap.String("key", c.parent.key),            //
-		zap.Time("ts", time.UnixMilli(expectedTs)), //
-		zap.Int("count", len(datum)),               //
-	)
+	return len(datum) > 0
 }

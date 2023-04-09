@@ -83,10 +83,12 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 	// get data shard
 	shard := c.parent.timeline.GetOrCreateShard(alignTs)
 	if shard.Frozen {
-		c.parent.stat.hasLogDelay = true
+		c.parent.stat.filterDelay++
 		// has log delay there is no need to process it
 		return
 	}
+
+	c.parent.stat.processed++
 
 	var state *logAnalysisSubConsumerState
 	if shard.Data == nil {
@@ -115,7 +117,7 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 	state.logAnalyzer.Analyze(ctx.GetLine())
 }
 
-func (c *logAnalysisSubConsumer) Emit(expectedTs int64) {
+func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 	var state *logAnalysisSubConsumerState
 	c.parent.timeline.View(func(timeline *storage.Timeline) {
 		shard := c.parent.timeline.GetShard(expectedTs)
@@ -133,7 +135,8 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) {
 	if state == nil {
 		// emit nil 这可能是正常的 比如这一分钟确实没有日志
 		logger.Debugz("[consumer] [loganalysis] emit nil", zap.Int64("ts", expectedTs))
-		return
+		c.parent.AddBatchDetailDatus(expectedTs, nil)
+		return false
 	}
 
 	analyzedLogs := state.logAnalyzer.AnalyzedLogs()
@@ -169,7 +172,6 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) {
 
 	if totalCount == 0 {
 		logger.Debugz("[consumer] [loganalysis] empty logs", zap.String("key", c.parent.key))
-		return
 	}
 
 	if unknownPatternLogsCount > 0 {
@@ -193,5 +195,7 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) {
 		})
 	}
 
-	c.parent.AddBatchDetailDatus(metrics)
+	c.parent.AddBatchDetailDatus(expectedTs, metrics)
+
+	return len(metrics) > 0
 }
