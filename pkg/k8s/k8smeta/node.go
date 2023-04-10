@@ -1,7 +1,6 @@
 package k8smeta
 
 import (
-	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -25,9 +24,7 @@ var (
 		NodeIndexByIp: func(obj interface{}) ([]string, error) {
 			node := obj.(*v1.Node)
 			ip := k8sutils.GetNodeIP(node)
-			if ip == "" {
-				return nil, errors.New("no ip")
-			}
+			// If we return err here, it will lead to panic in k8s internal !!!
 			return []string{ip}, nil
 		},
 	}
