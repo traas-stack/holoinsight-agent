@@ -36,6 +36,8 @@ type (
 		Frozen bool
 		// 有一些数据是shard粒度的, 并不需要做到 points 粒度
 		Data interface{}
+		// Data2 field is for extension
+		Data2 interface{}
 	}
 	Point struct {
 		// 时间戳

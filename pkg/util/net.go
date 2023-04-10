@@ -3,10 +3,12 @@ package util
 import (
 	"net"
 	"os"
+	"time"
 )
 
 var localIp string
 var hostname string
+var timezone string
 
 func init() {
 	{
@@ -82,4 +84,9 @@ func GetHostname() string {
 
 func SetLocalIp(ip string) {
 	localIp = ip
+}
+
+func GetLocalTimezone() string {
+	tz, _ := time.Now().Zone()
+	return tz
 }
