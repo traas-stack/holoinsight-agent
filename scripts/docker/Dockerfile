@@ -6,7 +6,7 @@ ARG GOPROXY=direct
 RUN env
 COPY . /workspace
 
-RUN /workspace/scripts/build/build-in-container.sh && \
+RUN /workspace/scripts/build/build-using-go.sh && \
   mv /workspace/build/`go env GOOS`-`go env GOARCH`/bin/agent /agent && \
   mv /workspace/build/`go env GOOS`-`go env GOARCH`/bin/helper /helper
 
