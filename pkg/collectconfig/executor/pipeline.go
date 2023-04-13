@@ -293,16 +293,20 @@ func (p *LogPipeline) checkInputLoop() {
 }
 
 func (p *LogPipeline) printStatLoop() {
-	checkInputsTimer := time.NewTicker(time.Minute)
-	defer checkInputsTimer.Stop()
+	timer := util.NewAlignTsTimer(60*1000, 1000, 0, 0, false)
+	defer timer.Stop()
+
+	// trigger timer
+	timer.Next()
 	for {
 		select {
 		case <-p.stop:
 			return
-		case <-checkInputsTimer.C:
+		case <-timer.Chan():
 			p.View(func(pipeline api.Pipeline) {
 				p.printStat()
 			})
+			timer.Next()
 		}
 	}
 }

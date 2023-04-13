@@ -16,10 +16,11 @@ type (
 		// 如果是基于 separator 分割的则会有该字段
 		columns []string
 		// map模式
-		columnMap  map[string]interface{}
-		tz         *time.Location
-		event      *event.Event
-		whereEvent *event.WhereEvent
+		columnMap    map[string]interface{}
+		tz           *time.Location
+		event        *event.Event
+		whereEvent   *event.WhereEvent
+		periodStatus *PeriodStatus
 	}
 )
 
@@ -47,4 +48,5 @@ func (c *LogContext) clearData() {
 	c.columnMap = nil
 	c.event = nil
 	c.whereEvent = nil
+	c.periodStatus = nil
 }
