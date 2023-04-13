@@ -104,6 +104,7 @@ type (
 		filterGroup            int32
 		filterGroupMaxKeys     int32
 		filterIgnore           int32
+		filterMultiline        int32
 		filterDelay            int32
 		emit                   int32
 		emitSuccess            int32
@@ -129,9 +130,9 @@ type (
 		AddBatchDetailDatus([]*model.DetailData)
 	}
 
+	// PeriodStatus holds stats for that time period
 	PeriodStatus struct {
-		Broken                    bool
-		NoContinued               bool
+		stat                      consumerStat
 		EmitSuccess               bool
 		EmitError                 int
 		estimatedMaxDataTimestamp int64
@@ -147,7 +148,7 @@ func (c *Consumer) reportUpEvent(expectedTs int64, ps *PeriodStatus) {
 		ps.estimatedMaxDataTimestamp >= expectedTs+c.Window.Interval.Milliseconds() &&
 		c.firstIOSuccessTime < expectedTs
 
-	ioc.RegistryService.ReportEventAsync(&pb2.ReportEventRequest_Event{
+	event := &pb2.ReportEventRequest_Event{
 		BornTimestamp:  time.Now().UnixMilli(),
 		EventTimestamp: expectedTs,
 		EventType:      "STAT",
@@ -157,9 +158,21 @@ func (c *Consumer) reportUpEvent(expectedTs int64, ps *PeriodStatus) {
 			// up==1 means task is running
 			"up": 1,
 			"ok": util.BoolToInt64(ok), //
+
+			"in_groups":    int64(ps.stat.groups),
+			"in_processed": int64(ps.stat.processed),
+
+			"f_where": int64(ps.stat.filterWhere),
+			"f_group": int64(ps.stat.filterGroup),
+			"f_gkeys": int64(ps.stat.filterGroupMaxKeys),
+			"f_delay": int64(ps.stat.filterDelay),
+
+			"p_select": int64(ps.stat.selectError),
 		},
 		Strings: nil,
-	})
+	}
+	removeZeroNumbers(event)
+	ioc.RegistryService.ReportEventAsync(event)
 }
 
 func (c *Consumer) updatePeriodStatus(expectedTs int64, callback func(status *PeriodStatus)) {
@@ -174,6 +187,14 @@ func (c *Consumer) updatePeriodStatusWithoutLock(expectedTs int64, callback func
 		shard.Data2 = &PeriodStatus{}
 	}
 	callback(shard.Data2.(*PeriodStatus))
+}
+
+func (c *Consumer) getOrCreatePeriodStatusWithoutLock(expectedTs int64) *PeriodStatus {
+	shard := c.timeline.GetOrCreateShard(expectedTs)
+	if shard.Data2 == nil {
+		shard.Data2 = &PeriodStatus{}
+	}
+	return shard.Data2.(*PeriodStatus)
 }
 
 func (c *Consumer) reportLogs(eventTs int64, logs ...string) {
@@ -532,6 +553,7 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 				fullGroup, err = c.multilineAccumulator.add(ctx)
 				if err != nil {
 					logger.Debugz("[consumer] parse multiline error", zap.String("consumer", c.key), zap.Error(err))
+					c.stat.filterMultiline++
 					continue
 				}
 				if fullGroup == nil {
@@ -656,9 +678,13 @@ func (c *Consumer) createStatEvent(stat consumerStat) *pb2.ReportEventRequest_Ev
 			"f_gkeys":     int64(stat.filterGroupMaxKeys),
 			"f_where":     int64(stat.filterWhere),
 			"f_delay":     int64(stat.filterDelay),
+			"f_multiline": int64(stat.filterMultiline),
 
 			"out_emit":  int64(stat.emit),
 			"out_error": int64(stat.emitError),
+
+			"p_agg":    int64(stat.aggWhereError),
+			"p_select": int64(stat.selectError),
 		},
 		Strings: map[string]string{},
 	}
@@ -839,6 +865,7 @@ func (c *Consumer) executeWhere(ctx *LogContext) bool {
 			logger.Debugz("[consumer] filter where", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()))
 		}
 		c.stat.filterWhere++
+		ctx.periodStatus.stat.filterWhere++
 		return false
 	}
 
@@ -861,6 +888,7 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 						processGroupEvent.Error("agg where error: %+v", err)
 					}
 					c.stat.aggWhereError++
+					ctx.periodStatus.stat.aggWhereError++
 					logger.Debugz("[consumer] agg error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				} else {
 					logger.Debugz("[consumer] agg where false", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
@@ -882,6 +910,7 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 			str, err := so.elect.ElectString(ctx)
 			if err != nil {
 				c.stat.selectError++
+				ctx.periodStatus.stat.selectError++
 				logger.Debugz("[consumer] select string error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				continue
 			}
@@ -897,6 +926,7 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 					processGroupEvent.Error("field=[%s], elect number error %+v, skip", point.ValueNames[j], err)
 				}
 				c.stat.selectError++
+				ctx.periodStatus.stat.selectError++
 				logger.Debugz("[consumer] select number error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				continue
 			}
@@ -924,7 +954,7 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 }
 
 // get or create storage point, returns nil if creation will exceed maxKeySize
-func (c *Consumer) getOrCreateStoragePoint(alignTs int64, shard *storage.Shard, groups []string) *storage.Point {
+func (c *Consumer) getOrCreateStoragePoint(alignTs int64, ctx *LogContext, shard *storage.Shard, groups []string) *storage.Point {
 	pointKey := c.joinPointKey(groups)
 
 	// point 持有这一分钟的聚合结果
@@ -933,6 +963,7 @@ func (c *Consumer) getOrCreateStoragePoint(alignTs int64, shard *storage.Shard, 
 		if c.maxKeySize > 0 && shard.PointCount() >= c.maxKeySize {
 			logger.Debugz("[consumer] filter maxKeySize", zap.String("key", c.key), zap.Int("maxKeySize", c.maxKeySize))
 			c.stat.filterGroupMaxKeys++
+			ctx.periodStatus.stat.filterGroupMaxKeys++
 			return nil
 		}
 		// 此处 groups 是对 line 的切分引用, 我们不能直接将 groups 保存下来, 否则原始 line 无法释放
@@ -960,6 +991,7 @@ func (c *Consumer) executeGroupBy(ctx *LogContext) ([]string, bool) {
 	if err != nil {
 		logger.Debugz("[consumer] group error", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()), zap.Error(err))
 		c.stat.filterGroup++
+		ctx.periodStatus.stat.filterGroup++
 		return nil, false
 	}
 	return groups, true

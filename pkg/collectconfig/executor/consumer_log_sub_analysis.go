@@ -80,15 +80,23 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 		*maxTs = ts
 	}
 
+	periodStatus := c.parent.getOrCreatePeriodStatusWithoutLock(alignTs)
+	periodStatus.stat.broken = periodStatus.stat.broken || c.parent.stat.broken
+	periodStatus.stat.noContinued = periodStatus.stat.noContinued || c.parent.stat.noContinued
+	periodStatus.stat.groups++
+	ctx.periodStatus = periodStatus
+
 	// get data shard
 	shard := c.parent.timeline.GetOrCreateShard(alignTs)
 	if shard.Frozen {
 		c.parent.stat.filterDelay++
+		ctx.periodStatus.stat.filterDelay++
 		// has log delay there is no need to process it
 		return
 	}
 
 	c.parent.stat.processed++
+	ctx.periodStatus.stat.processed++
 
 	var state *logAnalysisSubConsumerState
 	if shard.Data == nil {
