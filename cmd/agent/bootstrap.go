@@ -124,6 +124,9 @@ func bootstrap() error {
 			"agent": agentmeta.GetAgentId(),
 			"ip":    util.GetLocalIp(),
 		},
+		Json: util.ToJsonString(map[string]interface{}{
+			"config": appconfig.StdAgentConfig,
+		}),
 	})
 
 	// 开启agent与registry之间的注册/心跳模块
