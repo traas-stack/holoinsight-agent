@@ -101,6 +101,7 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 	var state *logAnalysisSubConsumerState
 	if shard.Data == nil {
 		state = newLogAnalysisSubConsumerState(c.conf)
+		shard.Data = state
 	} else {
 		state = shard.Data.(*logAnalysisSubConsumerState)
 	}
@@ -187,7 +188,7 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 			Timestamp: expectedTs,
 			Tags:      map[string]string{"eventName": "__analysis"},
 			Values: map[string]interface{}{
-				"value": util.ToJsonString(&loganalysis.Unknown{
+				"analysis": util.ToJsonString(&loganalysis.Unknown{
 					AnalyzedLogs: analyzedLogs,
 				}),
 			},
@@ -197,7 +198,7 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 			Timestamp: expectedTs,
 			Tags:      map[string]string{"eventName": "__analysis"},
 			Values: map[string]interface{}{
-				"count": unknownPatternLogsCount,
+				"value": unknownPatternLogsCount,
 			},
 			SingleValue: false,
 		})
