@@ -100,7 +100,7 @@ func NewSysPipeline(ct *collecttask.CollectTask, sqlTask *collectconfig.SQLTask)
 	if sqlTask.GroupBy != nil && len(sqlTask.GroupBy.Groups) > 0 {
 		tags = make(map[string]string, len(sqlTask.GroupBy.Groups))
 		for _, g := range sqlTask.GroupBy.Groups {
-			if g.Elect != nil && g.Elect.Type == "refMeta" && g.Elect.RefMeta != nil {
+			if g.Elect != nil && g.Elect.Type == collectconfig.EElectRefMeta && g.Elect.RefMeta != nil {
 				value := ""
 				switch g.Elect.RefMeta.Name {
 				case "ip":
@@ -108,7 +108,7 @@ func NewSysPipeline(ct *collecttask.CollectTask, sqlTask *collectconfig.SQLTask)
 				case "hostname":
 					value = util.GetHostname()
 				default:
-					// nothing
+					logger.Warnz("[pipeline] [sys] unknown refMeta", zap.Any("config", sqlTask))
 				}
 				if value != "" {
 					tags[g.Name] = value
