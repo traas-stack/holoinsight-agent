@@ -14,8 +14,10 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/alibabacloud"
+	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/sys"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/nvidia_smi"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 	"runtime"
@@ -70,7 +72,7 @@ func (m *Manager) Start() {
 
 	// 初始化加载所有配置
 
-	tasks := m.ctm.GetAll()
+	tasks := m.getAllTasks()
 	for _, task := range tasks {
 		util.WithRecover(func() {
 			m.processTask(task, true, true)
@@ -84,29 +86,32 @@ func (m *Manager) Start() {
 	m.ctm.Listen(m.listener)
 }
 
+var telegrafStyleTaskTypes = make(map[string]bool)
+
+func init() {
+	telegrafStyleTaskTypes["jvmtask"] = true
+	telegrafStyleTaskTypes["springboottask"] = true
+	telegrafStyleTaskTypes["mysqltask"] = true
+	telegrafStyleTaskTypes["httpcheck"] = true
+	telegrafStyleTaskTypes["dialcheck"] = true
+	telegrafStyleTaskTypes["obcollector"] = true
+	telegrafStyleTaskTypes["gpu"] = true
+}
+
 func (m *Manager) processTask(task *collecttask.CollectTask, add bool, init bool) {
-	configType := trimType(task.Config.Type)
-	switch configType {
-	case "AliCloudTask":
-		m.processAliCloudTask(task, add, init)
-	case "OpenmetricsScraperDTO":
-		// just ignore
-	case "JvmTask":
-		fallthrough
-	case "SpringBootTask":
-		fallthrough
-	case "MysqlTask":
-		fallthrough
-	case "httpcheck":
-		fallthrough
-	case "dialcheck":
-		fallthrough
-	case "obcollector":
+	configType := standardizeType(task.Config.Type)
+	if telegrafStyleTaskTypes[configType] {
 		m.processTelegrafTasks(task, add, init)
+		return
+	}
+
+	switch configType {
+	case "alicloudtask":
+		m.processAliCloudTask(task, add, init)
+	case "openmetricsscraperdto":
+		// just ignore
 	// SQL 风格的tasks
-	case "SQLTASK":
-		fallthrough
-	case "SqlTask":
+	case "sqltask":
 		fallthrough
 	case "":
 		m.processSqlTask(task, add, init)
@@ -117,12 +122,12 @@ func (m *Manager) processTask(task *collecttask.CollectTask, add bool, init bool
 	}
 }
 
-func trimType(t string) string {
+func standardizeType(t string) string {
 	index := strings.LastIndexByte(t, '.')
-	if index < 0 {
-		return t
+	if index >= 0 {
+		t = t[index+1:]
 	}
-	return t[index+1:]
+	return strings.ToLower(t)
 }
 
 func (m *Manager) processSqlTask(task *collecttask.CollectTask, add, init bool) {
@@ -132,6 +137,11 @@ func (m *Manager) processSqlTask(task *collecttask.CollectTask, add, init bool) 
 		logger.Configz("[pm] parse sql task error", //
 			zap.String("key", task.Key), //
 			zap.Error(err))
+		return
+	}
+
+	if util.StringSliceContains(commonSysTaskTypes, sqlTask.From.Type) && !strings.HasPrefix(task.Config.Key, builtinConfigPrefix) {
+		logger.Infoz("[pm] ignore task with builtin task types", zap.Any("task", task))
 		return
 	}
 
@@ -292,4 +302,102 @@ func (m *Manager) processTelegrafTasks(task *collecttask.CollectTask, add bool, 
 
 func (l *listenerImpl) OnUpdate(delta *collecttask.Delta) {
 	l.m.onUpdate(delta)
+}
+
+func (m *Manager) getAllTasks() []*collecttask.CollectTask {
+	tasks := m.ctm.GetAll()
+
+	mode := appconfig.StdAgentConfig.Mode
+	if mode == core.AgentModeSidecar || mode == core.AgentModeDaemonset {
+		tasks = append(tasks, m.getBuiltInTasks()...)
+	}
+	return tasks
+}
+
+func (m *Manager) getBuiltInTasks() []*collecttask.CollectTask {
+	// TODO load built-in tasks from files
+
+	var tasks []*collecttask.CollectTask
+
+	minuteExecuteRule := &collectconfig.ExecuteRule{
+		Type:      "fixedRate",
+		FixedRate: 60_000,
+	}
+	minuteBaseConf := &base.Conf{
+		ExecuteRule: minuteExecuteRule,
+	}
+
+	mode := appconfig.StdAgentConfig.Mode
+	if mode == core.AgentModeSidecar {
+		for _, taskType := range commonSysTaskTypes {
+			sqltask := &collectconfig.SQLTask{
+				From: &collectconfig.From{
+					Type: taskType,
+				},
+				Window: nil,
+				Output: &collectconfig.Output{
+					Type: "gateway",
+					Gateway: &collectconfig.Gateway{
+						MetricName: "system_%s",
+					},
+				},
+				GroupBy:     &collectconfig.GroupBy{},
+				ExecuteRule: minuteExecuteRule,
+			}
+			for _, tag := range commonSysTaskTags {
+				sqltask.GroupBy.Groups = append(sqltask.GroupBy.Groups, &collectconfig.Group{
+					Name: tag,
+					Elect: &collectconfig.Elect{
+						Type: collectconfig.EElectRefMeta,
+						RefMeta: &collectconfig.ElectRegMeta{
+							Name: tag,
+						},
+					},
+				})
+			}
+			configKey := builtinConfigPrefix + taskType
+			tasks = append(tasks, &collecttask.CollectTask{
+				Key:     configKey,
+				Version: "1",
+				Config: &collecttask.CollectConfig{
+					Key:     configKey,
+					Type:    "SQLTASK",
+					Version: "1",
+					Content: util.ToJsonBytes(sqltask),
+				},
+				Target: &collecttask.CollectTarget{
+					Key:     collecttask.TargetLocalhost,
+					Type:    collecttask.TargetLocalhost,
+					Version: "1",
+					Meta:    make(map[string]string),
+				},
+			})
+			logger.Infoz("[pipeline] [builtin] enable", zap.String("task", configKey))
+		}
+	}
+	if mode == core.AgentModeSidecar || mode == core.AgentModeDaemonset {
+		if nvidia_smi.IsNvidiaEnabled() {
+			tasks = append(tasks, &collecttask.CollectTask{
+				Key:     builtinConfigPrefix + "_gpu",
+				Version: "1",
+				Config: &collecttask.CollectConfig{
+					Key:     builtinConfigPrefix + "_gpu",
+					Type:    "gpu",
+					Version: "1",
+					Content: util.ToJsonBytes(minuteBaseConf),
+				},
+				Target: &collecttask.CollectTarget{
+					Key:     collecttask.TargetLocalhost,
+					Type:    collecttask.TargetLocalhost,
+					Version: "1",
+					Meta:    make(map[string]string),
+				},
+			})
+			logger.Infoz("[pipeline] [builtin] nvidia-smi found, BUILTIN_gpu task is enabled")
+		} else {
+			logger.Infoz("[pipeline] [builtin] nvidia-smi not found, BUILTIN_gpu task is disabled")
+		}
+	}
+
+	return tasks
 }
