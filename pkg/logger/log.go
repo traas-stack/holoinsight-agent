@@ -37,7 +37,14 @@ func (a alwaysLevel) Enabled(level zapcore.Level) bool {
 }
 
 func SetupZapLogger() {
-	dev := appconfig.IsDev()
+	if appconfig.IsDev() {
+		return
+	}
+	setupZapLogger0(false)
+	registerHttpHandler()
+}
+
+func setupZapLogger0(dev bool) {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:          "time",
 		LevelKey:         "level",
@@ -102,8 +109,6 @@ func SetupZapLogger() {
 	zapLogger.errorS = zapLogger.error.Sugar()
 	zapLogger.configS = zapLogger.config.Sugar()
 	zapLogger.metaS = zapLogger.meta.Sugar()
-
-	registerHttpHandler()
 }
 
 func Debugz(msg string, fields ...zap.Field) {
@@ -174,4 +179,8 @@ func IsDebugEnabled() bool {
 }
 
 func TestMode() {
+}
+
+func init() {
+	setupZapLogger0(true)
 }

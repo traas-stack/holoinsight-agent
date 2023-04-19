@@ -8,6 +8,7 @@ import (
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/dialcheckw"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/httpcheckw"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/jvm"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/nvidia_smi"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/springboot"
 	"strings"
 )
