@@ -2,15 +2,16 @@ package inspect
 
 import (
 	"encoding/json"
-	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
-	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
-	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
+	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/nvidia_smi"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"os"
 	"runtime"
 	"time"
@@ -39,6 +40,11 @@ func Inspect(req *pb.InspectRequest, resp *pb.InspectResponse) error {
 		m["agent"] = agentInfo
 	} else {
 		m["agent"] = CreateAgentInfo()
+		if nvidia_smi.IsNvidiaEnabled() {
+			if info, err := (&nvidia_smi.NvidiaInput{}).GetBasicInfo(); err == nil {
+				m["gpu"] = info
+			}
+		}
 	}
 	m["host"] = map[string]interface{}{
 		"info": info,
