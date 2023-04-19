@@ -192,7 +192,7 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 					AnalyzedLogs: analyzedLogs,
 				}),
 			},
-			SingleValue: true,
+			SingleValue: false,
 		})
 		metrics = append(metrics, &model.DetailData{
 			Timestamp: expectedTs,
@@ -200,7 +200,7 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 			Values: map[string]interface{}{
 				"value": unknownPatternLogsCount,
 			},
-			SingleValue: false,
+			SingleValue: true,
 		})
 	}
 
