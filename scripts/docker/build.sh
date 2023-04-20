@@ -23,6 +23,7 @@ else
   if [ -n "$GOPROXY" ]; then
     build_opts="--build-arg GOPROXY=$GOPROXY"
   fi
+  ./scripts/gen-git-info.sh
 fi
 
 docker buildx build \
