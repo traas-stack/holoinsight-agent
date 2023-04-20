@@ -168,14 +168,14 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 		metrics = append(metrics, &model.DetailData{
 			Timestamp:   expectedTs,
 			Tags:        map[string]string{"eventName": pattern},
-			Values:      map[string]interface{}{"value": util.ToJsonString(r)},
-			SingleValue: true,
+			Values:      map[string]interface{}{"analysis": util.ToJsonString(r)},
+			SingleValue: false,
 		})
 		metrics = append(metrics, &model.DetailData{
 			Timestamp:   expectedTs,
 			Tags:        map[string]string{"eventName": pattern},
-			Values:      map[string]interface{}{"count": t.Count},
-			SingleValue: false,
+			Values:      map[string]interface{}{"value": t.Count},
+			SingleValue: true,
 		})
 	}
 
