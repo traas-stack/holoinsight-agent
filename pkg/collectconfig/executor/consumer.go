@@ -787,6 +787,21 @@ func (c *Consumer) executeBeforeParseWhere(ctx *LogContext) bool {
 	if c.BeforeParseWhere == nil {
 		return true
 	}
+
+	// When execute 'beforeParseWhere', we treat whole line group as a string.
+	// So many filters don't need to consider the multiline situation.
+	if len(ctx.log.Lines) > 1 {
+		content := strings.Join(ctx.log.Lines, "\n")
+		bak := ctx.log
+		ctx.log = &LogGroup{
+			Line:  content,
+			Lines: []string{content},
+		}
+		defer func() {
+			ctx.log = bak
+		}()
+	}
+
 	if b, err := c.BeforeParseWhere.Test(ctx); !b {
 		if err != nil {
 			if ctx.event != nil {
