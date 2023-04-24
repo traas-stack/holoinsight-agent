@@ -26,7 +26,7 @@ func parseMultiline(cfg *collectconfig.FromLogMultiline) (*xMultiline, error) {
 		return nil, nil
 	}
 	if cfg.Where == nil {
-		return nil, errors.New("multiline.start is nil")
+		return nil, errors.New("multiline.where is nil")
 	}
 	what := multilineWhatPrevious
 	switch cfg.What {
