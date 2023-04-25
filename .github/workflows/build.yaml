@@ -13,10 +13,18 @@ jobs:
       with:
         go-version: 1.19
         cache: true
-    - name: Build HoloInsight Agent
-      shell: bash
-      run: |
-        export GOOS=linux
-        export GOARCH=amd64
-        ./scripts/gen-git-info.sh
-        ./scripts/build/build-using-go.sh
+#    - name: Build HoloInsight Agent
+#      shell: bash
+#      run: |
+#        export GOOS=linux
+#        export GOARCH=amd64
+#        ./scripts/gen-git-info.sh
+#        ./scripts/build/build-using-go.sh
+    - name: pre-commit
+      uses: pre-commit/action@v3.0.0
+      with:
+        extra_args: --all-files
+    - name: pre-commit 2
+      uses: pre-commit/action@v3.0.0
+      with:
+        extra_args: commitizen-branch

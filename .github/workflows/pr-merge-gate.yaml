@@ -24,3 +24,7 @@ jobs:
         export GOARCH=amd64
         ./scripts/gen-git-info.sh
         ./scripts/build/build-using-go.sh
+    - name: pre-commit
+      uses: pre-commit/action@v3.0.0
+      with:
+        extra_args: --all-files

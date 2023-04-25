@@ -19,7 +19,7 @@ repos:
     hooks:
       - id: commitizen
       - id: commitizen-branch
-        stages: [ push ]
+        stages: [ post-commit, push, manual ]
 
   - repo: https://github.com/Lucas-C/pre-commit-hooks
     rev: v1.3.1
@@ -30,8 +30,5 @@ repos:
         args:
           - --license-filepath
           - HEADER
-          - --no-extra-eol
           - --comment-style
-          - |
-            /*| *| */
-            
+          - /*| *| */
