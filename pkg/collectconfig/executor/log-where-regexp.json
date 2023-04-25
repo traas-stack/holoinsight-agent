@@ -9,7 +9,7 @@
     ]
   },
   "from": {
-    "type": "cpu",
+    "type": "cpu"
   },
   "where": {
     "regexp": {

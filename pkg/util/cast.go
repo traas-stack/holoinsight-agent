@@ -1,3 +1,7 @@
+/*
+ * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
+ */
+
 package util
 
 // BoolToInt64 converts bool to int64
