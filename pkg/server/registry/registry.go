@@ -1,3 +1,7 @@
+/*
+ * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
+ */
+
 package registry
 
 // 这个包提供与Registry交互的能力, 但需要有另外一个组件来调用它, 比如注册agent/心跳/配置同步/双向流

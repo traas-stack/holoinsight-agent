@@ -1,3 +1,7 @@
+/*
+ * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
+ */
+
 // Package appconfig 应用程序级别的全局配置, 它在初始化顺序里是第一顺位, 不要依赖其他的业务包
 package appconfig
 

@@ -1,3 +1,7 @@
+/*
+ * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
+ */
+
 // Package agentmeta 这个文件本来是放在 agent 包下, 但 agent 包下包含一些 manager, 可能会引起循环依赖, 故单独放到 agentmeta 包下
 package agentmeta
 

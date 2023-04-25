@@ -1,3 +1,7 @@
+/*
+ * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
+ */
+
 package alibabacloud
 
 // https://help.aliyun.com/document_detail/201639.html
