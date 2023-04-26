@@ -24,7 +24,14 @@ jobs:
       uses: pre-commit/action@v3.0.0
       with:
         extra_args: --all-files
-    - name: pre-commit 2
-      uses: pre-commit/action@v3.0.0
+
+    # https://conventionalcommits.org/
+    - name: Check Commit Type
+      uses: gsactions/commit-message-checker@v2
       with:
-        extra_args: commitizen-branch
+        pattern: '(?s)(build|ci|docs|feat|fix|perf|refactor|style|test|chore|revert|bump)(\(\S+\))?!?:( [^\n\r]+)((\n\n.*)|(\s*))?$'
+        flags: 'gm'
+        error: 'Must use conventional commits'
+        excludeTitle: 'true'
+        checkAllCommitMessages: 'true'
+        accessToken: ${{ secrets.GITHUB_TOKEN }} # github access token is only required if checkAllCommitMessages is true
