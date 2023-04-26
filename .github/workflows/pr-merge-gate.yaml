@@ -9,7 +9,7 @@ on:
 jobs:
   pr-merge-gate:
     runs-on: ubuntu-latest
-    if: (github.repository == 'traas-stack/holoinsight-agent')
+    #if: (github.repository == 'traas-stack/holoinsight-agent')
     steps:
     - uses: actions/checkout@v3
       with:
