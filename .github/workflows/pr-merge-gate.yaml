@@ -34,8 +34,7 @@ jobs:
       uses: gsactions/commit-message-checker@v2
       with:
         pattern: '(build|ci|docs|feat|fix|perf|refactor|style|test|chore|revert|bump)(\(\S+\))?!?:(\s.*)'
-        flags: 'gm'
         error: 'Must use conventional commits'
-        excludeTitle: 'true'
+        #excludeTitle: 'true'
         checkAllCommitMessages: 'true'
         accessToken: ${{ secrets.GITHUB_TOKEN }} # github access token is only required if checkAllCommitMessages is true
