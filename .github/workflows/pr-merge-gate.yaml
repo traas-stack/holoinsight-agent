@@ -35,7 +35,7 @@ jobs:
     - name: Check Commit Type
       uses: gsactions/commit-message-checker@v2
       with:
-        pattern: '(?s)(build|ci|docs|feat|fix|perf|refactor|style|test|chore|revert|bump)(\(\S+\))?!?:( [^\n\r]+)((\n\n.*)|(\s*))?$'
+        pattern: '(build|ci|docs|feat|fix|perf|refactor|style|test|chore|revert|bump)(\(\S+\))?!?:(\s.*)'
         flags: 'gm'
         error: 'Must use conventional commits'
         excludeTitle: 'true'
