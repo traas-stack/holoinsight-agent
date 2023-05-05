@@ -15,6 +15,8 @@ type (
 		elect     XElect
 		regexp    *regexp.Regexp
 		multiline bool
+		// catchGroups indicates whether to store the capture group in the 'columns' field of 'ctx'.
+		catchGroups bool
 	}
 )
 
@@ -39,7 +41,16 @@ func (x *xRegexp) Test(ctx *LogContext) (ret bool, _ error) {
 		if err != nil {
 			return false, err
 		}
-		return x.regexp.MatchString(s), nil
+		if x.catchGroups {
+			groups := x.regexp.FindStringSubmatch(s)
+			if len(groups) == 0 {
+				return false, nil
+			}
+			ctx.columns = groups
+			return true, nil
+		} else {
+			return x.regexp.MatchString(s), nil
+		}
 	}
 }
 
@@ -56,8 +67,9 @@ func parseRegexp(r *collectconfig.MRegexp) (XWhere, error) {
 		return nil, errors.New("elect.type must be 'line' when using regexp.multiline mode")
 	}
 	return &xRegexp{
-		elect:     elect,
-		regexp:    compile,
-		multiline: r.Multiline,
+		elect:       elect,
+		regexp:      compile,
+		multiline:   r.Multiline,
+		catchGroups: r.CatchGroups,
 	}, nil
 }

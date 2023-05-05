@@ -229,60 +229,63 @@ type (
 		DefaultValue *string `json:"defaultValue,omitempty"`
 	}
 	Where struct {
-		And           []*Where        `json:"and,omitempty"`
-		Or            []*Where        `json:"or,omitempty"`
-		Not           *Where          `json:"not,omitempty"`
-		Contains      *MContains      `json:"contains,omitempty"`
-		ContainsAny   *MContainsAny   `json:"containsAny,omitempty"`
-		In            *MIn            `json:"in,omitempty"`
-		NumberBetween *MNumberBetween `json:"numberBetween,omitempty"`
-		Regexp        *MRegexp        `json:"regexp,omitempty"`
-		NumberOp      *MNumberOp      `json:"numberOp,omitempty"`
+		And           []*Where        `json:"and,omitempty" yaml:"and"`
+		Or            []*Where        `json:"or,omitempty" yaml:"or"`
+		Not           *Where          `json:"not,omitempty" yaml:"not"`
+		Contains      *MContains      `json:"contains,omitempty" yaml:"contains"`
+		ContainsAny   *MContainsAny   `json:"containsAny,omitempty" yaml:"containsAny"`
+		In            *MIn            `json:"in,omitempty" yaml:"in"`
+		NumberBetween *MNumberBetween `json:"numberBetween,omitempty" yaml:"numberBetween"`
+		Regexp        *MRegexp        `json:"regexp,omitempty" yaml:"regexp"`
+		NumberOp      *MNumberOp      `json:"numberOp,omitempty" yaml:"numberOp"`
 	}
 	MNumberOp struct {
-		Elect *Elect   `json:"elect"`
-		Gt    *float64 `json:"gt"`
-		Gte   *float64 `json:"gte"`
-		Lt    *float64 `json:"lt"`
-		Lte   *float64 `json:"lte"`
+		Elect *Elect   `json:"elect" yaml:"elect"`
+		Gt    *float64 `json:"gt" yaml:"gt"`
+		Gte   *float64 `json:"gte" yaml:"gte"`
+		Lt    *float64 `json:"lt" yaml:"lt"`
+		Lte   *float64 `json:"lte" yaml:"lte"`
 		//Eqi   *int64
 		//Nei   *int64
 	}
 	MRegexp struct {
-		Elect      *Elect `json:"elect"`
-		Expression string `json:"expression"`
-		Multiline  bool   `json:"multiline"`
+		Elect      *Elect `json:"elect" yaml:"elect"`
+		Expression string `json:"expression" yaml:"expression"`
+		Multiline  bool   `json:"multiline" yaml:"multiline"`
+		// CatchGroups indicates whether to store the capture group in the processing context
+		CatchGroups bool `json:"catchGroups" yaml:"catchGroups"`
 	}
+
 	MNumberBetween struct {
-		Elect       *Elect  `json:"elect"`
-		Min         float64 `json:"min"`
-		Max         float64 `json:"max"`
-		MinIncluded bool    `json:"minIncluded"`
-		MaxIncluded bool    `json:"maxIncluded"`
+		Elect       *Elect  `json:"elect" yaml:"elect"`
+		Min         float64 `json:"min" yaml:"min"`
+		Max         float64 `json:"max" yaml:"max"`
+		MinIncluded bool    `json:"minIncluded" yaml:"minIncluded"`
+		MaxIncluded bool    `json:"maxIncluded" yaml:"maxIncluded"`
 		// 数值是否是整数
 		ParseNumberToInt bool `json:"parseNumberToInt"`
 	}
 	MContains struct {
-		Elect      *Elect `json:"elect"`
-		Value      string `json:"value"`
-		Multiline  bool   `json:"multiline"`
-		IgnoreCase bool   `json:"ignoreCase"`
+		Elect      *Elect `json:"elect" yaml:"elect"`
+		Value      string `json:"value" yaml:"value"`
+		Multiline  bool   `json:"multiline" yaml:"multiline"`
+		IgnoreCase bool   `json:"ignoreCase" yaml:"ignoreCase"`
 	}
 	MContainsAny struct {
-		Elect      *Elect   `json:"elect"`
-		Values     []string `json:"values"`
-		Multiline  bool     `json:"multiline"`
-		IgnoreCase bool     `json:"ignoreCase"`
+		Elect      *Elect   `json:"elect" yaml:"elect"`
+		Values     []string `json:"values" yaml:"values"`
+		Multiline  bool     `json:"multiline" yaml:"multiline"`
+		IgnoreCase bool     `json:"ignoreCase" yaml:"ignoreCase"`
 	}
 	MIn struct {
-		Elect      *Elect   `json:"elect"`
-		Values     []string `json:"values"`
-		IgnoreCase bool     `json:"ignoreCase"`
+		Elect      *Elect   `json:"elect" yaml:"elect"`
+		Values     []string `json:"values" yaml:"values"`
+		IgnoreCase bool     `json:"ignoreCase" yaml:"ignoreCase"`
 	}
 	ExecuteRule struct {
-		Type string `json:"type"`
+		Type string `json:"type" yaml:"type"`
 		// 5s 5000单位毫秒
-		FixedRate interface{} `json:"fixedRate"`
+		FixedRate interface{} `json:"fixedRate" yaml:"fixedRate"`
 	}
 	// SQL style task
 	SQLTask struct {

@@ -72,6 +72,10 @@ func parseTransformFilter(filter *collectconfig.TransformFilterConf) (XTransform
 			filters = append(filters, subParsed)
 		}
 		parsed = &xCompositeFilter{filters: filters}
+	case "regexpreplacev1":
+		parsed = &xRegexpReplaceFilter{conf: filter.RegexpReplaceV1}
+	case "discardv1":
+		parsed = &xDiscardFilter{}
 	default:
 		// Ignore this filter as if it is not exist. This could lead to unexpected result.
 		return nil, errors.New("unsupported transform filter " + util.ToJsonString(filter))

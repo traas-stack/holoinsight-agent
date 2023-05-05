@@ -49,6 +49,9 @@ func (x *xSwitchCaseV1Filter) Init() error {
 var whereType = reflect.TypeOf(collectconfig.Where{})
 
 func fillDefaultElect(where *collectconfig.Where) {
+	if where == nil {
+		return
+	}
 	for _, sub := range where.And {
 		fillDefaultElect(sub)
 	}

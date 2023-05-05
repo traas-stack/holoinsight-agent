@@ -3,11 +3,13 @@ package executor
 import (
 	json2 "encoding/json"
 	"errors"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
@@ -155,4 +157,26 @@ func Test_FillDefaultElect(t *testing.T) {
 	}
 	fillDefaultElect(w)
 	assert.Equal(t, collectconfig.EElectContext, w.Contains.Elect.Type)
+}
+
+func TestTransform_regexp1(t *testing.T) {
+	c, err := loadTransformFilter("transforms/regexp1.yaml")
+	assert.NoError(t, err)
+	assert.NotNil(t, c)
+
+	ret, err := c.Filter(&LogContext{contextValue: "holoinsight"})
+	assert.NoError(t, err)
+	assert.Equal(t, "HoloinsightXXX", ret)
+
+	fmt.Println(regexp.MatchString("a", "aa"))
+}
+
+func TestTransform_regexp2(t *testing.T) {
+	c, err := loadTransformFilter("transforms/regexp2.yaml")
+	assert.NoError(t, err)
+	assert.NotNil(t, c)
+
+	ret, err := c.Filter(&LogContext{contextValue: "holoinsight"})
+	assert.NoError(t, err)
+	assert.Equal(t, "HoloinsightXXX", ret)
 }

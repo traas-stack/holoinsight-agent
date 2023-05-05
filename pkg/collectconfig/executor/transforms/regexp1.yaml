@@ -1,0 +1,4 @@
+filters:
+- regexpReplaceV1:
+    expression: holo(.*)
+    replacement: "Holo${1}XXX"

@@ -12,5 +12,8 @@ func (x *xConstFilter) Init() error {
 }
 
 func (x *xConstFilter) Filter(ctx *LogContext) (interface{}, error) {
-	return x.value, nil
+	if x.value != "" {
+		return x.value, nil
+	}
+	return ctx.contextValue, nil
 }

@@ -1,0 +1,13 @@
+filters:
+- switchCaseV1:
+    cases:
+    - caseWhere:
+        regexp:
+          expression: 'holo(.*)'
+          catchGroups: true
+      action:
+        regexpReplaceV1:
+          replacement: "Holo${1}XXX"
+    defaultAction:
+      constV1:
+        value: "defaultValue"

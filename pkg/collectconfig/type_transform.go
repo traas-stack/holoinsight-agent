@@ -13,7 +13,9 @@ type (
 		CompositeV1  *TransformFilterCompositeV1  `json:"compositeV1" yaml:"compositeV1"`
 		MappingV1    *TransformFilterMappingV1    `json:"mappingV1" yaml:"mappingV1"`
 		// avoid using 'const' as field name or json field name, because 'const' is a keyword in some languages
-		ConstV1 *TransformFilterConstV1 `json:"constV1" yaml:"constV1"`
+		ConstV1         *TransformFilterConstV1         `json:"constV1" yaml:"constV1"`
+		RegexpReplaceV1 *TransformFilterRegexpReplaceV1 `json:"regexpReplaceV1" yaml:"regexpReplaceV1"`
+		DiscardV1       *struct{}                       `json:"discardV1" yaml:"discardV1"`
 	}
 	// TransformFilterAppendV1 represents appending suffix to the current value
 	TransformFilterAppendV1 struct {
@@ -38,7 +40,7 @@ type (
 	}
 	// TransformFilterSwitchCaseV1Case represents one case and its action
 	TransformFilterSwitchCaseV1Case struct {
-		Case   *Where               `json:"case" yaml:"case"`
+		Case   *Where               `json:"caseWhere" yaml:"caseWhere"`
 		Action *TransformFilterConf `json:"action" yaml:"action"`
 	}
 	// TransformFilterCompositeV1 is a container of filters. It executes filters in order.
@@ -58,5 +60,9 @@ type (
 	}
 	TransformFilterConstV1 struct {
 		Value string `json:"value" yaml:"value"`
+	}
+	TransformFilterRegexpReplaceV1 struct {
+		Expression  string `json:"expression,omitempty" yaml:"expression"`
+		Replacement string `json:"replacement,omitempty" yaml:"replacement"`
 	}
 )

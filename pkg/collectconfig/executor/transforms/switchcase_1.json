@@ -4,7 +4,7 @@
       "switchCaseV1": {
         "cases": [
           {
-            "case": {
+            "caseWhere": {
               "in": {
                 "elect": {
                   "type": "context"
@@ -32,7 +32,7 @@
             }
           },
           {
-            "case": {
+            "caseWhere": {
               "in": {
                 "elect": {
                   "type": "context"
