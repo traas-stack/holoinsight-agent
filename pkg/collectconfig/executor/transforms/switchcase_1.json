@@ -1,0 +1,60 @@
+{
+  "filters": [
+    {
+      "switchCaseV1": {
+        "cases": [
+          {
+            "caseWhere": {
+              "in": {
+                "elect": {
+                  "type": "context"
+                },
+                "values": [
+                  "aaa"
+                ]
+              }
+            },
+            "action": {
+              "compositeV1": {
+                "filters": [
+                  {
+                    "appendV1": {
+                      "value": "_aaa"
+                    }
+                  },
+                  {
+                    "appendV1": {
+                      "value": "_aaa"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "caseWhere": {
+              "in": {
+                "elect": {
+                  "type": "context"
+                },
+                "values": [
+                  "bbb"
+                ]
+              }
+            },
+            "action": {
+              "appendV1": {
+                "value": "_bbb"
+              }
+            }
+          }
+        ],
+        "defaultAction": {
+          "appendV1": {
+            "value": "_ccc"
+          }
+        }
+      }
+    }
+  ]
+}

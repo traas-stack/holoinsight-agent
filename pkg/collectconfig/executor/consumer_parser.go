@@ -63,6 +63,13 @@ func parseConsumer(st *api.SubTask) (*Consumer, error) {
 			return nil, err
 		}
 	}
+	// parse vars
+	var varsProcessor *varsProcessor
+	varsProcessor, err = parseVars(task.From.Log.Vars)
+	if err != nil {
+		return nil, err
+	}
+
 	if timeParser, err = parseTimeParser(task.From.Log.Time); err != nil {
 		return nil, err
 	}
@@ -108,6 +115,7 @@ func parseConsumer(st *api.SubTask) (*Consumer, error) {
 		GroupBy:              xgroupBy,
 		Window:               xWindow,
 		LogParser:            logParser,
+		varsProcessor:        varsProcessor,
 		TimeParser:           timeParser,
 		BeforeParseWhere:     beforeParseWhere,
 		multilineAccumulator: multilineAccumulator,

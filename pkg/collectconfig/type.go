@@ -12,6 +12,8 @@ const (
 	EElectRegexp    = "regexp"
 	EElectRefMeta   = "refMeta"
 	EElectPathVar   = "pathvar"
+	EElectContext   = "context"
+	EElectRefVar    = "refVar"
 )
 
 type (
@@ -23,33 +25,13 @@ type (
 		Type      string
 		Separator string
 	}
-
-	// 定义变量
+	// Vars
 	Vars struct {
-		Vars []Var
+		Vars []*Var `json:"vars"`
 	}
 	Var struct {
-		Name  string
-		Elect *Elect
-		// 这里支持流水线
-		Pipeline *Pipeline
-	}
-	// TODO 改个名字 容易误解
-	Pipeline struct {
-		// 对值做转换
-		Transform []*Transform
-		// 当转换结果是nil或empty时, 使用使用该默认值代替
-		DefaultValue string
-		// 执行出错是否丢弃记录
-		DiscardRecordWhenError bool
-		// 如果执行完pipeline的结果是null
-		DiscardRecordWhenResultIsNil bool
-	}
-	// 这里定义很多转换, 可以对原有的值进行转换
-	// 入参一般是 string 或 float64, 或其他(需要明确指出)
-	Transform struct {
-		Type string
-		Arg  string
+		Name  string `json:"name"`
+		Elect *Elect `yaml:"elect"`
 	}
 	Select struct {
 		Values []*SelectOne `json:"values"`
@@ -105,6 +87,8 @@ type (
 		// 定义时间戳如何解析
 		Time      *TimeConf         `json:"time"`
 		Multiline *FromLogMultiline `json:"multiline"`
+		// Vars define vars for log processing
+		Vars *Vars `json:"vars,omitempty"`
 	}
 	// TODO 用于支持多文件
 	FromLogPaths struct {
@@ -150,9 +134,8 @@ type (
 		// 有的parse代价太大, 可以在parse前做一次过滤减少parse的量
 		// 此时where里仅能使用 leftRight 类型的切分
 		Where *Where `json:"where,omitempty"`
-		// free/separator/regexp/json
-		Type string `json:"type,omitempty"`
-		// 基于分隔符
+		// free/separator/regexp/json/leftRight
+		Type      string             `json:"type,omitempty"`
 		Separator *LogParseSeparator `json:"separator,omitempty"`
 		Regexp    *LogParseRegexp    `json:"regexp,omitempty"`
 		Grok      *LogParseGrok      `json:"grok,omitempty"`
@@ -187,16 +170,20 @@ type (
 		// refIndex/refName: 引用一个已有的字段
 		// leftRight: 使用左起右至切出一个字段
 		// regexp
-		Type      string       `json:"type,omitempty"`
-		Line      *ElectLine   `json:"line,omitempty"`
-		RefIndex  *RefIndex    `json:"refIndex,omitempty"`
-		RefName   *RefName     `json:"refName,omitempty"`
-		LeftRight *LeftRight   `json:"leftRight,omitempty"`
-		Regexp    *ElectRegexp `json:"regexp,omitempty"`
-		// TODO 切出来字段后可以做流水线 待实现
-		Pipeline *Pipeline     `json:"pipeline,omitempty"`
-		RefMeta  *ElectRegMeta `json:"refMeta,omitempty"`
-		PathVar  *ElectPathVar `json:"pathVar,omitempty"`
+		// context: fetch string value from context
+		Type      string        `json:"type,omitempty"`
+		Line      *ElectLine    `json:"line,omitempty"`
+		RefIndex  *RefIndex     `json:"refIndex,omitempty"`
+		RefName   *RefName      `json:"refName,omitempty"`
+		RefVar    *RefVar       `json:"refVar,omitempty"`
+		LeftRight *LeftRight    `json:"leftRight,omitempty"`
+		Regexp    *ElectRegexp  `json:"regexp,omitempty"`
+		RefMeta   *ElectRegMeta `json:"refMeta,omitempty"`
+		PathVar   *ElectPathVar `json:"pathVar,omitempty"`
+
+		// Every elect can have its own transform, named adhoc transform.
+		// It will be executed everytime elect is called.
+		Transform *TransformConf `json:"transform,omitempty"`
 	}
 	ElectPathVar struct {
 		Name string `json:"name"`
@@ -229,6 +216,9 @@ type (
 	RefName struct {
 		Name string `json:"name"`
 	}
+	RefVar struct {
+		Name string `json:"name"`
+	}
 	LeftRight struct {
 		LeftIndex             int    `json:"leftIndex,omitempty"`
 		Left                  string `json:"left,omitempty"`
@@ -239,60 +229,63 @@ type (
 		DefaultValue *string `json:"defaultValue,omitempty"`
 	}
 	Where struct {
-		And           []*Where        `json:"and,omitempty"`
-		Or            []*Where        `json:"or,omitempty"`
-		Not           *Where          `json:"not,omitempty"`
-		Contains      *MContains      `json:"contains,omitempty"`
-		ContainsAny   *MContainsAny   `json:"containsAny,omitempty"`
-		In            *MIn            `json:"in,omitempty"`
-		NumberBetween *MNumberBetween `json:"numberBetween,omitempty"`
-		Regexp        *MRegexp        `json:"regexp,omitempty"`
-		NumberOp      *MNumberOp      `json:"numberOp,omitempty"`
+		And           []*Where        `json:"and,omitempty" yaml:"and"`
+		Or            []*Where        `json:"or,omitempty" yaml:"or"`
+		Not           *Where          `json:"not,omitempty" yaml:"not"`
+		Contains      *MContains      `json:"contains,omitempty" yaml:"contains"`
+		ContainsAny   *MContainsAny   `json:"containsAny,omitempty" yaml:"containsAny"`
+		In            *MIn            `json:"in,omitempty" yaml:"in"`
+		NumberBetween *MNumberBetween `json:"numberBetween,omitempty" yaml:"numberBetween"`
+		Regexp        *MRegexp        `json:"regexp,omitempty" yaml:"regexp"`
+		NumberOp      *MNumberOp      `json:"numberOp,omitempty" yaml:"numberOp"`
 	}
 	MNumberOp struct {
-		Elect *Elect   `json:"elect"`
-		Gt    *float64 `json:"gt"`
-		Gte   *float64 `json:"gte"`
-		Lt    *float64 `json:"lt"`
-		Lte   *float64 `json:"lte"`
+		Elect *Elect   `json:"elect" yaml:"elect"`
+		Gt    *float64 `json:"gt" yaml:"gt"`
+		Gte   *float64 `json:"gte" yaml:"gte"`
+		Lt    *float64 `json:"lt" yaml:"lt"`
+		Lte   *float64 `json:"lte" yaml:"lte"`
 		//Eqi   *int64
 		//Nei   *int64
 	}
 	MRegexp struct {
-		Elect      *Elect `json:"elect"`
-		Expression string `json:"expression"`
-		Multiline  bool   `json:"multiline"`
+		Elect      *Elect `json:"elect" yaml:"elect"`
+		Expression string `json:"expression" yaml:"expression"`
+		Multiline  bool   `json:"multiline" yaml:"multiline"`
+		// CatchGroups indicates whether to store the capture group in the processing context
+		CatchGroups bool `json:"catchGroups" yaml:"catchGroups"`
 	}
+
 	MNumberBetween struct {
-		Elect       *Elect  `json:"elect"`
-		Min         float64 `json:"min"`
-		Max         float64 `json:"max"`
-		MinIncluded bool    `json:"minIncluded"`
-		MaxIncluded bool    `json:"maxIncluded"`
+		Elect       *Elect  `json:"elect" yaml:"elect"`
+		Min         float64 `json:"min" yaml:"min"`
+		Max         float64 `json:"max" yaml:"max"`
+		MinIncluded bool    `json:"minIncluded" yaml:"minIncluded"`
+		MaxIncluded bool    `json:"maxIncluded" yaml:"maxIncluded"`
 		// 数值是否是整数
 		ParseNumberToInt bool `json:"parseNumberToInt"`
 	}
 	MContains struct {
-		Elect      *Elect `json:"elect"`
-		Value      string `json:"value"`
-		Multiline  bool   `json:"multiline"`
-		IgnoreCase bool   `json:"ignoreCase"`
+		Elect      *Elect `json:"elect" yaml:"elect"`
+		Value      string `json:"value" yaml:"value"`
+		Multiline  bool   `json:"multiline" yaml:"multiline"`
+		IgnoreCase bool   `json:"ignoreCase" yaml:"ignoreCase"`
 	}
 	MContainsAny struct {
-		Elect      *Elect   `json:"elect"`
-		Values     []string `json:"values"`
-		Multiline  bool     `json:"multiline"`
-		IgnoreCase bool     `json:"ignoreCase"`
+		Elect      *Elect   `json:"elect" yaml:"elect"`
+		Values     []string `json:"values" yaml:"values"`
+		Multiline  bool     `json:"multiline" yaml:"multiline"`
+		IgnoreCase bool     `json:"ignoreCase" yaml:"ignoreCase"`
 	}
 	MIn struct {
-		Elect      *Elect   `json:"elect"`
-		Values     []string `json:"values"`
-		IgnoreCase bool     `json:"ignoreCase"`
+		Elect      *Elect   `json:"elect" yaml:"elect"`
+		Values     []string `json:"values" yaml:"values"`
+		IgnoreCase bool     `json:"ignoreCase" yaml:"ignoreCase"`
 	}
 	ExecuteRule struct {
-		Type string `json:"type"`
+		Type string `json:"type" yaml:"type"`
 		// 5s 5000单位毫秒
-		FixedRate interface{} `json:"fixedRate"`
+		FixedRate interface{} `json:"fixedRate" yaml:"fixedRate"`
 	}
 	// SQL style task
 	SQLTask struct {
@@ -320,5 +313,9 @@ var (
 
 	CElectLine = &Elect{
 		Type: EElectLine,
+	}
+	// CElectContext is a const for EElectContext
+	CElectContext = &Elect{
+		Type: EElectContext,
 	}
 )

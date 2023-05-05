@@ -1,0 +1,76 @@
+{
+  "select": {
+    "values": [
+      {
+        "as": "count",
+        "agg": "count"
+      }
+    ]
+  },
+  "from": {
+    "type": "log",
+    "log": {
+      "path": [
+        {
+          "type": "path",
+          "pattern": "/tmp/1.log"
+        }
+      ],
+      "charset": "utf-8",
+      "parse": {
+      },
+      "vars": {
+        "vars": [
+          {
+            "name": "level",
+            "elect": {
+              "type": "leftRight",
+              "leftRight": {
+                "leftIndex": 0,
+                "left": "[",
+                "right": "]"
+              },
+              "transform": {
+                "filters": [
+                  {
+                    "appendV1": {
+                      "value": "xxx"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "time": {
+        "type": "auto"
+      }
+    }
+  },
+  "where": {
+  },
+  "groupBy": {
+    "maxKeys": -1,
+    "groups": [
+      {
+        "name": "level",
+        "elect": {
+          "type": "refVar",
+          "refVar": {
+            "name": "level"
+          }
+        }
+      }
+    ]
+  },
+  "window": {
+    "interval": 5000
+  },
+  "output": {
+    "type": "console"
+  },
+  "executeRule": {
+    "fixedRate": 0
+  }
+}

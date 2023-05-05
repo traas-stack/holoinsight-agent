@@ -208,6 +208,7 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 		})
 	}
 
+	c.parent.stat.emit += int32(len(metrics))
 	c.parent.AddBatchDetailDatus(expectedTs, metrics)
 
 	return len(metrics) > 0

@@ -1,0 +1,49 @@
+{
+  "filters": [
+    {
+      "switchCaseV1": {
+        "cases": [
+          {
+            "caseWhere": {
+              "in": {
+                "elect": {
+                  "type": "context"
+                },
+                "values": [
+                  "aaa"
+                ]
+              }
+            },
+            "action": {
+              "constV1": {
+                "value": "match case 1"
+              }
+            }
+          },
+          {
+            "caseWhere": {
+              "in": {
+                "elect": {
+                  "type": "context"
+                },
+                "values": [
+                  "bbb"
+                ]
+              }
+            },
+            "action": {
+              "constV1": {
+                "value": "match case 2"
+              }
+            }
+          }
+        ],
+        "defaultAction": {
+          "constV1": {
+            "value": "other case"
+          }
+        }
+      }
+    }
+  ]
+}

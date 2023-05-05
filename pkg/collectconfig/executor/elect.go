@@ -7,7 +7,9 @@ package executor
 import (
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"go.uber.org/zap"
 	"regexp"
 )
 
@@ -24,6 +26,17 @@ func parseElect(e *collectconfig.Elect) (XElect, error) {
 	xe, err := parseElect0(e)
 	if err == nil {
 		xe.Init()
+	}
+	if e.Transform != nil {
+		filter, err := parseTransform(e.Transform)
+		if err != nil {
+			logger.Errorz("fail to parse transform", zap.Any("elect", e), zap.Error(err))
+		} else {
+			xe = &xElectWrap{
+				inner:     xe,
+				transform: filter,
+			}
+		}
 	}
 	return xe, err
 }
@@ -100,6 +113,10 @@ func parseElect0(e *collectconfig.Elect) (XElect, error) {
 			return nil, errors.New("pathVar is nil")
 		}
 		return &xPathVar{name: e.PathVar.Name}, nil
+	case collectconfig.EElectContext:
+		return xElectContextInstance, nil
+	case collectconfig.EElectRefVar:
+		return &xRefVar{name: e.RefVar.Name}, nil
 	}
-	return nil, errors.New("unsupported type " + e.Type)
+	return nil, errors.New("unsupported elect type " + e.Type)
 }
