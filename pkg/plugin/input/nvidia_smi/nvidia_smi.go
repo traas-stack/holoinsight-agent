@@ -92,6 +92,8 @@ func convertToFloat64(item *queryItem, str string) (float64, error) {
 	}
 	if strings.HasSuffix(str, " %") {
 		str = str[:len(str)-2]
+		v, err := cast.ToFloat64E(str)
+		return v / 100, err
 	}
 	if strings.HasSuffix(str, " W") {
 		str = str[:len(str)-2]
