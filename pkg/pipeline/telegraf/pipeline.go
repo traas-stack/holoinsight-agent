@@ -9,6 +9,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/influxdata/telegraf"
+	"github.com/spf13/cast"
 	containerhelpermodel "github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/accumulator"
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
@@ -18,13 +20,12 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	api2 "github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	telegraf2 "github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	trigger2 "github.com/traas-stack/holoinsight-agent/pkg/util/trigger"
-	"github.com/influxdata/telegraf"
-	"github.com/spf13/cast"
 	"go.uber.org/zap"
 	"strings"
 	"time"
@@ -185,6 +186,12 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 		attachTags["hostname"] = p.task.Target.GetHostname()
 		attachTags["namespace"] = p.task.Target.GetNamespace()
 		attachTags["pod"] = p.task.Target.GetPodName()
+
+		namespace := p.task.Target.GetNamespace()
+		podName := p.task.Target.GetPodName()
+		if pod, ok := ioc.Crii.GetPod(namespace, podName); ok {
+			meta.RefLabels(appconfig.StdAgentConfig.Data.Metric.RefLabels.Items, pod.Labels, attachTags)
+		}
 	case collecttask.TargetLocalhost:
 		attachTags["app"] = appconfig.StdAgentConfig.App
 		attachTags["ip"] = util.GetLocalIp()
