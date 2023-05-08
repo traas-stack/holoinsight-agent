@@ -76,8 +76,9 @@ type (
 		AlibabacloudMetricEndpoint string `json:"aliyunMetricEndpoint" yaml:"aliyunMetricEndpoint" toml:"aliyunMetricEndpoint"`
 	}
 	K8sConfig struct {
-		Meta K8sMetaConfig `json:"meta,omitempty" yaml:"meta" toml:"meta"`
-		Cri  K8sConfig_Cri `json:"cri,omitempty" yaml:"cri" toml:"cri"`
+		Meta    K8sMetaConfig    `json:"meta,omitempty" yaml:"meta" toml:"meta"`
+		Cri     K8sConfig_Cri    `json:"cri,omitempty" yaml:"cri" toml:"cri"`
+		Metrics K8sMetricsConfig `json:"metrics" yaml:"metrics" toml:"metrics"`
 	}
 	K8sConfig_Cri struct {
 		// docker pouch
@@ -113,6 +114,9 @@ type (
 		Labels []string `json:"labels" yaml:"labels" toml:"labels" `
 		// If all label values are empty, this DefaultValue will be used
 		DefaultValue string `json:"defaultValue" yaml:"defaultValue" toml:"defaultValue" `
+	}
+	K8sMetricsConfig struct {
+		FiveSecondsEnabled bool `json:"fiveSecondsEnabled,omitempty" yaml:"fiveSecondsEnabled" toml:"fiveSecondsEnabled"`
 	}
 )
 
