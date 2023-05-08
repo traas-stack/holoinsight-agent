@@ -12,9 +12,9 @@ func init() {
 	model.RegisterHandler("glob", globHandler)
 	model.RegisterHandler("listFiles", listFilesHandlers)
 	model.RegisterHandler("httpcheck", httpCheckHandler)
-	model.RegisterHandler("dialcheck", dialcheckHandler)
 	model.RegisterHandler("cat", catHandler)
 	model.RegisterHandler("previewLog", previewLogHandler)
 	model.RegisterHandler("inspect", inspectHandler)
 	model.RegisterHandler("collectInput", collectInputHandler)
+	model.RegisterHandler("inputProxy", inputProxyHandler)
 }

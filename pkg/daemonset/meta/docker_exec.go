@@ -7,6 +7,7 @@ package meta
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/docker/docker/api/types"
 	dockersdk "github.com/docker/docker/client"
@@ -16,6 +17,10 @@ import (
 )
 
 func execSync(docker *dockersdk.Client, ctx context.Context, c *cri.Container, cmd []string, env []string, workingDir string, input io.Reader) (cri.ExecResult, error) {
+	if c == nil {
+		return cri.ExecResult{}, errors.New("container is nil")
+	}
+
 	create, err := docker.ContainerExecCreate(ctx, c.Id, types.ExecConfig{
 		// TODO exec 进去后不一定有权限
 		// 可以用root登录!
@@ -48,6 +53,8 @@ func execSync(docker *dockersdk.Client, ctx context.Context, c *cri.Container, c
 
 	if input != nil {
 		go func() {
+			// Must close write here which will trigger an EOF
+			defer resp.CloseWrite()
 			io.Copy(resp.Conn, input)
 		}()
 	}

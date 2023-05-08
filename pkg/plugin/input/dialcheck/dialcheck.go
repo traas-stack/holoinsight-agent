@@ -5,9 +5,9 @@
 package dialcheck
 
 import (
+	"encoding/json"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
-	"encoding/json"
 	"net"
 	"time"
 )
@@ -27,10 +27,10 @@ type (
 )
 
 const (
-	defaultTimeout   = 3 * time.Second
-	defaultTimes     = 1
-	maxTimes         = 5
-	helperActionType = "dialcheck"
+	defaultTimeout             = 3 * time.Second
+	defaultTimes               = 1
+	maxTimes                   = 5
+	HelperInputProxyConfigType = "dialcheck"
 )
 
 func (i *Input) NetworkMode() string {
@@ -39,7 +39,7 @@ func (i *Input) NetworkMode() string {
 
 func (i *Input) SerializeRequest() (interface{}, string, []byte, time.Duration, error) {
 	configBytes, err := json.Marshal(i.Config)
-	return nil, helperActionType, configBytes, i.getTimeout(), err
+	return nil, HelperInputProxyConfigType, configBytes, i.getTimeout(), err
 }
 
 func (i *Input) getTimeout() time.Duration {
@@ -71,7 +71,6 @@ func (i *Input) ProcessResponse(_ interface{}, respBytes []byte, err error, accu
 	if err != nil {
 		return err
 	}
-
 	return api.NsEnterHelpProcesResponse(respBytes, accumulator)
 }
 
@@ -91,7 +90,6 @@ func (i *Input) Collect(a api.Accumulator) error {
 
 		begin := time.Now()
 		conn, err := net.DialTimeout(i.Config.Network, i.Config.Addr, timeout)
-		// 由于我们是在本机发起探测, 一般来说这个耗时是微妙级的, 此时 cost 字段意义不大
 		cost := time.Now().Sub(begin)
 		totalCost += cost
 
@@ -102,19 +100,20 @@ func (i *Input) Collect(a api.Accumulator) error {
 		}
 	}
 
-	tags := map[string]string{}
-
 	a.AddMetric(&model.Metric{
-		Name:      "dialcheck_up",
-		Tags:      tags,
-		Timestamp: 0,
-		Value:     float64(anyUp),
+		Name:  "dialcheck_up",
+		Tags:  map[string]string{},
+		Value: float64(anyUp),
 	})
 	a.AddMetric(&model.Metric{
-		Name:      "dialcheck_cost",
-		Tags:      tags,
-		Timestamp: 0,
-		Value:     float64(int(totalCost.Milliseconds()) / times),
+		Name:  "dialcheck_down",
+		Tags:  map[string]string{},
+		Value: float64(1 - anyUp),
+	})
+	a.AddMetric(&model.Metric{
+		Name:  "dialcheck_cost",
+		Tags:  map[string]string{},
+		Value: float64(int(totalCost.Milliseconds()) / times),
 	})
 	return nil
 }

@@ -50,7 +50,11 @@ func execNsEnter(ctx context.Context, hostfs string, nsEnterTypes []cri.NsEnterT
 	args = append(args, cmd...)
 
 	execCmd := exec.CommandContext(ctx, "nsenter", args...)
-	execCmd.Env = env
+	// The helper binary is written using Golang.
+	// If env is nil, the env of current process will be passed to the helper binary,
+	// which leads to confused stdout(it will contain gc logs).
+	// So these two envs should be set to empty
+	execCmd.Env = append(env, "GOTRACEBACK=", "GODEBUG=")
 	execCmd.Dir = workingDir
 
 	stdout := bytes.NewBuffer(nil)

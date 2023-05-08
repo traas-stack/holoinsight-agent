@@ -140,8 +140,11 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 	case telegraf.Input:
 		err = i.Gather(telegraf2.Adapt(m, "_"))
 	case api2.Input:
-		// TODO 这段代码解释一下
-		// 我们之后尽量将 input 的类型都切换到 api2.Input 接口的实现
+		// In some envs, there is network isolation between holoinsight-agent pod and target pod.
+		// In this case, plugins such as network detection can only be executed by entering the container through docker exec.
+		// The first version of this code was written for runc, and we used the nsenter tool for this purpose.
+		// But then we encountered rund, and nsenter's solution didn't work for it. At this point we can only use the standard docker.
+		// Currently, some methods are still named with the 'nsenter' keyword, which will remove these couplings in the future.
 		if ine, ok := p.input.(api2.InputExtNsEnter); ok && ine.NetworkMode() == api2.NetworkModePod {
 			err = p.collectOnceWithNsEnter(ine, m)
 		} else {
@@ -264,7 +267,7 @@ func (p *Pipeline) collectOnceWithNsEnter(ine api2.InputExtNsEnter, m *accumulat
 		timeout = defaultNsEnterTimeout
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+3*time.Second)
 	defer cancel()
 
 	// 怎么证明我们确实切换到了目标 net namespace 就是用如下的方式!
@@ -279,11 +282,13 @@ func (p *Pipeline) collectOnceWithNsEnter(ine api2.InputExtNsEnter, m *accumulat
 	// 这里硬编码 NET 的好处是, 我不需要切 mount, 因此我可以使用本机的bin
 	// 如果我使用了 mount, 那么执行命令时可见的是容器的文件系统, 看不到我的bin, 我需要通过某种方式将bin复制进去
 	// 这里使用了sandbox容器, 好处是如果主容器挂了, 那么这里依旧可以通
-	execResult, err := ioc.Crii.NsEnterExec(ctx, []cri.NsEnterType{cri.NsEnter_NET}, pod.Sandbox, []string{core.HelperToolLocalPath, actionType}, nil, "", bytes.NewBuffer(reqBytes))
+	// execResult, err := ioc.Crii.NsEnterExec(ctx, []cri.NsEnterType{cri.NsEnter_NET}, pod.Sandbox, []string{core.HelperToolLocalPath, actionType}, nil, "", bytes.NewBuffer(reqBytes))
+	// Prefer to use docker standard API.
+	execResult, err := ioc.Crii.ExecSync(ctx, pod.MainBiz(), []string{core.HelperToolPath, "inputProxy", actionType}, nil, "", bytes.NewBuffer(reqBytes))
 
 	// err!=nil 说明发生系统级报错, 业务报错不会体现为 err 的
 	if err != nil {
-		logger.Infoz("[pipeline] nsenter collect once error", //
+		logger.Errorz("[pipeline] nsenter collect once error", //
 			zap.String("key", p.task.Key),                                       //
 			zap.String("cmd", execResult.Cmd),                                   //
 			zap.String("stdout", strings.TrimSpace(execResult.Stdout.String())), //
