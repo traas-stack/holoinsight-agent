@@ -187,8 +187,9 @@ func (w *RotateWriter) maybeRotate() {
 	}
 
 	if w.fileOpenTime.Before(w.forceRotateTime) {
-		// TODO error handle
-		w.rotate(false)
+		if err := w.rotate(false); err != nil {
+			fmt.Fprintf(os.Stderr, "fail to rotate: %s: %+v", w.cfg.Filename, err)
+		}
 	}
 }
 
@@ -209,6 +210,7 @@ func (w *RotateWriter) Write(p []byte) (n int, err error) {
 
 	if w.size+writeLen > w.cfg.MaxSize {
 		if err := w.rotate(true); err != nil {
+			fmt.Fprintf(os.Stderr, "fail to rotate: %s: %+v", w.cfg.Filename, err)
 			return 0, err
 		}
 	}
@@ -274,7 +276,7 @@ func (w *RotateWriter) openExistingOrNew(writeLen int) error {
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This method assumes the file has already been closed.
 func (w *RotateWriter) openNew() error {
-	err := os.MkdirAll(filepath.Dir(w.cfg.Filename), 0744)
+	err := os.MkdirAll(filepath.Dir(w.cfg.Filename), 0755)
 	if err != nil {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
@@ -290,9 +292,9 @@ func (w *RotateWriter) openNew() error {
 	// we use truncate here because this should only get called when we've moved
 	// the file ourselves. if someone else creates the file in the meantime,
 	// just wipe out the contents.
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(0644))
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_APPEND, os.FileMode(0644))
 	if err != nil {
-		return fmt.Errorf("can't open new logfile: %s", err)
+		return fmt.Errorf("can't open new logfile: %s: %+v", w.cfg.Filename, err)
 	}
 	w.fileOpenTime = now
 	w.forceRotateTime = w.timeHelper.nextAlign(now)
