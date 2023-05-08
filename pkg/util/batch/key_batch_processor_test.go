@@ -8,12 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestKeyBatchProcessor(t *testing.T) {
-	logger.TestMode()
 	threshold := 5
 	prodNum := 10
 

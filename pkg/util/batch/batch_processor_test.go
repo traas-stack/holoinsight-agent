@@ -9,11 +9,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 )
 
 func TestBatchProcessor(t *testing.T) {
-	logger.TestMode()
 	threshold := 5
 	prodNum := 100
 
@@ -38,7 +36,6 @@ func TestBatchProcessor(t *testing.T) {
 }
 
 func TestBatchProcessor_Wait(t *testing.T) {
-	logger.TestMode()
 	threshold := 5
 	prodNum := 100
 
@@ -63,7 +60,6 @@ func TestBatchProcessor_Wait(t *testing.T) {
 }
 
 func TestBatchProcessor_Shutdown(t *testing.T) {
-	logger.TestMode()
 	threshold := 5
 	prodNum := 100
 
@@ -83,7 +79,6 @@ func TestBatchProcessor_Shutdown(t *testing.T) {
 }
 
 func TestBatchProcessor_Weight(t *testing.T) {
-	logger.TestMode()
 	threshold := 4
 	prodNum := 100
 

@@ -224,7 +224,3 @@ func IsDebugEnabled() bool {
 
 func TestMode() {
 }
-
-func init() {
-	setupZapLogger0(true)
-}
