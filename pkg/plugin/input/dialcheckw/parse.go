@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/dialcheck"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/inputproxy"
 	"time"
 )
 
@@ -22,15 +24,19 @@ const (
 
 type (
 	Config struct {
-		Network string `json:"network"`
-		Port    int    `json:"port"`
-		Timeout int    `json:"timeout"`
-		Times   int    `json:"times"`
+		Network     string `json:"network"`
+		Port        int    `json:"port"`
+		Timeout     int    `json:"timeout"`
+		Times       int    `json:"times"`
+		NetworkMode string `json:"networkMode"`
 	}
 )
 
 func init() {
 	providers.Register("dialcheck", Parse)
+	inputproxy.Register("dialcheck", func() api.InputExtNsEnter {
+		return &dialcheck.Input{}
+	})
 }
 
 func Parse(task *collecttask.CollectTask) (interface{}, error) {
@@ -69,9 +75,10 @@ func Parse(task *collecttask.CollectTask) (interface{}, error) {
 	}
 
 	return &dialcheck.Input{Config: &dialcheck.Config{
-		Network: network,
-		Addr:    addr,
-		Timeout: timeout,
-		Times:   times,
+		Network:     network,
+		Addr:        addr,
+		Timeout:     timeout,
+		Times:       times,
+		NetworkMode: config.NetworkMode,
 	}}, nil
 }

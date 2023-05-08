@@ -6,8 +6,9 @@ package model
 
 type (
 	RespBase struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
+		Success  bool     `json:"success,omitempty"`
+		Message  string   `json:"message,omitempty"`
+		DebuLogs []string `json:"debugLogs,omitempty"`
 	}
 	Resp struct {
 		RespBase
