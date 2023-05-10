@@ -6,12 +6,12 @@ package meta
 
 import (
 	"context"
-	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/docker/docker/api/types"
 	dockersdk "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/system"
 	"github.com/pkg/errors"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"os"
 	"path/filepath"
 )
@@ -19,9 +19,7 @@ import (
 func copyToContainerByDockerAPI(docker *dockersdk.Client, ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
 	cid := c.Id
 
-	// TODO copy进去之后是什么权限? owner mode
-
-	// 摘自: https://github.com/docker/cli.git/cli/command/container/cp.go
+	// ref: https://github.com/docker/cli/blob/master/cli/command/container/cp.go
 
 	// Prepare destination copy info by stat-ing the container path.
 	dstInfo := archive.CopyInfo{Path: dstPath}

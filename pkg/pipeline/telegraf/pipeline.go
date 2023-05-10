@@ -284,7 +284,10 @@ func (p *Pipeline) collectOnceWithNsEnter(ine api2.InputExtNsEnter, m *accumulat
 	// 这里使用了sandbox容器, 好处是如果主容器挂了, 那么这里依旧可以通
 	// execResult, err := ioc.Crii.NsEnterExec(ctx, []cri.NsEnterType{cri.NsEnter_NET}, pod.Sandbox, []string{core.HelperToolLocalPath, actionType}, nil, "", bytes.NewBuffer(reqBytes))
 	// Prefer to use docker standard API.
-	execResult, err := ioc.Crii.ExecSync(ctx, pod.MainBiz(), []string{core.HelperToolPath, "inputProxy", actionType}, nil, "", bytes.NewBuffer(reqBytes))
+	execResult, err := ioc.Crii.Exec(ctx, pod.MainBiz(), cri.ExecRequest{
+		Cmd:   []string{core.HelperToolPath, "inputProxy", actionType},
+		Input: bytes.NewBuffer(reqBytes),
+	})
 
 	// err!=nil 说明发生系统级报错, 业务报错不会体现为 err 的
 	if err != nil {

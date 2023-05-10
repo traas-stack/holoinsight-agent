@@ -13,8 +13,9 @@ import (
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	dockersdk "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/pkg/errors"
-	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
@@ -27,6 +28,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/trigger"
 	"go.uber.org/zap"
 	"io"
@@ -67,6 +69,11 @@ type (
 	}
 )
 
+var (
+	errContainerIsNil = errors.New("container is nil")
+	defaultExecUser   = "root"
+)
+
 func (s *internalState) build() {
 	for id, c := range s.ContainerMap {
 		s.shortCidContainerMap[id[:12]] = c
@@ -84,8 +91,8 @@ func (s *internalState) build() {
 	}
 }
 
-func New(rs *registry.Service, k8smm *k8smeta.Manager, docker *dockersdk.Client) *DockerLocalMetaImpl {
-	return &DockerLocalMetaImpl{
+func New(rs *registry.Service, k8smm *k8smeta.Manager, docker *dockersdk.Client) cri.Interface {
+	impl := &DockerLocalMetaImpl{
 		rs:     rs,
 		docker: docker,
 		k8smm:  k8smm,
@@ -99,6 +106,8 @@ func New(rs *registry.Service, k8smm *k8smeta.Manager, docker *dockersdk.Client)
 		syncDebounce: debounce.New(time.Second),
 		oomRecoder:   newOOMRecorder(),
 	}
+	impl.Start()
+	return impl
 }
 
 func (l *DockerLocalMetaImpl) GetAllPods() []*cri.Pod {
@@ -176,6 +185,7 @@ func (l *DockerLocalMetaImpl) listenDockerLoop() {
 		func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			logger.Dockerz("listen to docker events")
 			msgCh, errCh := l.docker.Events(ctx, types.EventsOptions{
 				Filters: filter,
 			})
@@ -209,12 +219,22 @@ func (l *DockerLocalMetaImpl) syncLoop() {
 }
 
 func (l *DockerLocalMetaImpl) listDockerContainers() ([]types.Container, error) {
+	begin := time.Now()
+	defer func() {
+		logger.Dockerz("[digest] list all containers", zap.Duration("cost", time.Now().Sub(begin)))
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), listContainersTimeout)
 	defer cancel()
 	return l.docker.ContainerList(ctx, types.ContainerListOptions{All: true})
 }
 
 func (l *DockerLocalMetaImpl) inspectDockerContainers(cid string) (types.ContainerJSON, error) {
+	begin := time.Now()
+	defer func() {
+		logger.Dockerz("[digest] inspect container", zap.String("cid", cid), zap.Duration("cost", time.Now().Sub(begin)))
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), inspectContainersTimeout)
 	defer cancel()
 	return l.docker.ContainerInspect(ctx, cid)
@@ -410,81 +430,189 @@ func ValidateOutputPathFileMode(fileMode os.FileMode) error {
 
 func (l *DockerLocalMetaImpl) CopyToContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
 	if c == nil {
-		return errors.New("main container is nil")
+		return errContainerIsNil
 	}
 	begin := time.Now()
 	defer func() {
 		cost := time.Now().Sub(begin)
-		logger.Infoz("[docker] [cp] digest", zap.String("cid", c.Id),
+		logger.Dockerz("[docker] copy to container",
+			zap.String("cid", c.Id),
+			zap.String("runtime", c.Runtime),
 			zap.String("src", srcPath),
 			zap.String("dst", dstPath),
 			zap.Duration("cost", cost),
 			zap.Error(err))
 	}()
-	return l.copyToContainerByMount(ctx, c, srcPath, dstPath)
-}
 
-func (l *DockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
-	// 转成宿主机地址
-	hostPath := filepath.Join(core.GetHostfs(), "proc", cast.ToString(c.State.Pid), "root", dstPath)
-	//hostPath, err := cri.TransferToHostPath0(c, dstPath, true)
-	//if err != nil {
-	//	return err
-	//}
-
-	if true {
-		dir := filepath.Dir(hostPath)
-		if _, err := os.Stat(dir); err != nil && os.IsNotExist(err) {
-			err := os.MkdirAll(dir, 0777)
-			if err != nil {
-				return err
-			}
-		}
-		err := exec.CommandContext(ctx, "/usr/bin/cp", srcPath, hostPath).Run()
-		if err != nil {
-			err = errors.Wrapf(err, " src=[%s] dst=[%s]", srcPath, hostPath)
-		}
-		return err
-	} else {
-		in, err := os.Open(srcPath)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
-
-		out, err := os.Create(hostPath)
-		if err != nil {
-			return err
-		}
-		defer out.Close()
-
-		_, err = io.Copy(out, in)
-		return err
+	switch c.Runtime {
+	case "runc":
+		return l.copyToContainerByMount(ctx, c, srcPath, dstPath)
+	default:
+		return l.copyToContainerByDockerAPI(ctx, c, srcPath, dstPath)
 	}
 }
 
-// 通过标准api复制进去
+func (l *DockerLocalMetaImpl) CopyFromContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
+	if c == nil {
+		return errContainerIsNil
+	}
+
+	begin := time.Now()
+	defer func() {
+		logger.Dockerz("[digest] copy from container",
+			zap.String("cid", c.Id),
+			zap.String("runtime", c.Runtime),
+			zap.String("src", srcPath),
+			zap.String("dst", dstPath),
+			zap.Duration("cost", time.Now().Sub(begin)),
+			zap.Error(err))
+	}()
+
+	switch c.Runtime {
+	case "runc":
+		return l.copyFromContainerByMount(ctx, c, srcPath, dstPath)
+	default:
+		return l.copyFromContainerByDockerAPI(ctx, c, srcPath, dstPath)
+	}
+}
+
+func (l *DockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+	hostPath, err := cri.TransferToHostPath0(c, dstPath, true)
+	if err != nil {
+		return err
+	}
+
+	util.CreateDirIfNotExists(filepath.Dir(hostPath), 0777)
+
+	cmd := exec.CommandContext(ctx, "/usr/bin/cp", srcPath, hostPath)
+	err = cmd.Run()
+	if err != nil {
+		err = errors.Wrapf(err, "copy to container error src=[%s] dst=[%s]", srcPath, hostPath)
+	}
+	return err
+}
+
+// copyToContainerByMount copies file from container to local file using mounts info
+func (l *DockerLocalMetaImpl) copyFromContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+	hostPath, err := cri.TransferToHostPath0(c, srcPath, true)
+	if err != nil {
+		return err
+	}
+
+	util.CreateDirIfNotExists(filepath.Dir(dstPath), 0777)
+
+	cmd := exec.CommandContext(ctx, "/usr/bin/cp", hostPath, dstPath)
+	err = cmd.Run()
+	if err != nil {
+		err = errors.Wrapf(err, "copy from container error src=[%s] dst=[%s]", srcPath, hostPath)
+	}
+	return err
+}
+
+func (l *DockerLocalMetaImpl) copyFromContainerByDockerAPI(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+	content, stat, err := l.docker.CopyFromContainer(ctx, c.Id, srcPath)
+	if err != nil {
+		return err
+	}
+	defer content.Close()
+
+	srcInfo := archive.CopyInfo{
+		Path:   srcPath,
+		Exists: true,
+		IsDir:  stat.Mode.IsDir(),
+	}
+
+	return archive.CopyTo(content, srcInfo, dstPath)
+}
+
+// copyToContainerByDockerAPI copies file to container using docker standard api
 func (l *DockerLocalMetaImpl) copyToContainerByDockerAPI(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+	// mkdir -p
+	if _, err := l.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"mkdir", "-p", filepath.Dir(dstPath)}}); err != nil {
+		return err
+	}
 	return copyToContainerByDockerAPI(l.docker, ctx, c, srcPath, dstPath)
 }
 
-func (l *DockerLocalMetaImpl) NsEnterExec(ctx context.Context, nsEnterTypes []cri.NsEnterType, c *cri.Container, cmd []string, env []string, workingDir string, input io.Reader) (cri.ExecResult, error) {
+func (l *DockerLocalMetaImpl) Exec(ctx context.Context, c *cri.Container, req cri.ExecRequest) (r cri.ExecResult, err error) {
+	if c == nil {
+		return cri.ExecResult{ExitCode: -1}, errContainerIsNil
+	}
+
 	begin := time.Now()
 	defer func() {
 		cost := time.Now().Sub(begin)
-		logger.Infoz("[docker] [exec] [nsenter] digest", zap.String("cid", c.Id), zap.Strings("cmd", cmd), zap.Duration("cost", cost))
+		logger.Dockerz("[digest] exec",
+			zap.String("cid", c.Id),
+			zap.Strings("cmd", req.Cmd),
+			zap.Int("code", r.ExitCode),
+			zap.String("stdout", util.SubstringMax(r.Stdout.String(), 1024)),
+			zap.String("stderr", util.SubstringMax(r.Stderr.String(), 1024)),
+			zap.Duration("cost", cost),
+			zap.Error(err),
+		)
 	}()
 
-	return execNsEnter(ctx, core.GetHostfs(), nsEnterTypes, c.State.Pid, cmd, env, workingDir, input)
-}
+	if req.User == "" {
+		req.User = defaultExecUser
+	}
+	create, err := l.docker.ContainerExecCreate(ctx, c.Id, types.ExecConfig{
+		User:         req.User,
+		Privileged:   false,
+		Tty:          false,
+		AttachStdin:  req.Input != nil,
+		AttachStderr: true,
+		AttachStdout: true,
+		Detach:       false,
+		DetachKeys:   "",
+		Env:          req.Env,
+		WorkingDir:   req.WorkingDir,
+		Cmd:          req.Cmd,
+	})
+	if err != nil {
+		return cri.ExecResult{ExitCode: -1}, err
+	}
 
-func (l *DockerLocalMetaImpl) ExecSync(ctx context.Context, c *cri.Container, cmd []string, env []string, workingDir string, input io.Reader) (cri.ExecResult, error) {
-	begin := time.Now()
-	defer func() {
-		cost := time.Now().Sub(begin)
-		logger.Infoz("[docker] [exec] digest", zap.String("cid", c.Id), zap.Strings("cmd", cmd), zap.Duration("cost", cost))
+	resp, err := l.docker.ContainerExecAttach(ctx, create.ID, types.ExecStartCheck{})
+	if err != nil {
+		return cri.ExecResult{ExitCode: -1}, err
+	}
+	defer resp.Close()
+
+	copyDone := make(chan struct{}, 1)
+
+	stdout := bytes.NewBuffer(nil)
+	stderr := bytes.NewBuffer(nil)
+
+	if req.Input != nil {
+		go func() {
+			// Must close write here which will trigger an EOF
+			defer resp.CloseWrite()
+			io.Copy(resp.Conn, req.Input)
+		}()
+	}
+
+	go func() {
+		_, err = stdcopy.StdCopy(stdout, stderr, resp.Reader)
+		copyDone <- struct{}{}
 	}()
-	return execSync(l.docker, ctx, c, cmd, env, workingDir, input)
+	select {
+	case <-copyDone:
+		// nothing
+	case <-ctx.Done():
+		// timeout
+		return cri.ExecResult{ExitCode: -1}, err
+	}
+
+	inspect, err2 := l.docker.ContainerExecInspect(ctx, create.ID)
+	if err == nil {
+		err = err2
+	}
+	// When exec successfully but with exitCode!=0, I wrap it as an error. This forces developers to handle errors.
+	if err == nil && inspect.ExitCode != 0 {
+		err = fmt.Errorf("exitcode=[%d] stdout=[%s] stderr=[%s]", inspect.ExitCode, stdout.String(), stderr.String())
+	}
+	return cri.ExecResult{ExitCode: inspect.ExitCode, Stdout: stdout, Stderr: stderr}, err
 }
 
 func (l *DockerLocalMetaImpl) getEtcTimezone(ctx context.Context, c *cri.Container) (string, error) {
@@ -496,16 +624,16 @@ func (l *DockerLocalMetaImpl) getEtcTimezone(ctx context.Context, c *cri.Contain
 	return tz, err
 }
 func (l *DockerLocalMetaImpl) getEtcTimezone0(ctx context.Context, c *cri.Container) (string, error) {
-	// 参考文档
-	// https://man7.org/linux/man-pages/man5/localtime.5.html
+	// ref: https://man7.org/linux/man-pages/man5/localtime.5.html
 
 	// /etc/localtime 控制着系统级别的时区, 如果不存在则默认为UTC, 如果存在则必须是 /usr/share/zoneinfo/ 下的一个符号链接!
 	// 每个进程的TZ环境变量则可以强制覆盖本进程的时区
 
-	// 但我们无法感知日志内容是哪个进程所写(非要用lsof也行...), 所以我们只能假定写日志的进程使用的是系统时区
-
-	hostPath, err := cri.TransferToHostPath0(c, "/etc/localtime", false)
-	if err == nil {
+	if c.Runtime == "runc" {
+		hostPath, err := cri.TransferToHostPath0(c, "/etc/localtime", false)
+		if err != nil {
+			return "", err
+		}
 		st, err := os.Lstat(hostPath)
 
 		if err != nil {
@@ -536,20 +664,20 @@ func (l *DockerLocalMetaImpl) getEtcTimezone0(ctx context.Context, c *cri.Contai
 		// 这里只能读出内容 然后
 		// time.LoadLocationFromTZData()
 		return "", errors.New("unknown link: " + link)
-	} else {
-		er, err := l.ExecSync(ctx, c, []string{"readlink", "/etc/localtime"}, nil, "", nil)
-		if err != nil {
-			return "", err
-		}
-		if er.ExitCode != 0 {
-			return "", errors.New("bad exitcode")
-		}
-		link := er.Stdout.String()
-		if s := parseTimezoneNameFromLink(link); s != "" {
-			return s, nil
-		}
-		return "", errors.New("unknown link: " + link)
 	}
+
+	// TODO add a helper method to parse timezone in container ?
+	r, err := l.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"readlink", "/etc/localtime"}})
+	if err != nil {
+		return "", err
+	}
+	// if /etc/localtime is a regular file or not exist, exitcode == 1
+	// ends with \n
+	link := strings.TrimSpace(r.Stdout.String())
+	if s := parseTimezoneNameFromLink(link); s != "" {
+		return s, nil
+	}
+	return "", errors.New("unknown link: " + link)
 }
 
 func parseTimezoneNameFromLink(link string) string {
@@ -557,18 +685,6 @@ func parseTimezoneNameFromLink(link string) string {
 		return link[len("/usr/share/zoneinfo/"):]
 	}
 	return ""
-}
-
-// input must be io.reader / []byte / string
-func (l *DockerLocalMetaImpl) NsEnterHelperExec(ctx context.Context, c *cri.Container, args []string, env []string, workingDir string, input interface{}) (cri.ExecResult, error) {
-	ioReader, err := convertToIOReader(input)
-	if err != nil {
-		return cri.ExecResult{}, err
-	}
-	cmd := make([]string, 0, 1+len(args))
-	cmd = append(cmd, core.HelperToolPath)
-	cmd = append(cmd, args...)
-	return l.NsEnterExec(ctx, nil, c, cmd, env, workingDir, ioReader)
 }
 
 // 判断容器是否是一个k8s管控的容器
@@ -583,22 +699,6 @@ func (l *DockerLocalMetaImpl) isSandbox(c *cri.Container) bool {
 
 func (l *DockerLocalMetaImpl) isSidecar(c *cri.Container) bool {
 	return k8smetaextractor.DefaultPodMetaService.IsSidecar(c)
-}
-
-func convertToIOReader(input interface{}) (io.Reader, error) {
-	if input == nil {
-		return nil, nil
-	}
-	switch x := input.(type) {
-	case string:
-		return strings.NewReader(x), nil
-	case []byte:
-		return bytes.NewBuffer(x), nil
-	case io.Reader:
-		return x, nil
-	default:
-		return nil, errors.New("invalid input")
-	}
 }
 
 func (l *DockerLocalMetaImpl) GetContainerByCid(cid string) (*cri.Container, bool) {
@@ -632,7 +732,7 @@ func (l *DockerLocalMetaImpl) getHostname(ctx context.Context, container *cri.Co
 	ctx2, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 
-	result, err := l.ExecSync(ctx2, container, []string{"hostname"}, nil, "", nil)
+	result, err := l.Exec(ctx2, container, cri.ExecRequest{Cmd: []string{"hostname"}})
 	if err != nil {
 		return "", err
 	}

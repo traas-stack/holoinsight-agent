@@ -64,9 +64,6 @@ func runInContainer(resp interface{}, callHelper func(ctx context.Context) (cri.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	//env := []string{"AGENT_INFO=" + util.ToJsonString(inspect.CreateAgentInfo())}
-	// er, err := crii.NsEnterHelperExec(ctx, container, []string{"inspect"}, env, "", nil)
-
 	er, err := callHelper(ctx)
 	if err != nil {
 		return err

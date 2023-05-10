@@ -8,6 +8,7 @@ import (
 	"context"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/inspect"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
@@ -36,7 +37,10 @@ func inspect0(reqBytes []byte, resp *pb.InspectResponse) error {
 	} else if container != nil {
 		return runInContainer(resp, func(ctx context.Context) (cri.ExecResult, error) {
 			env := []string{"AGENT_INFO=" + util.ToJsonString(inspect.CreateAgentInfo())}
-			return crii.NsEnterHelperExec(ctx, container, []string{"inspect"}, env, "", nil)
+			return crii.Exec(ctx, container, cri.ExecRequest{
+				Cmd: []string{core.HelperToolPath, "inspect"},
+				Env: env,
+			})
 		})
 	}
 

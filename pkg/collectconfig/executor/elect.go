@@ -24,8 +24,8 @@ type (
 
 func parseElect(e *collectconfig.Elect) (XElect, error) {
 	xe, err := parseElect0(e)
-	if err == nil {
-		xe.Init()
+	if err != nil {
+		return nil, err
 	}
 	if e.Transform != nil {
 		filter, err := parseTransform(e.Transform)
@@ -38,7 +38,7 @@ func parseElect(e *collectconfig.Elect) (XElect, error) {
 			}
 		}
 	}
-	return xe, err
+	return xe, nil
 }
 
 func parseElect0(e *collectconfig.Elect) (XElect, error) {

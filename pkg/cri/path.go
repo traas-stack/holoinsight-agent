@@ -65,7 +65,7 @@ func transferToHostPath1(mergedDir string, mounts []*MountPoint, ctrPath string)
 		if strings.HasPrefix(ctrPath, mount.Destination) {
 			ld := len(mount.Destination)
 			if len(ctrPath) == ld {
-				return filepath.Join(mount.Source), nil
+				return mount.Source, nil
 			}
 
 			if ctrPath[len(mount.Destination)] == '/' {
