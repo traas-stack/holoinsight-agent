@@ -771,7 +771,9 @@ func (c *Consumer) addCommonTags(datum []*model.DetailData) {
 			d.Tags = make(map[string]string, len(commonTags))
 		}
 		for k, v := range commonTags {
-			d.Tags[k] = v
+			if _, exist := d.Tags[k]; !exist {
+				d.Tags[k] = v
+			}
 		}
 	}
 }
