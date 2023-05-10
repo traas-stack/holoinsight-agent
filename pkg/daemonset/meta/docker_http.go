@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-func (l *DockerLocalMetaImpl) registerHttpHandlers() {
+func (l *dockerLocalMetaImpl) registerHttpHandlers() {
 	http.HandleFunc("/api/meta/local/get", func(writer http.ResponseWriter, request *http.Request) {
 		ns := request.URL.Query().Get("ns")
 		podName := request.URL.Query().Get("pod")

@@ -45,11 +45,12 @@ const (
 	defaultSyncInterval      = time.Minute
 	listContainersTimeout    = 10 * time.Second
 	inspectContainersTimeout = 3 * time.Second
+	// shortContainerIdLength is the short container id length
+	shortContainerIdLength = 12
 )
 
 type (
-	// TODO 别暴露
-	DockerLocalMetaImpl struct {
+	dockerLocalMetaImpl struct {
 		docker       *dockersdk.Client
 		state        *internalState
 		syncDebounce func(func())
@@ -61,7 +62,11 @@ type (
 		Pods                 []*cri.Pod
 		RunningPodMap        map[string]*cri.Pod         `json:"-"`
 		ContainerMap         map[string]*CachedContainer `json:"-"`
-		shortCidContainerMap map[string]*CachedContainer `json:"-"`
+		shortCidContainerMap map[string]*CachedContainer
+		// podByKey pod map by key("${ns}/${pod}")
+		podByKey map[string]*cri.Pod
+		// podByHostname pod map by hostname
+		podByHostname map[string]*cri.Pod
 	}
 	CachedContainer struct {
 		DockerContainer *types.ContainerJSON
@@ -76,12 +81,18 @@ var (
 
 func (s *internalState) build() {
 	for id, c := range s.ContainerMap {
-		s.shortCidContainerMap[id[:12]] = c
+		s.shortCidContainerMap[id[:shortContainerIdLength]] = c
 	}
 	s.RunningPodMap = make(map[string]*cri.Pod)
 	for _, pod := range s.Pods {
 		if pod.IsRunning() {
 			s.RunningPodMap[pod.Namespace+"/"+pod.Name] = pod
+		}
+		s.podByKey[pod.Namespace+"/"+pod.Name] = pod
+		hostname := k8smetaextractor.DefaultPodMetaService.ExtractHostname(pod.Pod)
+		if hostname != "" {
+			// the hostname may be duplicated
+			s.podByHostname[hostname] = pod
 		}
 
 		for _, container := range pod.All {
@@ -92,15 +103,11 @@ func (s *internalState) build() {
 }
 
 func New(rs *registry.Service, k8smm *k8smeta.Manager, docker *dockersdk.Client) cri.Interface {
-	impl := &DockerLocalMetaImpl{
+	impl := &dockerLocalMetaImpl{
 		rs:     rs,
 		docker: docker,
 		k8smm:  k8smm,
-		state: &internalState{
-			RunningPodMap:        make(map[string]*cri.Pod),
-			ContainerMap:         make(map[string]*CachedContainer),
-			shortCidContainerMap: make(map[string]*CachedContainer),
-		},
+		state:  newInternalState(),
 		// 函数去抖:
 		// 每次k8s元数据变化后,
 		syncDebounce: debounce.New(time.Second),
@@ -110,18 +117,28 @@ func New(rs *registry.Service, k8smm *k8smeta.Manager, docker *dockersdk.Client)
 	return impl
 }
 
-func (l *DockerLocalMetaImpl) GetAllPods() []*cri.Pod {
+func newInternalState() *internalState {
+	return &internalState{
+		RunningPodMap:        make(map[string]*cri.Pod),
+		ContainerMap:         make(map[string]*CachedContainer),
+		shortCidContainerMap: make(map[string]*CachedContainer),
+		podByKey:             make(map[string]*cri.Pod),
+		podByHostname:        make(map[string]*cri.Pod),
+	}
+}
+
+func (l *dockerLocalMetaImpl) GetAllPods() []*cri.Pod {
 	return l.state.Pods
 }
 
-func (l *DockerLocalMetaImpl) isLocalPod(obj interface{}) bool {
+func (l *dockerLocalMetaImpl) isLocalPod(obj interface{}) bool {
 	if pod, ok := obj.(*v1.Pod); ok {
 		return l.k8smm.LocalMeta.IsLocalPod(pod)
 	}
 	return false
 }
 
-func (l *DockerLocalMetaImpl) Start() {
+func (l *dockerLocalMetaImpl) Start() {
 	// add 后立即触发, 结束之后如果还有则立即再触发
 
 	l.syncOnce()
@@ -165,7 +182,7 @@ func (l *DockerLocalMetaImpl) Start() {
 }
 
 // 这个似乎没什么用? 因为我们的更新主要是靠pods来驱动的
-func (l *DockerLocalMetaImpl) listenDockerLoop() {
+func (l *dockerLocalMetaImpl) listenDockerLoop() {
 	filter := filters.NewArgs()
 
 	filter.Add("type", "container")
@@ -209,7 +226,7 @@ func (l *DockerLocalMetaImpl) listenDockerLoop() {
 	}
 }
 
-func (l *DockerLocalMetaImpl) syncLoop() {
+func (l *dockerLocalMetaImpl) syncLoop() {
 	go func() {
 		t := time.NewTicker(defaultSyncInterval)
 		for range t.C {
@@ -218,7 +235,7 @@ func (l *DockerLocalMetaImpl) syncLoop() {
 	}()
 }
 
-func (l *DockerLocalMetaImpl) listDockerContainers() ([]types.Container, error) {
+func (l *dockerLocalMetaImpl) listDockerContainers() ([]types.Container, error) {
 	begin := time.Now()
 	defer func() {
 		logger.Dockerz("[digest] list all containers", zap.Duration("cost", time.Now().Sub(begin)))
@@ -229,7 +246,7 @@ func (l *DockerLocalMetaImpl) listDockerContainers() ([]types.Container, error) 
 	return l.docker.ContainerList(ctx, types.ContainerListOptions{All: true})
 }
 
-func (l *DockerLocalMetaImpl) inspectDockerContainers(cid string) (types.ContainerJSON, error) {
+func (l *dockerLocalMetaImpl) inspectDockerContainers(cid string) (types.ContainerJSON, error) {
 	begin := time.Now()
 	defer func() {
 		logger.Dockerz("[digest] inspect container", zap.String("cid", cid), zap.Duration("cost", time.Now().Sub(begin)))
@@ -241,7 +258,7 @@ func (l *DockerLocalMetaImpl) inspectDockerContainers(cid string) (types.Contain
 }
 
 // useCache 是否能使用缓存
-func (l *DockerLocalMetaImpl) syncOnce() {
+func (l *dockerLocalMetaImpl) syncOnce() {
 	begin := time.Now()
 
 	dockerContainers, err := l.listDockerContainers()
@@ -251,10 +268,7 @@ func (l *DockerLocalMetaImpl) syncOnce() {
 	}
 
 	oldState := l.state
-	newState := &internalState{
-		ContainerMap:         make(map[string]*CachedContainer, len(oldState.ContainerMap)),
-		shortCidContainerMap: make(map[string]*CachedContainer, len(oldState.ContainerMap)),
-	}
+	newState := newInternalState()
 
 	// 建立一个索引, key是 namespace+ pod value 是 所有的containers
 	dockerContainersByPod := make(map[string][]*types.ContainerJSON)
@@ -392,30 +406,20 @@ func parseEnv(envs []string) map[string]string {
 	return ret
 }
 
-func (l *DockerLocalMetaImpl) maybeSync() {
+func (l *dockerLocalMetaImpl) maybeSync() {
 	l.syncDebounce(l.syncOnce)
 }
 
-func (l *DockerLocalMetaImpl) GetPod(ns, pod string) (*cri.Pod, bool) {
+func (l *dockerLocalMetaImpl) GetPod(ns, pod string) (*cri.Pod, bool) {
 	state := l.state
-	// TODO 低效率
-	for _, p := range state.Pods {
-		if p.Namespace == ns && p.Name == pod {
-			return p, true
-		}
-	}
-	return nil, false
+	p, ok := state.podByKey[ns+"/"+pod]
+	return p, ok
 }
 
-func (l *DockerLocalMetaImpl) GetPodByHostname(hostname string) (*cri.Pod, bool) {
+func (l *dockerLocalMetaImpl) GetPodByHostname(hostname string) (*cri.Pod, bool) {
 	state := l.state
-	// TODO 低效率
-	for _, p := range state.Pods {
-		if k8smetaextractor.DefaultPodMetaService.ExtractHostname(p.Pod) == hostname {
-			return p, true
-		}
-	}
-	return nil, false
+	p, ok := state.podByHostname[hostname]
+	return p, ok
 }
 
 func ValidateOutputPathFileMode(fileMode os.FileMode) error {
@@ -428,7 +432,7 @@ func ValidateOutputPathFileMode(fileMode os.FileMode) error {
 	return nil
 }
 
-func (l *DockerLocalMetaImpl) CopyToContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
+func (l *dockerLocalMetaImpl) CopyToContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
 	if c == nil {
 		return errContainerIsNil
 	}
@@ -452,7 +456,7 @@ func (l *DockerLocalMetaImpl) CopyToContainer(ctx context.Context, c *cri.Contai
 	}
 }
 
-func (l *DockerLocalMetaImpl) CopyFromContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
+func (l *dockerLocalMetaImpl) CopyFromContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
 	if c == nil {
 		return errContainerIsNil
 	}
@@ -476,7 +480,7 @@ func (l *DockerLocalMetaImpl) CopyFromContainer(ctx context.Context, c *cri.Cont
 	}
 }
 
-func (l *DockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+func (l *dockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
 	hostPath, err := cri.TransferToHostPath0(c, dstPath, true)
 	if err != nil {
 		return err
@@ -493,7 +497,7 @@ func (l *DockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri
 }
 
 // copyToContainerByMount copies file from container to local file using mounts info
-func (l *DockerLocalMetaImpl) copyFromContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+func (l *dockerLocalMetaImpl) copyFromContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
 	hostPath, err := cri.TransferToHostPath0(c, srcPath, true)
 	if err != nil {
 		return err
@@ -509,7 +513,7 @@ func (l *DockerLocalMetaImpl) copyFromContainerByMount(ctx context.Context, c *c
 	return err
 }
 
-func (l *DockerLocalMetaImpl) copyFromContainerByDockerAPI(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+func (l *dockerLocalMetaImpl) copyFromContainerByDockerAPI(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
 	content, stat, err := l.docker.CopyFromContainer(ctx, c.Id, srcPath)
 	if err != nil {
 		return err
@@ -526,7 +530,7 @@ func (l *DockerLocalMetaImpl) copyFromContainerByDockerAPI(ctx context.Context, 
 }
 
 // copyToContainerByDockerAPI copies file to container using docker standard api
-func (l *DockerLocalMetaImpl) copyToContainerByDockerAPI(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+func (l *dockerLocalMetaImpl) copyToContainerByDockerAPI(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
 	// mkdir -p
 	if _, err := l.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"mkdir", "-p", filepath.Dir(dstPath)}}); err != nil {
 		return err
@@ -534,7 +538,7 @@ func (l *DockerLocalMetaImpl) copyToContainerByDockerAPI(ctx context.Context, c 
 	return copyToContainerByDockerAPI(l.docker, ctx, c, srcPath, dstPath)
 }
 
-func (l *DockerLocalMetaImpl) Exec(ctx context.Context, c *cri.Container, req cri.ExecRequest) (r cri.ExecResult, err error) {
+func (l *dockerLocalMetaImpl) Exec(ctx context.Context, c *cri.Container, req cri.ExecRequest) (r cri.ExecResult, err error) {
 	if c == nil {
 		return cri.ExecResult{ExitCode: -1}, errContainerIsNil
 	}
@@ -615,7 +619,7 @@ func (l *DockerLocalMetaImpl) Exec(ctx context.Context, c *cri.Container, req cr
 	return cri.ExecResult{ExitCode: inspect.ExitCode, Stdout: stdout, Stderr: stderr}, err
 }
 
-func (l *DockerLocalMetaImpl) getEtcTimezone(ctx context.Context, c *cri.Container) (string, error) {
+func (l *dockerLocalMetaImpl) getEtcTimezone(ctx context.Context, c *cri.Container) (string, error) {
 	tz, err := l.getEtcTimezone0(ctx, c)
 	if tz == "" {
 		// If /etc/localtime is missing, the default "UTC" timezone is used.
@@ -623,7 +627,7 @@ func (l *DockerLocalMetaImpl) getEtcTimezone(ctx context.Context, c *cri.Contain
 	}
 	return tz, err
 }
-func (l *DockerLocalMetaImpl) getEtcTimezone0(ctx context.Context, c *cri.Container) (string, error) {
+func (l *dockerLocalMetaImpl) getEtcTimezone0(ctx context.Context, c *cri.Container) (string, error) {
 	// ref: https://man7.org/linux/man-pages/man5/localtime.5.html
 
 	// /etc/localtime 控制着系统级别的时区, 如果不存在则默认为UTC, 如果存在则必须是 /usr/share/zoneinfo/ 下的一个符号链接!
@@ -688,20 +692,20 @@ func parseTimezoneNameFromLink(link string) string {
 }
 
 // 判断容器是否是一个k8s管控的容器
-func (l *DockerLocalMetaImpl) isK8sContainer(labels map[string]string) bool {
+func (l *dockerLocalMetaImpl) isK8sContainer(labels map[string]string) bool {
 	return k8slabels.GetNamespace(labels) != "" && k8slabels.GetPodName(labels) != ""
 }
 
 // 判断目标容器是否是一个 sandbox
-func (l *DockerLocalMetaImpl) isSandbox(c *cri.Container) bool {
+func (l *dockerLocalMetaImpl) isSandbox(c *cri.Container) bool {
 	return k8smetaextractor.DefaultPodMetaService.IsSandbox(c)
 }
 
-func (l *DockerLocalMetaImpl) isSidecar(c *cri.Container) bool {
+func (l *dockerLocalMetaImpl) isSidecar(c *cri.Container) bool {
 	return k8smetaextractor.DefaultPodMetaService.IsSidecar(c)
 }
 
-func (l *DockerLocalMetaImpl) GetContainerByCid(cid string) (*cri.Container, bool) {
+func (l *dockerLocalMetaImpl) GetContainerByCid(cid string) (*cri.Container, bool) {
 	// docker 12位 cid
 	// fa5799111150
 	if c, ok := l.state.shortCidContainerMap[cid]; ok {
@@ -714,11 +718,11 @@ func (l *DockerLocalMetaImpl) GetContainerByCid(cid string) (*cri.Container, boo
 	return nil, false
 }
 
-func (l *DockerLocalMetaImpl) CheckSandboxByLabels(labels map[string]string) bool {
+func (l *dockerLocalMetaImpl) CheckSandboxByLabels(labels map[string]string) bool {
 	return dockerutils.IsSandbox(labels) || pouch.IsSandbox(labels)
 }
 
-func (l *DockerLocalMetaImpl) getHostname(ctx context.Context, container *cri.Container) (string, error) {
+func (l *dockerLocalMetaImpl) getHostname(ctx context.Context, container *cri.Container) (string, error) {
 
 	hostname := container.Env["HOSTNAME"]
 	if hostname != "" {
@@ -739,7 +743,7 @@ func (l *DockerLocalMetaImpl) getHostname(ctx context.Context, container *cri.Co
 	return strings.TrimSpace(result.Stdout.String()), nil
 }
 
-func (l *DockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.ContainerJSON) *cri.Container {
+func (l *dockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.ContainerJSON) *cri.Container {
 	// 容器的大部分参数其实不会变化, 最多就是状态变了
 	// 因此我们这里没有必要
 	criContainer := &cri.Container{
@@ -857,7 +861,7 @@ func (l *DockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.Conta
 	return criContainer
 }
 
-func (l *DockerLocalMetaImpl) handleOOM(msg events.Message) {
+func (l *dockerLocalMetaImpl) handleOOM(msg events.Message) {
 	ctr, ok := l.GetContainerByCid(msg.ID)
 	if !ok || ctr.Sandbox {
 		// 当发生oom时, sandbox和container都会产生oom
@@ -873,7 +877,7 @@ func (l *DockerLocalMetaImpl) handleOOM(msg events.Message) {
 	l.oomRecoder.add(ctr)
 }
 
-func (l *DockerLocalMetaImpl) emitOOMMetrics() {
+func (l *dockerLocalMetaImpl) emitOOMMetrics() {
 	trg := trigger.WithFixedRate(time.Minute, 2*time.Second)
 
 	next := trg.Next(nil)
