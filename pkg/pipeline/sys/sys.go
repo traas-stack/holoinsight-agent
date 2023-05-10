@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"runtime"
 	"sync"
@@ -242,6 +243,7 @@ func (p *SysPipeline) addCommonTags(d *model.DetailData) {
 		// 对于sidecar场景就是取本机ip
 		d.Tags["ip"] = util.GetLocalIp()
 	}
+	meta.AttachSystemCommonTagsTo(d.Tags)
 }
 
 func (p *SysPipeline) Stop() {
