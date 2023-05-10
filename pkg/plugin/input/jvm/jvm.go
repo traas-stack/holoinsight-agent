@@ -5,8 +5,8 @@
 package jvm
 
 import (
-	"github.com/traas-stack/holoinsight-agent/pkg/cri/crihelper"
 	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"math"
 	"strings"
 	"time"
@@ -49,7 +49,7 @@ func init() {
 	accuMetrics["contended_lock_attempts"] = true
 }
 
-func addJvmMetricsFromProcess(javaProcess *crihelper.ProcessInfo, rawMetrics map[string]interface{}, tags map[string]string) {
+func addJvmMetricsFromProcess(javaProcess *criutils.ProcessInfo, rawMetrics map[string]interface{}, tags map[string]string) {
 	maxMetaspaceSize := int64(0)
 	reservedCodeCacheSize := int64(0)
 

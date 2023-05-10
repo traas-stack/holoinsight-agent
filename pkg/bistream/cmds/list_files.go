@@ -8,6 +8,7 @@ import (
 	"context"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/listfiles"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
@@ -39,7 +40,10 @@ func listFiles0(bs []byte, resp *pb.ListFilesResponse) error {
 			return err
 		}
 		return runInContainer(resp, func(ctx context.Context) (cri.ExecResult, error) {
-			return crii.NsEnterHelperExec(ctx, container, []string{"listFiles"}, nil, "", input)
+			return crii.Exec(ctx, container, cri.ExecRequest{
+				Cmd:   []string{core.HelperToolPath, "listFiles"},
+				Input: input,
+			})
 		})
 	}
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/previewlog"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
@@ -45,7 +46,10 @@ func previewFile0(reqBytes []byte, resp *pb.PreviewFileResponse) error {
 			return err
 		}
 		return runInContainer(resp, func(ctx context.Context) (cri.ExecResult, error) {
-			return crii.NsEnterHelperExec(ctx, container, []string{"previewLog"}, nil, "", input)
+			return crii.Exec(ctx, container, cri.ExecRequest{
+				Cmd:   []string{core.HelperToolPath, "previewLog"},
+				Input: input,
+			})
 		})
 	}
 

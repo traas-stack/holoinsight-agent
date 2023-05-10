@@ -19,7 +19,10 @@ func main() {
 	var resp = &model.Resp{}
 
 	defer func() {
-		json.NewEncoder(os.Stdout).Encode(&resp)
+		bs, _ := json.Marshal(resp)
+		os.Stdout.Write(bs)
+		// Encoder.Encode will append a newline char
+		// json.NewEncoder(os.Stdout).Encode(resp)
 	}()
 
 	if len(os.Args) == 0 {

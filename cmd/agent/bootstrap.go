@@ -197,9 +197,9 @@ func bootstrap() error {
 			panic(err)
 		}
 		logger.Infoz("[bootstrap] init docker client", zap.String("host", host), zap.Any("ping", pingResp))
+		logger.Dockerz("[init] docker client", zap.String("host", host), zap.Any("ping", pingResp))
 
 		dm := daemonsetmeta.New(rs, k8smm, docker)
-		dm.Start()
 		ioc.Crii = dm
 
 		// 5秒级系统指标任务采集

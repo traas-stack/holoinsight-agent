@@ -22,3 +22,18 @@ func GetEnvOrDefault(name, defaultValue string) string {
 	}
 	return s
 }
+
+// CreateDirIfNotExists creates dir if it does not exist
+func CreateDirIfNotExists(dir string, perm os.FileMode) error {
+	stat, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return os.MkdirAll(dir, perm)
+		}
+		return err
+	}
+	if stat.IsDir() {
+		return nil
+	}
+	return os.ErrExist
+}
