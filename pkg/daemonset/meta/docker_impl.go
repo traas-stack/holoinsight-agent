@@ -23,8 +23,8 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
-	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics/common"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
@@ -894,10 +894,9 @@ func (l *dockerLocalMetaImpl) emitOOMMetrics() {
 		// k8s_pod_oom
 		var metrics []*model.Metric
 		for _, item := range record {
-			tags := common.ExtractContainerCommonTags(item.container)
+			tags := meta.ExtractContainerCommonTags(item.container)
 
 			metrics = append(metrics, &model.Metric{
-				// TODO 名字带有k8s对吗?
 				Name:      "k8s_pod_oom",
 				Tags:      tags,
 				Timestamp: alignTime.UnixMilli(),

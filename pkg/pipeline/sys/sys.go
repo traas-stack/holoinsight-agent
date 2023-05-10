@@ -7,6 +7,7 @@ package sys
 import (
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"runtime"
 	"sync"
@@ -121,8 +122,10 @@ func NewSysPipeline(ct *collecttask.CollectTask, sqlTask *collectconfig.SQLTask)
 		}
 	}
 
-	if _, ok := tags["app"]; !ok {
-		tags["app"] = appconfig.StdAgentConfig.App
+	if appconfig.StdAgentConfig.Mode == core.AgentModeSidecar {
+		if _, ok := tags["app"]; !ok {
+			tags["app"] = appconfig.StdAgentConfig.App
+		}
 	}
 
 	return &SysPipeline{
@@ -238,15 +241,6 @@ func (p *SysPipeline) addCommonTags(d *model.DetailData) {
 		// TODO ip的获取
 		// 对于sidecar场景就是取本机ip
 		d.Tags["ip"] = util.GetLocalIp()
-	}
-	if _, ok := d.Tags["host"]; !ok {
-		if _, ok := d.Tags["hostname"]; !ok {
-			d.Tags["host"] = util.GetHostname()
-		}
-	}
-	if _, ok := d.Tags["app"]; !ok {
-		// TODO app 的获取
-		d.Tags["app"] = "test"
 	}
 }
 

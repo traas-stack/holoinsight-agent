@@ -102,6 +102,8 @@ type (
 	}
 	DataConfig_Metric struct {
 		RefLabels DataConfig_Metric_RefLabels `json:"refLabels" yaml:"refLabels" toml:"refLabels"`
+		// SuppressedTags remove common tags whose keys are in this slice
+		SuppressedTags []string `json:"suppressedTags,omitempty" yaml:"suppressedTags" toml:"suppressedTags"`
 	}
 	DataConfig_Metric_RefLabels struct {
 		Items []*DataConfig_Metric_RefLabels_Item `json:"items" yaml:"items" toml:"items"`

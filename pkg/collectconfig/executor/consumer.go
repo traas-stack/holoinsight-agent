@@ -9,14 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
-	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/dryrun/event"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
-	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
@@ -222,7 +220,10 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 		return
 	}
 
-	c.addCommonTags(datum)
+	if !c.addCommonTags(datum) {
+		logger.Errorz("[log] [consumer] fail to add common tags to metrics", zap.String("key", c.key))
+		return
+	}
 
 	go func() {
 		err := c.output.WriteBatchSync(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum)
@@ -738,33 +739,25 @@ func (c *Consumer) printStat() {
 	)
 }
 
-func (c *Consumer) getCommonTags() map[string]string {
-	tags := make(map[string]string)
+func (c *Consumer) getCommonTags() (map[string]string, bool) {
+	var tags map[string]string
 	if c.ct.Target.IsTypePod() {
-		tags["ip"] = c.ct.Target.GetIP()
-		tags["hostname"] = c.ct.Target.GetHostname()
-		tags["app"] = c.ct.Target.GetApp()
-		tags["namespace"] = c.ct.Target.GetNamespace()
-		tags["pod"] = c.ct.Target.GetPodName()
-
 		if pod := c.getTargetPod(); pod != nil {
-			meta.RefLabels(appconfig.StdAgentConfig.Data.Metric.RefLabels.Items, pod.Labels, tags)
+			tags = meta.ExtractPodCommonTags(pod.Pod)
+		} else {
+			return nil, false
 		}
-
 	} else {
-		tags["ip"] = util.GetLocalIp()
-		tags["hostname"] = util.GetHostname()
-		tags["app"] = appconfig.StdAgentConfig.App
+		tags = meta.ExtractSidecarTags()
 	}
-	if appconfig.StdAgentConfig.Mode == core.AgentModeDaemonset {
-		tags["workspace"] = appconfig.StdAgentConfig.Workspace
-	}
-
-	return tags
+	return tags, true
 }
 
-func (c *Consumer) addCommonTags(datum []*model.DetailData) {
-	commonTags := c.getCommonTags()
+func (c *Consumer) addCommonTags(datum []*model.DetailData) bool {
+	commonTags, ok := c.getCommonTags()
+	if !ok {
+		return false
+	}
 
 	for _, d := range datum {
 		if d.Tags == nil {
@@ -776,6 +769,7 @@ func (c *Consumer) addCommonTags(datum []*model.DetailData) {
 			}
 		}
 	}
+	return true
 }
 
 func (c *Consumer) SetOutput(output output.Output) {

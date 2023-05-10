@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cast"
 	containerhelpermodel "github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/accumulator"
-	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
@@ -180,25 +179,17 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 
 	// 不同的 targetType 附加不同的 tags
 
-	attachTags := make(map[string]string)
+	var attachTags map[string]string
 
 	switch p.task.Target.Type {
 	case collecttask.TargetPod:
-		attachTags["app"] = p.task.Target.GetApp()
-		attachTags["ip"] = p.task.Target.GetIP()
-		attachTags["hostname"] = p.task.Target.GetHostname()
-		attachTags["namespace"] = p.task.Target.GetNamespace()
-		attachTags["pod"] = p.task.Target.GetPodName()
-
 		namespace := p.task.Target.GetNamespace()
 		podName := p.task.Target.GetPodName()
 		if pod, ok := ioc.Crii.GetPod(namespace, podName); ok {
-			meta.RefLabels(appconfig.StdAgentConfig.Data.Metric.RefLabels.Items, pod.Labels, attachTags)
+			attachTags = meta.ExtractPodCommonTags(pod.Pod)
 		}
 	case collecttask.TargetLocalhost:
-		attachTags["app"] = appconfig.StdAgentConfig.App
-		attachTags["ip"] = util.GetLocalIp()
-		attachTags["hostname"] = util.GetHostname()
+		attachTags = meta.ExtractSidecarTags()
 	}
 
 	for i := range m.Metrics {

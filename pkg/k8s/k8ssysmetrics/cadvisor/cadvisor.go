@@ -9,7 +9,6 @@ import (
 	"fmt"
 	cadvisorclient "github.com/google/cadvisor/client"
 	cv1 "github.com/google/cadvisor/info/v1"
-	appconfig2 "github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
@@ -320,7 +319,7 @@ func (c *cadvisorSysCollector) collectPodResourcesWithCAdvisor(alignT time.Time,
 
 	for _, cpi := range cadvisorPodInfoMap {
 		if cpi.pod2 != nil {
-			tags := c.extractPodCommonTags(cpi.pod2)
+			tags := meta.ExtractPodCommonTags(cpi.pod2)
 			metrics = append(metrics, &model.Metric{
 				Name:      "k8s_pod_disk_usage",
 				Tags:      tags,
@@ -376,12 +375,6 @@ func (c *cadvisorSysCollector) collectPodResourcesWithCAdvisor(alignT time.Time,
 	}
 }
 
-func (c *cadvisorSysCollector) extractPodCommonTags(pod *v1.Pod) map[string]string {
-	tags := common.ExtractPodCommonTags(pod)
-	meta.RefLabels(appconfig2.StdAgentConfig.Data.Metric.RefLabels.Items, pod.Labels, tags)
-	return tags
-}
-
 func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics []*model.Metric, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
 	pod := c.k8smm.PodMeta.GetPodByName(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
 	if pod == nil {
@@ -389,7 +382,7 @@ func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics
 	}
 
 	// sandbox 特殊处理
-	tags := c.extractPodCommonTags(pod)
+	tags := meta.ExtractPodCommonTags(pod)
 
 	{
 		trafficIn, trafficOut, ok := calcTraffic("eth0", s2.Network, s1.Network, deltaTime)
@@ -434,7 +427,7 @@ func (c *cadvisorSysCollector) collectPodContainer(ctr *cv1.ContainerInfo, metri
 		return metrics
 	}
 
-	tags := c.extractPodCommonTags(pod)
+	tags := meta.ExtractPodCommonTags(pod)
 	tags["container"] = k8slabels.GetContainerName(ctr.Spec.Labels)
 
 	return c.collectCGroupStats(ctr, metrics, tags, "k8s_container", mi, s1, s2, deltaTime, metricTime, true)
@@ -447,7 +440,7 @@ func (c *cadvisorSysCollector) collectPodCGroup(ctr *cv1.ContainerInfo, cpi *cad
 	}
 	cpi.pod2 = pod
 
-	tags := c.extractPodCommonTags(pod)
+	tags := meta.ExtractPodCommonTags(pod)
 
 	return c.collectCGroupStats(ctr, metrics, tags, "k8s_pod", mi, s1, s2, deltaTime, metricTime, false)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	pb2 "github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -137,8 +138,10 @@ func (s *Service) client() pb2.GatewayServiceClient {
 func (s *Service) WriteMetricsV1Extension(ctx context.Context, extension map[string]string, points []*pb2.Point) (*pb2.WriteMetricsResponse, error) {
 	// TODO 原地修改是不安全的
 	if appconfig.StdAgentConfig.Mode == core.AgentModeDaemonset {
-		for _, point := range points {
-			point.Tags["workspace"] = appconfig.StdAgentConfig.Workspace
+		if !util.StringSliceContains(appconfig.StdAgentConfig.Data.Metric.SuppressedTags, "workspace") {
+			for _, point := range points {
+				point.Tags["workspace"] = appconfig.StdAgentConfig.Workspace
+			}
 		}
 	}
 
@@ -155,8 +158,10 @@ func (s *Service) WriteMetricsV1Extension(ctx context.Context, extension map[str
 func (s *Service) WriteMetricsV1Extension2(ctx context.Context, extension map[string]string, metrics []*model.Metric) (*pb2.WriteMetricsResponse, error) {
 	// TODO 原地修改是不安全的
 	if appconfig.StdAgentConfig.Mode == core.AgentModeDaemonset {
-		for _, point := range metrics {
-			point.Tags["workspace"] = appconfig.StdAgentConfig.Workspace
+		if !util.StringSliceContains(appconfig.StdAgentConfig.Data.Metric.SuppressedTags, "workspace") {
+			for _, point := range metrics {
+				point.Tags["workspace"] = appconfig.StdAgentConfig.Workspace
+			}
 		}
 	}
 
