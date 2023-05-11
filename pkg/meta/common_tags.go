@@ -8,6 +8,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	v1 "k8s.io/api/core/v1"
@@ -56,4 +57,27 @@ func ExtractSidecarTags() map[string]string {
 	tags["hostname"] = util.GetHostname()
 	AttachSystemCommonTagsTo(tags)
 	return tags
+}
+
+func ExtractNodeCommonTags(node *v1.Node) map[string]string {
+	return map[string]string{
+		"name":         node.Name,
+		"hostname":     k8smetaextractor.PodMetaServiceInstance.NodeHostname(node),
+		"region":       k8slabels.GetRegion(node.Labels),
+		"zone":         k8slabels.GetZone(node.Labels),
+		"os":           node.Labels[k8slabels.LabelK8sOs],
+		"arch":         node.Labels[k8slabels.LabelK8sArch],
+		"instanceType": node.Labels[k8slabels.LabelK8sNodeInstanceType],
+	}
+}
+
+func ExtractNodeCommonTagsTo(node *v1.Node, to map[string]string) map[string]string {
+	to["name"] = node.Name
+	to["hostname"] = k8smetaextractor.PodMetaServiceInstance.NodeHostname(node)
+	to["region"] = k8slabels.GetRegion(node.Labels)
+	to["zone"] = k8slabels.GetZone(node.Labels)
+	to["os"] = node.Labels[k8slabels.LabelK8sOs]
+	to["arch"] = node.Labels[k8slabels.LabelK8sArch]
+	to["instanceType"] = node.Labels[k8slabels.LabelK8sNodeInstanceType]
+	return to
 }
