@@ -754,14 +754,15 @@ func (l *dockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.Conta
 			Status:    dc.State.Status,
 		},
 		// 这个就是对应k8s yaml里的 container name 注意不是 dc.Name 坑死了
-		Name:      k8slabels.GetContainerName(dc.Config.Labels),
-		Pod:       criPod,
-		Labels:    dc.Config.Labels,
-		Env:       parseEnv(dc.Config.Env),
-		LogPath:   filepath.Join(core.GetHostfs(), dc.LogPath),
-		Hostname:  dc.Config.Hostname,
-		SandboxID: k8slabels.GetSandboxID(dc.Config.Labels),
-		Runtime:   dc.HostConfig.Runtime,
+		Name:        k8slabels.GetContainerName(dc.Config.Labels),
+		Pod:         criPod,
+		Labels:      dc.Config.Labels,
+		Env:         parseEnv(dc.Config.Env),
+		LogPath:     filepath.Join(core.GetHostfs(), dc.LogPath),
+		Hostname:    dc.Config.Hostname,
+		SandboxID:   k8slabels.GetSandboxID(dc.Config.Labels),
+		Runtime:     dc.HostConfig.Runtime,
+		NetworkMode: string(dc.HostConfig.NetworkMode),
 	}
 
 	criContainer.EnvTz = criContainer.Env["TZ"]

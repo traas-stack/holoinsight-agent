@@ -78,6 +78,9 @@ type (
 
 		// 运行时
 		Runtime string
+
+		// NetworkMode
+		NetworkMode string
 	}
 	ContainerState struct {
 		Pid       int
