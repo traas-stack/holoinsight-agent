@@ -104,6 +104,10 @@ func convertToFloat64(item *queryItem, str string) (float64, error) {
 	return cast.ToFloat64E(str)
 }
 
+func (i *NvidiaInput) GetDefaultPrefix() string {
+	return ""
+}
+
 func (n *NvidiaInput) Collect(a api.Accumulator) error {
 	sb := strings.Builder{}
 	sb.WriteString("--query-gpu=index")

@@ -10,6 +10,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
@@ -62,7 +63,9 @@ func ParsePipeline(task *collecttask.CollectTask) (*Pipeline, error) {
 			default:
 				value = target.Meta[value]
 			}
-			tags[key] = value
+			if value != "" {
+				tags[key] = value
+			}
 		}
 	} else {
 		for key, item := range baseConf.RefMetas {
@@ -79,7 +82,9 @@ func ParsePipeline(task *collecttask.CollectTask) (*Pipeline, error) {
 					value = util.GetHostname()
 				}
 			}
-			tags[key] = value
+			if value != "" {
+				tags[key] = value
+			}
 		}
 	}
 
@@ -88,5 +93,6 @@ func ParsePipeline(task *collecttask.CollectTask) (*Pipeline, error) {
 		Tenant: tenant,
 		o:      out,
 	}
-	return NewPipeline(executeRule, task, i, to, tags)
+	meta.SuppressCommonTags(tags)
+	return NewPipeline(executeRule, task, i, to, tags, baseConf.Transform)
 }

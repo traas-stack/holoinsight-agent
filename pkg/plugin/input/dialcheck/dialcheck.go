@@ -33,6 +33,10 @@ const (
 	HelperInputProxyConfigType = "dialcheck"
 )
 
+func (i *Input) GetDefaultPrefix() string {
+	return "dialcheck_"
+}
+
 func (i *Input) NetworkMode() string {
 	return i.Config.NetworkMode
 }
@@ -101,17 +105,17 @@ func (i *Input) Collect(a api.Accumulator) error {
 	}
 
 	a.AddMetric(&model.Metric{
-		Name:  "dialcheck_up",
+		Name:  "up",
 		Tags:  map[string]string{},
 		Value: float64(anyUp),
 	})
 	a.AddMetric(&model.Metric{
-		Name:  "dialcheck_down",
+		Name:  "down",
 		Tags:  map[string]string{},
 		Value: float64(1 - anyUp),
 	})
 	a.AddMetric(&model.Metric{
-		Name:  "dialcheck_cost",
+		Name:  "cost",
 		Tags:  map[string]string{},
 		Value: float64(int(totalCost.Milliseconds()) / times),
 	})

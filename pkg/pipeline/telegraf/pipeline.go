@@ -21,6 +21,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
 	api2 "github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	telegraf2 "github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
@@ -41,6 +42,7 @@ type (
 		stop       chan struct{}
 		loopStop   chan struct{}
 		timerState *timerState
+		transform  base.Transform
 	}
 	timerState struct {
 		etime time.Time
@@ -64,7 +66,7 @@ func (p *Pipeline) View(f func(api.Pipeline)) {
 	f(p)
 }
 
-func NewPipeline(executeRule *collectconfig.ExecuteRule, task *collecttask.CollectTask, input interface{}, output *Output, tags map[string]string) (*Pipeline, error) {
+func NewPipeline(executeRule *collectconfig.ExecuteRule, task *collecttask.CollectTask, input interface{}, output *Output, tags map[string]string, transform base.Transform) (*Pipeline, error) {
 	intervalMills := 0
 	// 现在只支持这个
 	switch executeRule.Type {
@@ -77,6 +79,12 @@ func NewPipeline(executeRule *collectconfig.ExecuteRule, task *collecttask.Colle
 	interval := time.Duration(intervalMills) * time.Millisecond
 	trigger := trigger2.WithFixedRate(interval, 0)
 
+	if transform.MetricPrefix == "" {
+		if ip, ok := input.(api2.Input); ok {
+			transform.MetricPrefix = ip.GetDefaultPrefix()
+		}
+	}
+
 	return &Pipeline{
 		interval:   interval,
 		trigger:    trigger,
@@ -87,6 +95,7 @@ func NewPipeline(executeRule *collectconfig.ExecuteRule, task *collecttask.Colle
 		stop:       make(chan struct{}),
 		loopStop:   make(chan struct{}),
 		timerState: &timerState{},
+		transform:  transform,
 	}, nil
 }
 func (p *Pipeline) Start() {
@@ -153,23 +162,17 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 		err = fmt.Errorf("unsupported input %v", p.input)
 	}
 
+	cost := time.Now().Sub(begin)
+
 	if err != nil {
-		logger.Errorz("[pipeline] collect once error", //
+		logger.Infoz("[pipeline] collect once done", //
 			zap.String("key", p.task.Config.Key),   //
 			zap.String("type", p.task.Config.Type), //
-			zap.Any("target", p.task.Target),       //
+			zap.Int("metrics", len(m.Metrics)),     //
+			zap.Duration("cost", cost),             //
 			zap.Error(err))
 		return
 	}
-
-	end := time.Now()
-
-	logger.Infoz("[pipeline] collect once done", //
-		zap.String("key", p.task.Key),          //
-		zap.String("type", p.task.Config.Type), //
-		zap.Duration("cost", end.Sub(begin)),   //
-		zap.Int("metrics", len(m.Metrics)),     //
-	)
 
 	if len(m.Metrics) == 0 {
 		return
@@ -209,8 +212,16 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 				}
 			}
 		}
+	}
 
-		if logger.IsDebugEnabled() {
+	if x := p.transform.MetricPrefix; x != "" {
+		for _, metric := range m.Metrics {
+			metric.Name = x + metric.Name
+		}
+	}
+
+	if logger.IsDebugEnabled() {
+		for _, m := range m.Metrics {
 			logger.Debugz("[pm] digest", //
 				zap.String("key", p.task.Key),               //
 				zap.String("metric", m.Name),                //
@@ -222,6 +233,13 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 	}
 
 	p.output.Write(m.Metrics)
+
+	logger.Infoz("[pipeline] collect once done", //
+		zap.String("key", p.task.Config.Key),   //
+		zap.String("type", p.task.Config.Type), //
+		zap.Int("metrics", len(m.Metrics)),     //
+		zap.Duration("cost", cost),             //
+		zap.Error(err))
 }
 
 func (p *Pipeline) UpdateFrom(old api.Pipeline) {

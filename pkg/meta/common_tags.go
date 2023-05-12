@@ -38,9 +38,7 @@ func ExtractPodCommonTags(pod *v1.Pod) map[string]string {
 	RefLabels(appconfig.StdAgentConfig.Data.Metric.RefLabels.Items, pod.Labels, tags)
 	AttachSystemCommonTagsTo(tags)
 
-	for _, key := range appconfig.StdAgentConfig.Data.Metric.SuppressedTags {
-		delete(tags, key)
-	}
+	SuppressCommonTags(tags)
 	return tags
 }
 
@@ -80,4 +78,11 @@ func ExtractNodeCommonTagsTo(node *v1.Node, to map[string]string) map[string]str
 	to["arch"] = node.Labels[k8slabels.LabelK8sArch]
 	to["instanceType"] = node.Labels[k8slabels.LabelK8sNodeInstanceType]
 	return to
+}
+
+// SuppressCommonTags removes some extra ccommon tags
+func SuppressCommonTags(tags map[string]string) {
+	for _, key := range appconfig.StdAgentConfig.Data.Metric.SuppressedTags {
+		delete(tags, key)
+	}
 }

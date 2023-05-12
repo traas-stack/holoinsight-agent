@@ -40,6 +40,10 @@ const (
 	MaxBodyLimit     = 10 * 1024 * 1024
 )
 
+func (i *Input) GetDefaultPrefix() string {
+	return "httpcheck_"
+}
+
 func (i *Input) NetworkMode() string {
 	return i.Config.NetworkMode
 }
@@ -186,15 +190,21 @@ func (i *Input) checkHttpResponse(resp *http.Response, begin time.Time, err erro
 
 	tags := map[string]string{}
 	accumulator.AddMetric(&model.Metric{
-		Name:      "httpcheck_up",
+		Name:      "up",
 		Tags:      tags,
 		Timestamp: 0,
 		Value:     api.BoolToFloat64(up),
 	})
+	accumulator.AddMetric(&model.Metric{
+		Name:      "down",
+		Tags:      tags,
+		Timestamp: 0,
+		Value:     api.BoolToFloat64(!up),
+	})
 
 	cost := time.Now().Sub(begin)
 	accumulator.AddMetric(&model.Metric{
-		Name:      "httpcheck_cost",
+		Name:      "cost",
 		Tags:      tags,
 		Timestamp: 0,
 		Value:     float64(cost.Milliseconds()),
