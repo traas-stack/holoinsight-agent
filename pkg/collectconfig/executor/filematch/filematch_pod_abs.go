@@ -36,7 +36,10 @@ func (m *PodAbsFileMatcher) Find() ([]FatPath, int, error) {
 
 	c := pod.MainBiz()
 	if c == nil {
-		logger.Errorz("[PodAbsFileMatcher] only supports one biz container", zap.String("path", m.Path), zap.String("pod", util.ToJsonString(pod)))
+		logger.Errorz("[PodAbsFileMatcher] no biz container",
+			zap.String("ns", pod.Namespace),
+			zap.String("pod", pod.Name),
+			zap.String("path", m.Path))
 		return nil, 0, cri.ErrMultiBiz
 	}
 

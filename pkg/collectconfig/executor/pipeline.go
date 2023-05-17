@@ -275,6 +275,7 @@ func (p *LogPipeline) printStat() {
 		return
 	}
 	p.consumer.printStat()
+	p.inputsManager.ld.touch()
 }
 
 func (p *LogPipeline) checkInputLoop() {
@@ -370,12 +371,16 @@ func (p *LogPipeline) pullInterval() time.Duration {
 	return interval
 }
 
-// pull logs, consume logs, maybe emit results
+// pull logs, and then consume logs
 func (p *LogPipeline) pullAndConsume() {
+	if len(p.inputsManager.inputs) == 0 {
+		p.consumer.stat.miss = true
+		return
+	}
+
 	for _, input := range p.inputsManager.inputs {
-		// 对于每个 input(file) 拉到完 然后再换下一个
 		for p.consumeUntilEndForOneInput(input) {
-			// 稍微让一下其他人
+			// give up scheduling
 			runtime.Gosched()
 		}
 	}

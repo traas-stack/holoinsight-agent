@@ -243,6 +243,7 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 				c.stat.emitError += int32(len(datum))
 				c.reportLogs(expectedTs, fmt.Sprintf("emit error %+v", err))
 				logger.Errorz("[log] [consumer] emit error", zap.String("key", c.key), zap.Error(err))
+				logger.Debugz("[log] [consumer] emit error", zap.String("key", c.key), zap.Any("datum", datum), zap.Error(err))
 			}
 		})
 	}()
@@ -263,7 +264,7 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 		// There is no need to stat ioError when file misses.
 		// This is helpful to reduce server log size.
 		c.stat.miss = true
-		logger.Infoz("[consumer] [log] digest, file not exist", //
+		logger.Debugz("[consumer] [log] digest, file not exist", //
 			zap.String("key", c.key),    //
 			zap.String("path", iw.path), //
 		)
@@ -310,17 +311,19 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 		}
 	}
 
-	logger.Infoz("[consumer] [log] digest", //
-		zap.String("key", c.key),                    //
-		zap.String("path", resp.Path),               //
-		zap.Int64("beginOffset", resp.BeginOffset),  //
-		zap.Int64("endOffset", resp.EndOffset),      //
-		zap.Bool("continued", resp.Continued),       //
-		zap.Bool("more", resp.HasMore),              //
-		zap.String("fileId", resp.FileId),           //
-		zap.Time("dataTime", time.UnixMilli(maxTs)), //
-		zap.Error(resp.Error),                       //
-	)
+	if logger.DebugEnabled {
+		logger.Debugz("[consumer] [log] digest", //
+			zap.String("key", c.key),                    //
+			zap.String("path", resp.Path),               //
+			zap.Int64("beginOffset", resp.BeginOffset),  //
+			zap.Int64("endOffset", resp.EndOffset),      //
+			zap.Bool("continued", resp.Continued),       //
+			zap.Bool("more", resp.HasMore),              //
+			zap.String("fileId", resp.FileId),           //
+			zap.Time("dataTime", time.UnixMilli(maxTs)), //
+			zap.Error(resp.Error),                       //
+		)
+	}
 }
 
 func (c *Consumer) SetStorage(s *storage.Storage) {
@@ -725,6 +728,7 @@ func (c *Consumer) printStat() {
 		zap.Int32("lines", stat.lines),
 		zap.Int32("groups", stat.groups),
 		zap.Int32("emit", stat.emit),
+		zap.Bool("miss", stat.miss),
 		zap.Bool("broken", stat.broken),
 		zap.Bool("continued", !stat.noContinued),
 		zap.Int32("processed", stat.processed),

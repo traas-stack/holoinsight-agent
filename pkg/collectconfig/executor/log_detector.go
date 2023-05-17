@@ -17,8 +17,9 @@ type (
 	// TODO format 要特殊处理下, 它和其他的不太一样
 	// 其他的都是lazy感应的, 而format需要实时感应
 	LogPathDetector struct {
-		key      string
-		matchers []filematch.FileMatcher
+		key        string
+		matchers   []filematch.FileMatcher
+		errorLoged bool
 	}
 )
 
@@ -68,13 +69,22 @@ func NewLogDetector(key string, paths []*collectconfig.FromLogPath, target *coll
 	}
 }
 
+// touch is called by caller timer
+func (ld *LogPathDetector) touch() {
+	ld.errorLoged = false
+}
+
 func (ld *LogPathDetector) Detect() []filematch.FatPath {
 	var newPaths []filematch.FatPath
 
+	errorLoged := ld.errorLoged
 	for _, m := range ld.matchers {
 		paths, _, err := m.Find()
 		if err != nil {
-			logger.Errorz("[LogPathDetector] error", zap.String("key", ld.key), zap.Error(err))
+			if !errorLoged {
+				ld.errorLoged = true
+				logger.Errorz("[LogPathDetector] error", zap.String("key", ld.key), zap.Error(err))
+			}
 			continue
 		}
 		newPaths = append(newPaths, paths...)
