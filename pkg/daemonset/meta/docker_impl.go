@@ -19,10 +19,10 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
-	"github.com/traas-stack/holoinsight-agent/pkg/cri/pouch"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
@@ -246,12 +246,7 @@ func (l *dockerLocalMetaImpl) listDockerContainers() ([]types.Container, error) 
 	return l.docker.ContainerList(ctx, types.ContainerListOptions{All: true})
 }
 
-func (l *dockerLocalMetaImpl) inspectDockerContainers(cid string) (types.ContainerJSON, error) {
-	begin := time.Now()
-	defer func() {
-		logger.Dockerz("[digest] inspect container", zap.String("cid", cid), zap.Duration("cost", time.Now().Sub(begin)))
-	}()
-
+func (l *dockerLocalMetaImpl) inspectDockerContainer(cid string) (types.ContainerJSON, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), inspectContainersTimeout)
 	defer cancel()
 	return l.docker.ContainerInspect(ctx, cid)
@@ -270,28 +265,26 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 	oldState := l.state
 	newState := newInternalState()
 
-	// 建立一个索引, key是 namespace+ pod value 是 所有的containers
+	// containers index by labels["io.kubernetes.pod.uid"]
 	dockerContainersByPod := make(map[string][]*types.ContainerJSON)
 
 	for i := range dockerContainers {
 		simpleDc := &dockerContainers[i]
 
-		namespace := k8slabels.GetNamespace(simpleDc.Labels)
-		podName := k8slabels.GetPodName(simpleDc.Labels)
-		// 跳过非k8s管控的容器
-		if namespace == "" || podName == "" {
+		// Skip containers which are not controlled by k8s
+		uid := k8slabels.GetPodUID(simpleDc.Labels)
+		if uid == "" {
 			continue
 		}
 
 		// 这个 inspect 是必要的, 这样才能拿到容器 start 时间戳
-		dc, err := l.inspectDockerContainers(simpleDc.ID)
+		dc, err := l.inspectDockerContainer(simpleDc.ID)
 		if err != nil {
-			logger.Metaz("[local] [docker] inspect error", zap.String("ns", namespace), zap.String("pod", podName), zap.String("cid", simpleDc.ID), zap.Error(err))
+			logger.Metaz("[local] [docker] inspect error", zap.String("cid", simpleDc.ID), zap.Error(err))
 			continue
 		}
 
-		key := namespace + "/" + podName
-		dockerContainersByPod[key] = append(dockerContainersByPod[key], &dc)
+		dockerContainersByPod[uid] = append(dockerContainersByPod[uid], &dc)
 	}
 
 	// 本机负责的pods
@@ -300,95 +293,115 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 	// 每个阶段的pod的数量统计
 	podPhaseCount := make(map[v1.PodPhase]int)
 
+	expiredContainers := 0
 	for _, pod := range localPods {
 		podPhaseCount[pod.Status.Phase]++
-		criPod := &cri.Pod{
-			Pod: pod,
-			App: k8smetaextractor.DefaultPodMetaService.ExtractApp(pod),
+		if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
+			logger.Metaz("[local] [docker] skip pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("phase", string(pod.Status.Phase)))
+			continue
 		}
 
-		// 对应的docker容器
-		dcs := dockerContainersByPod[pod.Namespace+"/"+pod.Name]
+		criPod := &cri.Pod{
+			Pod: pod,
+		}
 
+		// Get all containers belonging to this pod, including exited containers
+		dcs := dockerContainersByPod[string(pod.UID)]
+
+		// Find newest sandbox
+		var sandboxContainer *types.ContainerJSON
+		podExpiredContainers := 0
 		for _, dc := range dcs {
-
-			// 忽略初始化容器
-			if isInitContainer(pod, dc) {
-				continue
+			tempContainer := cri.Container{
+				ContainerName:    dc.Name,
+				K8sContainerName: k8slabels.GetContainerName(dc.Config.Labels),
+				Labels:           dc.Config.Labels,
 			}
+			if l.isSandbox(&tempContainer) && dc.State.Running {
+				sandboxContainer = dc
+				break
+			}
+		}
 
-			cached := oldState.ContainerMap[dc.ID]
+		if sandboxContainer == nil {
+			logger.Metaz("[local] [docker] no sandbox for pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("pod", util.ToJsonString(pod)))
+		} else {
 
-			if cached != nil && !isContainerChanged(cached.DockerContainer, dc) {
-				// 认为容器没有任何变化
-				cached.CriContainer.Pod = criPod
+			for _, dc := range dcs {
+				if dc.ID != sandboxContainer.ID && k8slabels.GetSandboxID(dc.Config.Labels) != sandboxContainer.ID {
+					logger.Metaz("[local] [docker] ignore expired container", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("sandbox", sandboxContainer.ID), zap.String("cid", dc.ID))
+					podExpiredContainers++
+					expiredContainers++
+					continue
+				}
+				// Ignore init containers
+				if k8sutils.IsInitContainer(pod, dc) {
+					continue
+				}
 
-				newState.ContainerMap[dc.ID] = &CachedContainer{
-					CriContainer:    cached.CriContainer,
-					DockerContainer: dc,
+				cached := oldState.ContainerMap[dc.ID]
+
+				if cached != nil && !isContainerChanged(cached.DockerContainer, dc) {
+					// 认为容器没有任何变化
+					cached.CriContainer.Pod = criPod
+
+					newState.ContainerMap[dc.ID] = &CachedContainer{
+						CriContainer:    cached.CriContainer,
+						DockerContainer: dc,
+					}
+
+					if logger.DebugEnabled {
+						logger.Metaz("[local] [docker] use old container meta",
+							zap.String("ns", cached.CriContainer.Pod.Namespace),
+							zap.String("pod", cached.CriContainer.Pod.Name),
+							zap.String("container", cached.CriContainer.K8sContainerName),
+							zap.String("cid", dc.ID))
+					}
+				} else {
+					criContainer := l.buildCriContainer(criPod, dc)
+					cached = &CachedContainer{
+						CriContainer:    criContainer,
+						DockerContainer: dc,
+					}
+					newState.ContainerMap[dc.ID] = cached
+				}
+
+				criPod.All = append(criPod.All, cached.CriContainer)
+				if cached.CriContainer.Sandbox {
+					criPod.Sandbox = cached.CriContainer
+				} else if cached.CriContainer.Sidecar {
+					criPod.Sidecar = append(criPod.Sidecar, cached.CriContainer)
+				} else {
+					criPod.Biz = append(criPod.Biz, cached.CriContainer)
 				}
 
 				if logger.DebugEnabled {
-					logger.Metaz("[local] [docker] use old container meta",
-						zap.String("ns", cached.CriContainer.Pod.Namespace),
-						zap.String("pod", cached.CriContainer.Pod.Name),
-						zap.String("container", cached.CriContainer.Name),
-						zap.String("cid", dc.ID))
+					logger.Metaz("[local] [docker] container info", zap.Any("container", cached.CriContainer))
 				}
-			} else {
-				criContainer := l.buildCriContainer(criPod, dc)
-				cached = &CachedContainer{
-					CriContainer:    criContainer,
-					DockerContainer: dc,
-				}
-				newState.ContainerMap[dc.ID] = cached
-			}
-
-			criPod.All = append(criPod.All, cached.CriContainer)
-			if cached.CriContainer.Sandbox {
-				criPod.Sandbox = cached.CriContainer
-			} else if cached.CriContainer.Sidecar {
-				criPod.Sidecar = append(criPod.Sidecar, cached.CriContainer)
-			} else {
-				criPod.Biz = append(criPod.Biz, cached.CriContainer)
-			}
-
-			if logger.DebugEnabled {
-				logger.Metaz("[local] [docker] container info", zap.Any("container", cached.CriContainer))
 			}
 		}
 
 		logger.Metaz("[local] [docker] pod",
 			zap.String("ns", pod.Namespace),
 			zap.String("pod", pod.Name),
-			zap.String("app", criPod.App),
 			zap.Int("all", len(criPod.All)),
 			zap.Int("biz", len(criPod.Biz)),
-			zap.Int("sidecar", len(criPod.Sidecar)))
+			zap.Int("sidecar", len(criPod.Sidecar)),
+			zap.Int("expired", podExpiredContainers))
+
 		newState.Pods = append(newState.Pods, criPod)
 	}
 	newState.build()
 
-	logger.Metaz("[local] build", //
-		zap.String("cri", "docker"),         //
+	logger.Metaz("[local] [docker] sync once done", //
 		zap.Int("pods", len(newState.Pods)), //
 		zap.Int("containers", len(dockerContainers)),
 		zap.Duration("cost", time.Now().Sub(begin)), //
+		zap.Int("expired", expiredContainers),       //
 		zap.Any("phase", podPhaseCount),             //
 	)
 
 	l.state = newState
-}
-
-func isInitContainer(pod *v1.Pod, container *types.ContainerJSON) bool {
-	containerName := k8slabels.GetContainerName(container.Config.Labels)
-	for i := range pod.Spec.InitContainers {
-		ic := &pod.Spec.InitContainers[i]
-		if ic.Name == containerName {
-			return true
-		}
-	}
-	return false
 }
 
 func isContainerChanged(oldc *types.ContainerJSON, newc *types.ContainerJSON) bool {
@@ -449,7 +462,7 @@ func (l *dockerLocalMetaImpl) CopyToContainer(ctx context.Context, c *cri.Contai
 	}()
 
 	switch c.Runtime {
-	case "runc":
+	case cri.Runc:
 		return l.copyToContainerByMount(ctx, c, srcPath, dstPath)
 	default:
 		return l.copyToContainerByDockerAPI(ctx, c, srcPath, dstPath)
@@ -473,7 +486,7 @@ func (l *dockerLocalMetaImpl) CopyFromContainer(ctx context.Context, c *cri.Cont
 	}()
 
 	switch c.Runtime {
-	case "runc":
+	case cri.Runc:
 		return l.copyFromContainerByMount(ctx, c, srcPath, dstPath)
 	default:
 		return l.copyFromContainerByDockerAPI(ctx, c, srcPath, dstPath)
@@ -633,7 +646,7 @@ func (l *dockerLocalMetaImpl) getEtcTimezone0(ctx context.Context, c *cri.Contai
 	// /etc/localtime 控制着系统级别的时区, 如果不存在则默认为UTC, 如果存在则必须是 /usr/share/zoneinfo/ 下的一个符号链接!
 	// 每个进程的TZ环境变量则可以强制覆盖本进程的时区
 
-	if c.Runtime == "runc" {
+	if c.Runtime == cri.Runc {
 		hostPath, err := cri.TransferToHostPath0(c, "/etc/localtime", false)
 		if err != nil {
 			return "", err
@@ -718,10 +731,6 @@ func (l *dockerLocalMetaImpl) GetContainerByCid(cid string) (*cri.Container, boo
 	return nil, false
 }
 
-func (l *dockerLocalMetaImpl) CheckSandboxByLabels(labels map[string]string) bool {
-	return dockerutils.IsSandbox(labels) || pouch.IsSandbox(labels)
-}
-
 func (l *dockerLocalMetaImpl) getHostname(ctx context.Context, container *cri.Container) (string, error) {
 
 	hostname := container.Env["HOSTNAME"]
@@ -733,10 +742,7 @@ func (l *dockerLocalMetaImpl) getHostname(ctx context.Context, container *cri.Co
 		return "", nil
 	}
 
-	ctx2, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-
-	result, err := l.Exec(ctx2, container, cri.ExecRequest{Cmd: []string{"hostname"}})
+	result, err := l.Exec(ctx, container, cri.ExecRequest{Cmd: []string{"hostname"}})
 	if err != nil {
 		return "", err
 	}
@@ -753,16 +759,16 @@ func (l *dockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.Conta
 			StartedAt: dc.State.StartedAt,
 			Status:    dc.State.Status,
 		},
-		// 这个就是对应k8s yaml里的 container name 注意不是 dc.Name 坑死了
-		Name:        k8slabels.GetContainerName(dc.Config.Labels),
-		Pod:         criPod,
-		Labels:      dc.Config.Labels,
-		Env:         parseEnv(dc.Config.Env),
-		LogPath:     filepath.Join(core.GetHostfs(), dc.LogPath),
-		Hostname:    dc.Config.Hostname,
-		SandboxID:   k8slabels.GetSandboxID(dc.Config.Labels),
-		Runtime:     dc.HostConfig.Runtime,
-		NetworkMode: string(dc.HostConfig.NetworkMode),
+		ContainerName:    dc.Name,
+		K8sContainerName: k8slabels.GetContainerName(dc.Config.Labels),
+		Pod:              criPod,
+		Labels:           dc.Config.Labels,
+		Env:              parseEnv(dc.Config.Env),
+		LogPath:          filepath.Join(core.GetHostfs(), dc.LogPath),
+		Hostname:         dc.Config.Hostname,
+		SandboxID:        k8slabels.GetSandboxID(dc.Config.Labels),
+		Runtime:          dc.HostConfig.Runtime,
+		NetworkMode:      string(dc.HostConfig.NetworkMode),
 	}
 
 	criContainer.EnvTz = criContainer.Env["TZ"]
@@ -872,7 +878,7 @@ func (l *dockerLocalMetaImpl) handleOOM(msg events.Message) {
 	logger.Metaz("[docker] [oom]",
 		zap.String("ns", ctr.Pod.Namespace),
 		zap.String("pod", ctr.Pod.Name),
-		zap.String("container", ctr.Name),
+		zap.String("container", ctr.K8sContainerName),
 		zap.Any("msg", msg))
 
 	l.oomRecoder.add(ctr)

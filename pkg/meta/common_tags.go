@@ -44,7 +44,7 @@ func ExtractPodCommonTags(pod *v1.Pod) map[string]string {
 
 func ExtractContainerCommonTags(container *cri.Container) map[string]string {
 	tags := ExtractPodCommonTags(container.Pod.Pod)
-	tags["container"] = container.Name
+	tags["container"] = container.K8sContainerName
 	return tags
 }
 

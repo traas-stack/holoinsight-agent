@@ -9,6 +9,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/pouch"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	v1 "k8s.io/api/core/v1"
 	"strings"
@@ -82,7 +83,7 @@ func NewDefaultSidecarCheckHook(sidecarExpr string) *DefaultSidecarCheckHook {
 }
 
 func (e *DefaultSidecarCheckHook) IsSandbox(container *cri.Container) bool {
-	return container.Name == "" || dockerutils.IsSandbox(container.Labels) || pouch.IsSandbox(container.Labels)
+	return k8sutils.IsSandbox(container.ContainerName, container.K8sContainerName, container.Labels)
 }
 
 func (e *DefaultSidecarCheckHook) IsSidecar(container *cri.Container) bool {
@@ -95,7 +96,7 @@ func (e *DefaultSidecarCheckHook) IsSidecar(container *cri.Container) bool {
 	}
 	if len(e.Names) > 0 {
 		for _, keyword := range e.Names {
-			if strings.Contains(container.Name, keyword) {
+			if strings.Contains(container.K8sContainerName, keyword) {
 				return true
 			}
 		}
@@ -186,5 +187,5 @@ func (d *DefaultPodMetaExtractor) IsSidecar(container *cri.Container) bool {
 }
 
 func (d *DefaultPodMetaExtractor) IsSandbox(container *cri.Container) bool {
-	return d.Sandbox(container.Name, container.Labels)
+	return d.Sandbox(container.K8sContainerName, container.Labels)
 }

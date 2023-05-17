@@ -50,13 +50,15 @@ var (
 	}
 )
 
-func newPodMeta(getter cache.Getter) *PodMeta {
-	listWatch := cache.NewListWatchFromClient(getter, string(v1.ResourcePods), v1.NamespaceAll, fields.Everything())
+func newPodMeta(localNodeName string, getter cache.Getter) *PodMeta {
+	// TODO Check whether the code logic is enough to keep the pods of this node?
+	// selector := fields.OneTermEqualSelector("spec.nodeName", localNodeName)
+	selector := fields.Everything()
+	listWatch := cache.NewListWatchFromClient(getter, string(v1.ResourcePods), v1.NamespaceAll, selector)
 	informer := cache.NewSharedIndexInformer(listWatch, &v1.Pod{}, 0, podIndexers)
 	informer.SetWatchErrorHandler(func(r *cache.Reflector, err error) {
 		logger.Errorf("[meta] watch error %+v", err)
 	})
-	// 这里有个坑 informer.GetController() 已经废弃了!
 	return &PodMeta{
 		informer: informer,
 		store:    informer.GetIndexer(),

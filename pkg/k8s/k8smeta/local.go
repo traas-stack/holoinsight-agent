@@ -23,11 +23,15 @@ func (m *LocalMeta) PodIP() string {
 }
 
 func (m *LocalMeta) HostIP() string {
-	return os.Getenv(hostIPEnv)
+	return os.Getenv("HOST_IP")
 }
 
 func (m *LocalMeta) NodeIP() string {
 	return m.HostIP()
+}
+
+func (m *LocalMeta) NodeName() string {
+	return os.Getenv("NODE_NAME")
 }
 
 // 假设 agent 以 daemonset 模式运行, 判断给定 pod 是否是本物理机上的 pod

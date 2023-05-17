@@ -6,7 +6,7 @@ package extractor
 
 import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
-	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	v1 "k8s.io/api/core/v1"
 	"strings"
 )
@@ -38,14 +38,14 @@ type (
 )
 
 func CreateLabelBasedSandboxCheckHook(matchAny map[string]string) SandboxCheckHook {
-	return func(containerName string, labels map[string]string) bool {
+	return func(k8sContainerName string, labels map[string]string) bool {
 		for k, v := range matchAny {
 			if v2, ok := labels[k]; ok && v == v2 {
 				return true
 			}
 		}
 
-		return containerName == "POD" || dockerutils.IsSandbox(labels)
+		return k8sutils.IsSandbox("", k8sContainerName, labels)
 	}
 }
 

@@ -17,10 +17,6 @@ import (
 	"time"
 )
 
-const (
-	hostIPEnv = "HOST_IP"
-)
-
 type (
 	// k8s 元数据管理器入口, 在我们代码里要获取跟k8s相关的元数据都从它来拿
 	Manager struct {
@@ -32,10 +28,14 @@ type (
 )
 
 func NewManager(clientset *kubernetes.Clientset) *Manager {
-	return &Manager{
+	lm := &LocalMeta{}
+	m := &Manager{
 		Clientset: clientset,
-		LocalMeta: &LocalMeta{},
+		LocalMeta: lm,
+		PodMeta:   newPodMeta(lm.NodeName(), clientset.CoreV1().RESTClient()),
+		NodeMeta:  newNodeMeta(clientset.CoreV1().RESTClient()),
 	}
+	return m
 }
 
 func (m *Manager) Stop() {
@@ -44,14 +44,11 @@ func (m *Manager) Stop() {
 }
 
 func (m *Manager) Start() {
-	m.PodMeta = newPodMeta(m.Clientset.CoreV1().RESTClient())
 	m.PodMeta.start()
-	m.NodeMeta = newNodeMeta(m.Clientset.CoreV1().RESTClient())
 	m.NodeMeta.start()
 
 	controllers := []cache.Controller{m.PodMeta.informer, m.NodeMeta.informer}
 
-	// 退避
 	b := &backoff.Backoff{
 		Factor: 2,
 		Jitter: true,
@@ -59,8 +56,7 @@ func (m *Manager) Start() {
 		Max:    time.Second,
 	}
 
-	// 可以用 k8s 库函数 cache.WaitForCacheSync(nil, controller.HasSynced)
-
+	// Or use k8s helper cache.WaitForCacheSync(nil, controller.HasSynced) ?
 	for _, controller := range controllers {
 		for !controller.HasSynced() {
 			logger.Metaz("[k8s] [meta] wait meta sync")
@@ -76,6 +72,7 @@ func (m *Manager) GetLocalHostPods() []*v1.Pod {
 }
 
 func (m *Manager) registerHttpHandlers() {
+	// Query local pod info by namespace and podName
 	http.HandleFunc("/api/meta/k8s/pods/get", func(writer http.ResponseWriter, request *http.Request) {
 		ns := request.URL.Query().Get("ns")
 		name := request.URL.Query().Get("name")
@@ -87,6 +84,7 @@ func (m *Manager) registerHttpHandlers() {
 		json.NewEncoder(writer).Encode(pod)
 	})
 
+	// Query local pod info by podIP
 	http.HandleFunc("/api/meta/k8s/pods/byIp", func(writer http.ResponseWriter, request *http.Request) {
 		ip := request.URL.Query().Get("ip")
 		pods := m.PodMeta.GetPodsByIP(ip)
@@ -94,13 +92,14 @@ func (m *Manager) registerHttpHandlers() {
 		json.NewEncoder(writer).Encode(simple)
 	})
 
+	// Query all local pod info
 	http.HandleFunc("/api/meta/k8s/pods/local", func(writer http.ResponseWriter, request *http.Request) {
-		// 打印出简单信息
 		pods := m.GetLocalHostPods()
 		simple := m.convertToSimplePods(pods)
 		json.NewEncoder(writer).Encode(simple)
 	})
 
+	// Query local pods by app
 	http.HandleFunc("/api/meta/k8s/pods/byApp", func(writer http.ResponseWriter, request *http.Request) {
 		namespace := request.URL.Query().Get("namespace")
 		app := request.URL.Query().Get("app")

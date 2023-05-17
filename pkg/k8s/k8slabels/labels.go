@@ -51,3 +51,7 @@ func GetZone(labels map[string]string) string {
 func GetSandboxID(labels map[string]string) string {
 	return labels[LabelK8sSandboxID]
 }
+
+func GetPodUID(labels map[string]string) string {
+	return labels["io.kubernetes.pod.uid"]
+}

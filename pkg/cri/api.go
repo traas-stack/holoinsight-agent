@@ -11,13 +11,17 @@ import (
 
 type (
 	Interface interface {
+		// GetAllPods returns all local pods
 		GetAllPods() []*Pod
+
+		// GetContainerByCid queries one container by cid
 		GetContainerByCid(cid string) (*Container, bool)
-		CheckSandboxByLabels(labels map[string]string) bool
 
-		// 查询一个pod的信息
-		GetPod(ns, pod string) (*Pod, bool)
+		// GetPod queries one pod by namespace and podName
+		GetPod(namespace, podName string) (*Pod, bool)
 
+		// GetPodByHostname queries one pod by hostname
+		// TODO This function is somewhat problematic because the hostname may repeat
 		GetPodByHostname(hostname string) (*Pod, bool)
 
 		// CopyToContainer copies file to container
@@ -46,4 +50,5 @@ const (
 	NsEnter_MNT NsEnterType = iota
 	NsEnter_NET
 	NsEnter_UTS
+	Runc = "runc"
 )

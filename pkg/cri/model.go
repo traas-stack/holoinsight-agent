@@ -25,7 +25,6 @@ type (
 		Sidecar []*Container `json:"sidecar"`
 		// Sandbox container
 		Sandbox *Container `json:"sandbox"`
-		App     string     `json:"app"`
 	}
 	Container struct {
 		// container 可能会依赖底层实现, 因此这里不让它依赖具体的实现类
@@ -34,7 +33,13 @@ type (
 		// 所属的pod
 		Pod *Pod `json:"-"`
 
-		Name string
+		// ContainerName example:
+		// /k8s_POD_xxx
+		// /k8s_xxx
+		ContainerName string
+
+		// K8sContainerName k8s container name
+		K8sContainerName string
 
 		// 常见状态
 		State ContainerState
