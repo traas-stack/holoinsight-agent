@@ -6,7 +6,7 @@ package jvm
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"github.com/influxdata/telegraf"
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/cast"
@@ -19,17 +19,27 @@ import (
 	"github.com/xin053/hsperfdata"
 	"go.uber.org/zap"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
-const measurement = "jvm"
+const (
+	measurement         = "jvm"
+	perfDataFilePattern = "/tmp/hsperfdata_*/*"
+	defaultOpTimeout    = 3 * time.Second
+)
+
+// TODO This file couples too many cri-related details and needs to be refactored later.
 
 type (
 	telegrafInput struct {
 		state *jvmState
 		task  *collecttask.CollectTask
 	}
+	perfDataReader func(path string) (map[string]interface{}, error)
+)
+
+var (
+	multipleJavaProcessesErr = errors.New("[jvm] find multiple java processes")
 )
 
 func init() {
@@ -47,7 +57,7 @@ func (i *telegrafInput) SampleConfig() string {
 }
 
 func (i *telegrafInput) getProcessInfo(pid int32) (*criutils.ProcessInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
 	defer cancel()
 
 	if !i.task.Target.IsTypePod() {
@@ -62,58 +72,47 @@ func (i *telegrafInput) getProcessInfo(pid int32) (*criutils.ProcessInfo, error)
 		return pi, nil
 	}
 
-	namespace := i.task.Target.GetNamespace()
-	podName := i.task.Target.GetPodName()
-	pod, _ := ioc.Crii.GetPod(namespace, podName)
-	if pod == nil {
-		return nil, cri.NoPodError(namespace, podName)
+	biz, err := criutils.GetMainBizContainerE(ioc.Crii, i.task.Target.GetNamespace(), i.task.Target.GetPodName())
+	if err != nil {
+		return nil, err
 	}
-
-	return criutils.GetProcessInfo(ctx, ioc.Crii, pod.MainBiz(), int(pid))
+	return criutils.GetProcessInfo(ctx, ioc.Crii, biz, int(pid))
 }
 
-func (i *telegrafInput) getPerfDataPaths() (map[string]string, func(path string) (map[string]interface{}, error), error) {
+func (i *telegrafInput) getPerfDataPaths() (map[string]string, perfDataReader, error) {
 	if !i.task.Target.IsTypePod() {
-		pathMap, err := hsperfdata.AllPerfDataPaths()
-		if err != nil {
+		if pathMap, err := hsperfdata.AllPerfDataPaths(); err != nil {
 			return nil, nil, err
+		} else {
+			return pathMap, defaultReadPerfDataImpl, nil
 		}
-		readPerfData := func(path string) (map[string]interface{}, error) {
-			return hsperfdata.ReadPerfData(path, true)
-		}
-		return pathMap, readPerfData, nil
 	}
 
-	namespace := i.task.Target.GetNamespace()
-	podName := i.task.Target.GetPodName()
-	pod, _ := ioc.Crii.GetPod(namespace, podName)
-	if pod == nil {
-		return nil, nil, fmt.Errorf("fail to find pod [%s,%s]", namespace, podName)
-	}
-
-	c := pod.MainBiz()
-	if c == nil {
-		return nil, nil, cri.ErrMultiBiz
-	}
-
-	paths, err := criutils.Glob(context.Background(), ioc.Crii, c, "/tmp/hsperfdata_*/*")
+	c, err := criutils.GetMainBizContainerE(ioc.Crii, i.task.Target.GetNamespace(), i.task.Target.GetPodName())
 	if err != nil {
 		return nil, nil, err
 	}
 
-	pathMap := make(map[string]string)
+	var paths []string
+	var readPerfData perfDataReader
+	if c.Runtime == cri.Runc {
+		paths, err = filepath.Glob(filepath.Join(c.MergedDir, perfDataFilePattern))
+		readPerfData = defaultReadPerfDataImpl
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
+		defer cancel()
+		paths, err = criutils.Glob(ctx, ioc.Crii, c, perfDataFilePattern)
+		readPerfData = readPerfDataUsingDockerExec(c)
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pathMap := make(map[string]string, len(paths))
 	for _, path := range paths {
 		pid := filepath.Base(path)
 		pathMap[pid] = path
-	}
-	readPerfData := func(path string) (map[string]interface{}, error) {
-		tempPath, deleteFunc, err := criutils.CopyFromContainerToTempFile(context.Background(), ioc.Crii, c, path)
-		if err != nil {
-			return nil, err
-		}
-		defer deleteFunc()
-
-		return hsperfdata.ReadPerfData(tempPath, true)
 	}
 	return pathMap, readPerfData, nil
 }
@@ -130,8 +129,11 @@ func (i *telegrafInput) Gather(a telegraf.Accumulator) error {
 		return err
 	}
 
-	if logger.DebugEnabled {
-		logger.Debugz("[jvm] resolve perf data paths", zap.Any("target", i.task.Target), zap.Any("paths", pathMap))
+	logger.Debugz("[jvm] resolve perf data paths", zap.Any("target", i.task.Target), zap.Any("paths", pathMap))
+
+	// TODO how to known which one is the main java process?
+	if len(pathMap) > 1 {
+		return multipleJavaProcessesErr
 	}
 
 	for pid, perfPath := range pathMap {
@@ -142,29 +144,23 @@ func (i *telegrafInput) Gather(a telegraf.Accumulator) error {
 		}
 		javaProcess, err := i.getProcessInfo(pid32)
 		if err != nil {
-			// 这个是个可以失败的行为(预期内的), 所以记到debug里
-			if logger.DebugEnabled {
-				logger.Debugz("[jvm] get process info error", zap.Any("target", i.task.Target), zap.String("pid", pid), zap.Error(err))
-			}
+			logger.Debugz("[jvm] get process info error", zap.Any("target", i.task.Target), zap.String("pid", pid), zap.Error(err))
 		}
 
 		perfData, err := readFunc(perfPath)
 		if err != nil {
-			logger.Errorz("[jvm] fail to read jvm perf data", zap.Any("target", i.task.Target), zap.Int32("pid", pid32), zap.Error(err))
+			logger.Errorz("[jvm] read jvm perf data error", zap.Any("target", i.task.Target), zap.Int32("pid", pid32), zap.Error(err))
 			continue
 		}
 
 		rawMetrics := make(map[string]interface{})
-		tags := map[string]string{
-			"pid": pid,
-		}
+		tags := map[string]string{}
 
 		addJvmMetrics(perfData, rawMetrics)
 		addJvmMetricsFromProcess(javaProcess, rawMetrics, tags)
 
 		newState.byPid[pid] = &pidJvmState{rawMetrics: rawMetrics}
 
-		// 有一些指标需要进行修正
 		var lastPidState *pidJvmState
 		if oldState != nil {
 			lastPidState = oldState.byPid[pid]
@@ -177,14 +173,19 @@ func (i *telegrafInput) Gather(a telegraf.Accumulator) error {
 	return nil
 }
 
-func cmdlineContainsAny(cmdlineSlice []string, keywords ...string) bool {
-	for _, s := range cmdlineSlice {
-		s = strings.ToLower(s)
-		for _, k := range keywords {
-			if strings.Contains(s, k) {
-				return true
-			}
+func defaultReadPerfDataImpl(path string) (map[string]interface{}, error) {
+	return hsperfdata.ReadPerfData(path, true)
+}
+
+func readPerfDataUsingDockerExec(c *cri.Container) perfDataReader {
+	return func(path string) (map[string]interface{}, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
+		defer cancel()
+		if tempPath, deleteFunc, err := criutils.CopyFromContainerToTempFile(ctx, ioc.Crii, c, path); err != nil {
+			return nil, err
+		} else {
+			defer deleteFunc()
+			return hsperfdata.ReadPerfData(tempPath, true)
 		}
 	}
-	return false
 }
