@@ -9,8 +9,6 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
-	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"go.uber.org/zap"
 )
 
 type (
@@ -34,11 +32,6 @@ func (m *PodAbsFileMatcher) Find() ([]FatPath, int, error) {
 
 	hostPath, err := cri.TransferToHostPath0(c, m.Path, true)
 	if err != nil {
-		logger.Errorz("[PodAbsFileMatcher] fail to resolve to host path container=%s path=[%s]", //
-			zap.String("ns", c.Pod.Namespace),
-			zap.String("pod", c.Pod.Name),
-			zap.String("cid", c.Id),
-			zap.String("path", m.Path))
 		return nil, 0, err
 	}
 
