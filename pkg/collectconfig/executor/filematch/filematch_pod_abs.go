@@ -5,12 +5,11 @@
 package filematch
 
 import (
-	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 )
 
@@ -28,19 +27,9 @@ func (m *PodAbsFileMatcher) IsDynamicMultiFiles() bool {
 func (m *PodAbsFileMatcher) Find() ([]FatPath, int, error) {
 	target := m.Target
 
-	pod, ok := ioc.Crii.GetPod(target.GetNamespace(), target.GetPodName())
-	if !ok {
-		logger.Errorf("[PodAbsFileMatcher] no pod target=%s", util.ToJsonString(target))
-		return nil, 0, fmt.Errorf("no pod, ns=[%s] pod=[%s]", target.GetNamespace(), target.GetPodName())
-	}
-
-	c := pod.MainBiz()
-	if c == nil {
-		logger.Errorz("[PodAbsFileMatcher] no biz container",
-			zap.String("ns", pod.Namespace),
-			zap.String("pod", pod.Name),
-			zap.String("path", m.Path))
-		return nil, 0, cri.ErrMultiBiz
+	c, err := criutils.GetMainBizContainerE(ioc.Crii, target.GetNamespace(), target.GetPodName())
+	if err != nil {
+		return nil, 0, err
 	}
 
 	hostPath, err := cri.TransferToHostPath0(c, m.Path, true)

@@ -17,6 +17,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/meta"
@@ -264,12 +265,9 @@ func (p *Pipeline) collectOnceWithNsEnter(ine api2.InputExtNsEnter, m *accumulat
 		return err
 	}
 
-	// 获取pod
-	namespace := p.task.Target.GetNamespace()
-	podName := p.task.Target.GetPodName()
-	pod, ok := ioc.Crii.GetPod(namespace, podName)
-	if !ok {
-		return cri.NoPodError(namespace, podName)
+	biz, err := criutils.GetMainBizContainerE(ioc.Crii, p.task.Target.GetNamespace(), p.task.Target.GetPodName())
+	if err != nil {
+		return err
 	}
 
 	if timeout <= 0 {
@@ -293,7 +291,7 @@ func (p *Pipeline) collectOnceWithNsEnter(ine api2.InputExtNsEnter, m *accumulat
 	// 这里使用了sandbox容器, 好处是如果主容器挂了, 那么这里依旧可以通
 	// execResult, err := ioc.Crii.NsEnterExec(ctx, []cri.NsEnterType{cri.NsEnter_NET}, pod.Sandbox, []string{core.HelperToolLocalPath, actionType}, nil, "", bytes.NewBuffer(reqBytes))
 	// Prefer to use docker standard API.
-	execResult, err := ioc.Crii.Exec(ctx, pod.MainBiz(), cri.ExecRequest{
+	execResult, err := ioc.Crii.Exec(ctx, biz, cri.ExecRequest{
 		Cmd:   []string{core.HelperToolPath, "inputProxy", actionType},
 		Input: bytes.NewBuffer(reqBytes),
 	})

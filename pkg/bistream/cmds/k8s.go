@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
@@ -47,17 +48,11 @@ func getPodContainer(header *commonpb.CommonRequestHeader) (cri.Interface, *cri.
 		return nil, nil, errors.New("fail to parse pod info")
 	}
 
-	if pod, ok := ioc.Crii.GetPod(pi.Namespace, pi.Name); ok {
-		mainBiz := pod.MainBiz()
-		if mainBiz == nil {
-			return nil, nil, errors.New("no main biz container")
-		}
-		return ioc.Crii, mainBiz, nil
-	} else {
-		return nil, nil, errors.New("no such pod")
+	biz, err := criutils.GetMainBizContainerE(ioc.Crii, pi.Namespace, pi.Name)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	return nil, nil, nil
+	return ioc.Crii, biz, nil
 }
 
 func runInContainer(resp interface{}, callHelper func(ctx context.Context) (cri.ExecResult, error)) error {

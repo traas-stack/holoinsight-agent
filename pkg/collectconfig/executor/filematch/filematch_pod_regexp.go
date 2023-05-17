@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"regexp"
 	"strings"
@@ -47,16 +48,10 @@ func NewPodRegexpFileMatcher(target *collecttask.CollectTarget, dir, pattern str
 }
 
 func (m *PodRegexpFileMatcher) Find() ([]FatPath, int, error) {
-	// TODO 该方法被串行调用吗?
 
-	pod, ok := ioc.Crii.GetPod(m.target.GetNamespace(), m.target.GetPodName())
-	if !ok {
-		return nil, 0, cri.NoPodError(m.target.GetNamespace(), m.target.GetPodName())
-	}
-
-	container := pod.MainBiz()
-	if container == nil {
-		return nil, 0, cri.ErrMultiBiz
+	container, err := criutils.GetMainBizContainerE(ioc.Crii, m.target.GetNamespace(), m.target.GetPodName())
+	if err != nil {
+		return nil, 0, err
 	}
 
 	// 方法1:

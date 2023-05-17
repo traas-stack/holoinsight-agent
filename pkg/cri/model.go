@@ -13,6 +13,7 @@ import (
 
 // TODO 我们推出一个规范 让用户按我们规范做 就认为它是主容器
 var ErrMultiBiz = errors.New("multi biz containers")
+var ErrNoBiz = errors.New("no biz container")
 
 type (
 	Pod struct {
@@ -114,6 +115,17 @@ func (p *Pod) MainBiz() *Container {
 		return p.Biz[0]
 	}
 	return nil
+}
+
+func (p *Pod) MainBizE() (*Container, error) {
+	switch len(p.Biz) {
+	case 0:
+		return nil, ErrNoBiz
+	case 1:
+		return p.Biz[0], nil
+	default:
+		return nil, ErrMultiBiz
+	}
 }
 
 func (p *Pod) IP() string {

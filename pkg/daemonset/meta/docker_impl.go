@@ -429,6 +429,14 @@ func (l *dockerLocalMetaImpl) GetPod(ns, pod string) (*cri.Pod, bool) {
 	return p, ok
 }
 
+func (l *dockerLocalMetaImpl) GetPodE(ns, pod string) (*cri.Pod, error) {
+	p, ok := l.GetPod(ns, pod)
+	if !ok {
+		return nil, cri.NoPodError(ns, pod)
+	}
+	return p, nil
+}
+
 func (l *dockerLocalMetaImpl) GetPodByHostname(hostname string) (*cri.Pod, bool) {
 	state := l.state
 	p, ok := state.podByHostname[hostname]

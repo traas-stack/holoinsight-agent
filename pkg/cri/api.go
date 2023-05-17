@@ -20,6 +20,10 @@ type (
 		// GetPod queries one pod by namespace and podName
 		GetPod(namespace, podName string) (*Pod, bool)
 
+		// GetPodE queries one pod by namespace and podName.
+		// Returns an error if not found.
+		GetPodE(namespace, podName string) (*Pod, error)
+
 		// GetPodByHostname queries one pod by hostname
 		// TODO This function is somewhat problematic because the hostname may repeat
 		GetPodByHostname(hostname string) (*Pod, bool)

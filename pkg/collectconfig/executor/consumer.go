@@ -16,6 +16,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/meta"
@@ -485,29 +486,24 @@ func (c *Consumer) getTargetTimezone() *time.Location {
 	if crii == nil {
 		return nil
 	}
-	if c.ct.Target.IsTypePod() {
-		if pod, ok := crii.GetPod(c.ct.Target.GetNamespace(), c.ct.Target.GetPodName()); ok {
-			if mb := pod.MainBiz(); mb != nil && mb.EtcLocaltime != "" {
-				if tz, err := time.LoadLocation(mb.EtcLocaltime); err == nil {
-					return tz
-				}
+	t := c.ct.Target
+	if t.IsTypePod() {
+		if biz, err := criutils.GetMainBizContainerE(crii, t.GetNamespace(), t.GetPodName()); err == nil && biz.EtcLocaltime != "" {
+			if tz, err := time.LoadLocation(biz.EtcLocaltime); err == nil {
+				return tz
 			}
 		}
 	}
 	return nil
 }
 
-func (c *Consumer) getTargetPod() *cri.Pod {
-	crii := ioc.Crii
-	if crii == nil {
+func (c *Consumer) getBizContainer() *cri.Container {
+	if ioc.Crii == nil || !c.ct.Target.IsTypePod() {
 		return nil
 	}
-	if c.ct.Target.IsTypePod() {
-		if pod, ok := crii.GetPod(c.ct.Target.GetNamespace(), c.ct.Target.GetPodName()); ok {
-			return pod
-		}
-	}
-	return nil
+
+	biz, _ := criutils.GetMainBizContainerE(ioc.Crii, c.ct.Target.GetNamespace(), c.ct.Target.GetPodName())
+	return biz
 }
 
 func (c *Consumer) consume(resp *logstream.ReadResponse, iw *inputWrapper) int64 {
@@ -614,8 +610,8 @@ func (c *Consumer) getCommonEventTags() map[string]string {
 		"t_c_version": c.ct.Config.Version,
 	}
 
-	if pod := c.getTargetPod(); pod != nil {
-		tags["t_ip"] = pod.IP()
+	if biz := c.getBizContainer(); biz != nil {
+		tags["t_ip"] = biz.Pod.IP()
 		tags["t_agentIP"] = util.GetLocalIp()
 	} else {
 		tags["t_ip"] = util.GetLocalIp()
@@ -643,10 +639,8 @@ func (c *Consumer) createTaskInfoEvent(stat consumerStat) *pb2.ReportEventReques
 		}
 	}
 
-	if pod := c.getTargetPod(); pod != nil {
-		if c := pod.MainBiz(); c != nil {
-			json["t_tz"] = c.EtcLocaltime
-		}
+	if biz := c.getBizContainer(); biz != nil {
+		json["t_tz"] = biz.EtcLocaltime
 	} else {
 		json["t_tz"] = util.GetLocalTimezone()
 	}
@@ -746,8 +740,8 @@ func (c *Consumer) printStat() {
 func (c *Consumer) getCommonTags() (map[string]string, bool) {
 	var tags map[string]string
 	if c.ct.Target.IsTypePod() {
-		if pod := c.getTargetPod(); pod != nil {
-			tags = meta.ExtractPodCommonTags(pod.Pod)
+		if biz := c.getBizContainer(); biz != nil {
+			tags = meta.ExtractPodCommonTags(biz.Pod.Pod)
 		} else {
 			return nil, false
 		}
