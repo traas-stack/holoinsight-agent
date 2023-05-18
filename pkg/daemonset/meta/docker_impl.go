@@ -187,22 +187,19 @@ func (l *dockerLocalMetaImpl) listenDockerLoop() {
 
 	filter.Add("type", "container")
 
-	// 创建容器
-	filter.Add("event", "create")
-	// 启动
+	// We are only interested in the following events
+	// container started
 	filter.Add("event", "start")
-	// 容器退出
+	// container exited
 	filter.Add("event", "die")
-	// 销毁容器
-	filter.Add("event", "destroy")
-	// 容器尝试突破内存限制
+	// container OOM
 	filter.Add("event", "oom")
 
 	for {
 		func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			logger.Dockerz("listen to docker events")
+			logger.Dockerz("[digest] listen to docker events")
 			msgCh, errCh := l.docker.Events(ctx, types.EventsOptions{
 				Filters: filter,
 			})
@@ -210,13 +207,12 @@ func (l *dockerLocalMetaImpl) listenDockerLoop() {
 				select {
 				case msg := <-msgCh:
 					action := dockerutils.ExtractEventAction(msg.Action)
+					logger.Dockerz("[event]", zap.String("cid", msg.ID), zap.String("action", action), zap.Any("msg", msg))
 					if action == "oom" {
 						l.handleOOM(msg)
-					} else {
-						logger.Metaz("[docker] [event]", zap.String("cid", msg.ID), zap.String("action", action), zap.Any("msg", msg))
 					}
 				case err := <-errCh:
-					logger.Metaz("[docker] [event] error", zap.Error(err))
+					logger.Metaz("[event] error", zap.Error(err))
 					// 低频case 稍微等一下 避免消耗太多CPU
 					time.Sleep(time.Second)
 					return
@@ -257,7 +253,7 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 	begin := time.Now()
 
 	dockerContainers, err := l.listDockerContainers()
-	logger.Metaz("[local] [docker] list containers", zap.Int("count", len(dockerContainers)), zap.Duration("cost", time.Now().Sub(begin)))
+	logger.Metaz("[digest] list containers", zap.Int("count", len(dockerContainers)), zap.Duration("cost", time.Now().Sub(begin)))
 	if err != nil {
 		return
 	}
@@ -280,7 +276,7 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 		// 这个 inspect 是必要的, 这样才能拿到容器 start 时间戳
 		dc, err := l.inspectDockerContainer(simpleDc.ID)
 		if err != nil {
-			logger.Metaz("[local] [docker] inspect error", zap.String("cid", simpleDc.ID), zap.Error(err))
+			logger.Dockerz("[digest] inspect error", zap.String("cid", simpleDc.ID), zap.Error(err))
 			continue
 		}
 
@@ -297,7 +293,7 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 	for _, pod := range localPods {
 		podPhaseCount[pod.Status.Phase]++
 		if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
-			logger.Metaz("[local] [docker] skip pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("phase", string(pod.Status.Phase)))
+			logger.Metaz("[local] skip pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("phase", string(pod.Status.Phase)))
 			continue
 		}
 
@@ -324,12 +320,12 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 		}
 
 		if sandboxContainer == nil {
-			logger.Metaz("[local] [docker] no sandbox for pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("pod", util.ToJsonString(pod)))
+			logger.Metaz("[local] no sandbox for pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name))
 		} else {
 
 			for _, dc := range dcs {
 				if dc.ID != sandboxContainer.ID && k8slabels.GetSandboxID(dc.Config.Labels) != sandboxContainer.ID {
-					logger.Metaz("[local] [docker] ignore expired container", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("sandbox", sandboxContainer.ID), zap.String("cid", dc.ID))
+					logger.Metaz("[local] ignore expired container", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("sandbox", sandboxContainer.ID), zap.String("cid", dc.ID))
 					podExpiredContainers++
 					expiredContainers++
 					continue
@@ -351,7 +347,7 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 					}
 
 					if logger.DebugEnabled {
-						logger.Metaz("[local] [docker] use old container meta",
+						logger.Metaz("[local] use old container meta",
 							zap.String("ns", cached.CriContainer.Pod.Namespace),
 							zap.String("pod", cached.CriContainer.Pod.Name),
 							zap.String("container", cached.CriContainer.K8sContainerName),
@@ -376,12 +372,12 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 				}
 
 				if logger.DebugEnabled {
-					logger.Metaz("[local] [docker] container info", zap.Any("container", cached.CriContainer))
+					logger.Metaz("[local] container info", zap.Any("container", cached.CriContainer))
 				}
 			}
 		}
 
-		logger.Metaz("[local] [docker] pod",
+		logger.Metaz("[local] build pod",
 			zap.String("ns", pod.Namespace),
 			zap.String("pod", pod.Name),
 			zap.Int("all", len(criPod.All)),
@@ -393,7 +389,7 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 	}
 	newState.build()
 
-	logger.Metaz("[local] [docker] sync once done", //
+	logger.Metaz("[local] sync once done", //
 		zap.Int("pods", len(newState.Pods)), //
 		zap.Int("containers", len(dockerContainers)),
 		zap.Duration("cost", time.Now().Sub(begin)), //
@@ -460,7 +456,7 @@ func (l *dockerLocalMetaImpl) CopyToContainer(ctx context.Context, c *cri.Contai
 	begin := time.Now()
 	defer func() {
 		cost := time.Now().Sub(begin)
-		logger.Dockerz("[docker] copy to container",
+		logger.Dockerz("[digest] copy to container",
 			zap.String("cid", c.Id),
 			zap.String("runtime", c.Runtime),
 			zap.String("src", srcPath),
@@ -507,7 +503,9 @@ func (l *dockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri
 		return err
 	}
 
-	util.CreateDirIfNotExists(filepath.Dir(hostPath), 0777)
+	if err := util.CreateDirIfNotExists(filepath.Dir(hostPath), 0755); err != nil {
+		return err
+	}
 
 	cmd := exec.CommandContext(ctx, "/usr/bin/cp", srcPath, hostPath)
 	err = cmd.Run()
@@ -524,12 +522,14 @@ func (l *dockerLocalMetaImpl) copyFromContainerByMount(ctx context.Context, c *c
 		return err
 	}
 
-	util.CreateDirIfNotExists(filepath.Dir(dstPath), 0777)
+	if err := util.CreateDirIfNotExists(filepath.Dir(dstPath), 0755); err != nil {
+		return err
+	}
 
 	cmd := exec.CommandContext(ctx, "/usr/bin/cp", hostPath, dstPath)
 	err = cmd.Run()
 	if err != nil {
-		err = errors.Wrapf(err, "copy from container error src=[%s] dst=[%s]", srcPath, hostPath)
+		err = errors.Wrapf(err, "copy from container error src=[%s] dst=[%s]", hostPath, dstPath)
 	}
 	return err
 }
@@ -571,11 +571,10 @@ func (l *dockerLocalMetaImpl) Exec(ctx context.Context, c *cri.Container, req cr
 			zap.String("cid", c.Id),
 			zap.Strings("cmd", req.Cmd),
 			zap.Int("code", r.ExitCode),
-			zap.String("stdout", util.SubstringMax(r.Stdout.String(), 1024)),
-			zap.String("stderr", util.SubstringMax(r.Stderr.String(), 1024)),
+			zap.String("stdout", string(util.SubBytesMax(r.Stdout.Bytes(), 1024))),
+			zap.String("stderr", string(util.SubBytesMax(r.Stderr.Bytes(), 1024))),
 			zap.Duration("cost", cost),
-			zap.Error(err),
-		)
+			zap.Error(err))
 	}()
 
 	if req.User == "" {
@@ -824,7 +823,7 @@ func (l *dockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.Conta
 			// TODO 不推荐 TZ 环境变量
 			criContainer.EtcLocaltime, err = l.getEtcTimezone(context.Background(), criContainer)
 			if err != nil {
-				logger.Metaz("[local] [docker] fail to parse /etc/localtime",
+				logger.Metaz("[local] fail to parse /etc/localtime",
 					zap.String("ns", criPod.Namespace), //
 					zap.String("pod", criPod.Name),     //
 					zap.String("cid", criContainer.Id),
@@ -835,7 +834,7 @@ func (l *dockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.Conta
 		if criContainer.Hostname == "" {
 			criContainer.Hostname, err = l.getHostname(context.Background(), criContainer)
 			if err != nil {
-				logger.Metaz("[local] [docker] fail to get hostname",
+				logger.Metaz("[local] fail to get hostname",
 					zap.String("ns", criPod.Namespace), //
 					zap.String("pod", criPod.Name),     //
 					zap.String("cid", criContainer.Id),
@@ -856,14 +855,14 @@ func (l *dockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.Conta
 			err := l.CopyToContainer(context.Background(), criContainer, core.HelperToolLocalPath, core.HelperToolPath)
 			cost := time.Now().Sub(begin)
 			if err != nil {
-				logger.Metaz("[local] [docker] hack error",
+				logger.Metaz("[local] hack error",
 					zap.String("cid", criContainer.Id),
 					zap.String("ns", criPod.Namespace),
 					zap.String("pod", criPod.Name),
 					zap.Duration("cost", cost),
 					zap.Error(err))
 			} else {
-				logger.Metaz("[local] [docker] hack success",
+				logger.Metaz("[local] hack success",
 					zap.String("cid", criContainer.Id),
 					zap.String("ns", criPod.Namespace),
 					zap.String("pod", criPod.Name),
@@ -883,7 +882,7 @@ func (l *dockerLocalMetaImpl) handleOOM(msg events.Message) {
 		return
 	}
 
-	logger.Metaz("[docker] [oom]",
+	logger.Metaz("[oom]",
 		zap.String("ns", ctr.Pod.Namespace),
 		zap.String("pod", ctr.Pod.Name),
 		zap.String("container", ctr.K8sContainerName),
@@ -926,8 +925,7 @@ func (l *dockerLocalMetaImpl) emitOOMMetrics() {
 			_, err := gtw.WriteMetricsV1Extension2(context.Background(), nil, metrics)
 			cost := time.Now().Sub(begin)
 
-			logger.Infoz("[docker] [oom]", zap.Int("metrics", len(metrics)), zap.Duration("cost", cost), zap.Error(err))
-
+			logger.Infoz("[oom]", zap.Int("metrics", len(metrics)), zap.Duration("cost", cost), zap.Error(err))
 		}
 
 	}

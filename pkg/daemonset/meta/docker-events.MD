@@ -1,48 +1,81 @@
-# 介绍
+# Docker events
 
-# 几个比较重要的事件
-1. create: 容器被创建, 一般之后跟随 start
-2. start: 容器被启动
-3. die: 容器由于各种原因退出 (主动或被动)
-4. destroy: 容器销毁
-5. oom: 容器尝试突破内存
-6. kill/stop: 外部发起的kill, 比如 docker kill/stop
+## Important events
 
+- start: container started
+- oom: container hits the memory limit
+- kill: send signal to container. If it is a SIGTERM/SIGKILL, we will receive die event soon
+- die: container exited for various reasons
+- stop: execute docker stop explicitly
+- destroy: `docker rm`
 
-## 普通容器启动流程
+## Common operations and generated events
 
-## docker run
+The following discussion omits some unimportant events.
 
-create
-attach
-start
+### docker run
 
-如果有终端会收到
-resize
+generate events
 
-容器主进程主动退出的 (exitcode任意都行)
-die
+- create
+- attach
+- start
 
-## docker stop ...
-stop 主动给容器发 kill, 然后容器die, 然后产生stop事件
+If there is a tty:
 
-会收到:
-kill (可能会多次)
-die
-stop
+- resize
 
+If container exit:
 
-docker rm 会收到
-destroy
+- die
 
+If run with '--rm' option:
 
-## exec
+- destroy
+
+Otherwise, you need to explicitly docker rm:
+
+- destroy
+
+### docker stop ...
+
+- kill
+- die
+- stop
+
+Executing `docker stop` has no effect on exited containers
+
+### docker rm
+
+Execute `docker rm` when the container has exited
+
+- destroy
+
+Execute `docker rm -f` when the container is running normally
+
+- kill
+- die
+- destroy
+
+### docker kill
+
+Executing `docker kill` when the container is running normally
+
+- kill
+
+If the container dies due to this it will immediately receive
+
+- die
+
+Executing `docker kill` for exited containers will fail.
+
+### docker exec
 
 ```bash
 docker exec ... echo ok
 ```
 
-会产生如下3个事件
+The following 3 events will be generated
 
 ```text
 2022-11-02 21:47:07.317 [docker] [event] {"cid": "04ca5e8e16efccde3dc56966870513acde862bfdd0a91493ddfa8f390d7a6e6e", "action": "exec_create: echo ok"}
@@ -50,23 +83,24 @@ docker exec ... echo ok
 2022-11-02 21:47:07.378 [docker] [event] {"cid": "04ca5e8e16efccde3dc56966870513acde862bfdd0a91493ddfa8f390d7a6e6e", "action": "exec_die"}
 ```
 
-## oom
-当你在容器内, 尝试申请更多内存从而突破 memory limits 限制时, 会申请失败, 同时 docker 产生一个 oom 事件.
-
 ## docker restart
-等价于 docker stop + docker start 的事件流, 最后再附加一个 restart 事件
 
-kill
-die
-stop
-start
-restart
+docker restart = docker stop + docker start + restart event
 
-## docker cp to 容器
-extract-to-dir
+- kill
+- die
+- stop
+- start
+- restart
 
-## docker cp from 容器
-archive-path
+### docker cp to container
 
-# 参考资料
+- extract-to-dir
+
+### docker cp from container
+
+- archive-path
+
+# References
+
 - https://docs.docker.com/engine/reference/commandline/events/

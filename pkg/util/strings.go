@@ -115,3 +115,11 @@ func CopyStringSlice(src []string) []string {
 	copy(dst, src)
 	return dst
 }
+
+// SubBytesMax returns a sub slice with max length limit
+func SubBytesMax(bs []byte, max int) []byte {
+	if len(bs) <= max {
+		return bs
+	}
+	return bs[:max]
+}
