@@ -15,7 +15,8 @@ func TestDialCheck(t *testing.T) {
 	input := &Input{
 		Config: &Config{
 			Network: "tcp",
-			Addr:    "127.0.0.1:22",
+			Host:    "127.0.0.1",
+			Ports:   []int{22},
 			Timeout: 3 * time.Second,
 			Times:   3,
 		},

@@ -6,16 +6,20 @@ package dialcheck
 
 import (
 	"encoding/json"
+	"fmt"
+	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"net"
+	"sync"
 	"time"
 )
 
 type (
 	Config struct {
 		Network     string        `json:"network"`
-		Addr        string        `json:"addr"`
+		Host        string        `json:"host"`
+		Ports       []int         `json:"ports"`
 		Timeout     time.Duration `json:"timeout"`
 		Times       int           `json:"times"`
 		NetworkMode string        `json:"networkMode"`
@@ -79,6 +83,28 @@ func (i *Input) ProcessResponse(_ interface{}, respBytes []byte, err error, accu
 }
 
 func (i *Input) Collect(a api.Accumulator) error {
+	var wg sync.WaitGroup
+	subAccumulators := make([]*api.MemoryAccumulator, len(i.Config.Ports))
+	for index, port := range i.Config.Ports {
+		ma := api.NewMemoryAccumulator()
+		subAccumulators[index] = ma
+		wg.Add(1)
+		go func(port int) {
+			defer wg.Done()
+			i.collectOnePort(port, ma)
+		}(port)
+	}
+	wg.Wait()
+	for _, ma := range subAccumulators {
+		for _, metric := range ma.Memory {
+			a.AddMetric(metric)
+		}
+
+	}
+	return nil
+}
+
+func (i *Input) collectOnePort(port int, a api.Accumulator) {
 	timeout := i.getTimeout()
 
 	times := defaultTimes
@@ -90,10 +116,11 @@ func (i *Input) Collect(a api.Accumulator) error {
 	anyUp := 0
 	totalCost := time.Duration(0)
 
+	addr := fmt.Sprintf("%s:%d", i.Config.Host, port)
 	for j := 0; j < times; j++ {
 
 		begin := time.Now()
-		conn, err := net.DialTimeout(i.Config.Network, i.Config.Addr, timeout)
+		conn, err := net.DialTimeout(i.Config.Network, addr, timeout)
 		cost := time.Now().Sub(begin)
 		totalCost += cost
 
@@ -104,20 +131,27 @@ func (i *Input) Collect(a api.Accumulator) error {
 		}
 	}
 
+	portStr := cast.ToString(port)
+
 	a.AddMetric(&model.Metric{
-		Name:  "up",
-		Tags:  map[string]string{},
+		Name: "up",
+		Tags: map[string]string{
+			"port": portStr,
+		},
 		Value: float64(anyUp),
 	})
 	a.AddMetric(&model.Metric{
-		Name:  "down",
-		Tags:  map[string]string{},
+		Name: "down",
+		Tags: map[string]string{
+			"port": portStr,
+		},
 		Value: float64(1 - anyUp),
 	})
 	a.AddMetric(&model.Metric{
-		Name:  "cost",
-		Tags:  map[string]string{},
+		Name: "cost",
+		Tags: map[string]string{
+			"port": portStr,
+		},
 		Value: float64(int(totalCost.Milliseconds()) / times),
 	})
-	return nil
 }

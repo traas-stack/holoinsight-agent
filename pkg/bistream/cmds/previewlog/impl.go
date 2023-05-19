@@ -16,21 +16,29 @@ const (
 )
 
 func PreviewFile(req *pb.PreviewFileRequest, resp *pb.PreviewFileResponse) error {
-	file, err := os.Open(req.Path)
+	content, err := previewFile0(req)
 	if err != nil {
 		return err
+	}
+	resp.Content = content
+	return nil
+}
+
+func previewFile0(req *pb.PreviewFileRequest) ([]string, error) {
+	file, err := os.Open(req.Path)
+	if err != nil {
+		return nil, err
 	}
 	defer file.Close()
 
 	stat, err := file.Stat()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	readBytes := int64(req.MaxBytes)
 	fileSize := stat.Size()
 
-	// TODO const
 	if readBytes > maxBytes {
 		readBytes = maxBytes
 	}
@@ -47,52 +55,27 @@ func PreviewFile(req *pb.PreviewFileRequest, resp *pb.PreviewFileResponse) error
 	readOffset := stat.Size() - readBytes
 	n, err := file.ReadAt(dst, readOffset)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	dst = dst[:n]
 	content := make([]string, 0)
 
-	if true {
-		// 倒序遍历
-		firstLine := true
-		maxLines := int(req.MaxLines)
-		for len(dst) > 0 && maxLines > 0 && len(content) < maxLines {
-			offset := bytes.LastIndexByte(dst, '\n')
-			if offset < 0 {
-				break
-			} else {
-				if firstLine {
-					firstLine = false
-				} else {
-					content = append(content, string(dst[offset+1:]))
-				}
-				dst = dst[:offset]
-			}
-		}
-		util.ReverseStringSlice(content)
-	} else {
-		// 正序遍历
-		firstLine := true
-		for len(dst) > 0 {
-			offset := bytes.IndexByte(dst, '\n')
-			if offset < 0 {
-				content = append(content, string(dst))
-				break
-			}
+	firstLine := true
+	maxLines := int(req.MaxLines)
+	for len(dst) > 0 && maxLines > 0 && len(content) < maxLines {
+		offset := bytes.LastIndexByte(dst, '\n')
+		if offset < 0 {
+			break
+		} else {
 			if firstLine {
 				firstLine = false
-				// 解释一下这个算法
-				if readOffset == 0 {
-					content = append(content, string(dst[:offset]))
-				}
 			} else {
-				// TODO trim \r
-				content = append(content, string(dst[:offset]))
+				content = append(content, string(dst[offset+1:]))
 			}
-			dst = dst[offset+1:]
+			dst = dst[:offset]
 		}
 	}
+	util.ReverseStringSlice(content)
 
-	resp.Content = content
-	return nil
+	return content, nil
 }

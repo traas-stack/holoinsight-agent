@@ -6,8 +6,6 @@ package extractor
 
 import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
-	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
-	"github.com/traas-stack/holoinsight-agent/pkg/cri/pouch"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
@@ -48,10 +46,7 @@ var (
 		Hostname:     DefaultHostnameExtractorInstance,
 		NodeHostname: DefaultNodeHostnameExtractorInstance,
 		Sidecar:      DefaultSidecarCheckHookInstance,
-		Sandbox: CreateLabelBasedSandboxCheckHook(map[string]string{
-			dockerutils.LabelDockerType: dockerutils.LabelValuePodSandbox,
-			pouch.LabelPouchType:        pouch.LabelValueSandbox,
-		}),
+		Sandbox:      CreateLabelBasedSandboxCheckHook(nil),
 	}
 	DefaultPodMetaService CriMetaService = &PodMetaServiceInstance
 )

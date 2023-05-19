@@ -30,7 +30,7 @@ func (m *PodAbsFileMatcher) Find() ([]FatPath, int, error) {
 		return nil, 0, err
 	}
 
-	hostPath, err := cri.TransferToHostPath0(c, m.Path, true)
+	hostPath, err := cri.TransferToHostPathForContainer(c, m.Path, true)
 	if err != nil {
 		return nil, 0, err
 	}

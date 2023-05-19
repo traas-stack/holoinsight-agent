@@ -5,14 +5,11 @@
 package cmds
 
 import (
-	"context"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/previewlog"
-	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -38,19 +35,19 @@ func previewFile0(reqBytes []byte, resp *pb.PreviewFileResponse) error {
 		return err
 	}
 
-	if crii, container, err := getPodContainer(req.Header); err != nil {
+	if _, container, err := getPodContainer(req.Header); err != nil {
 		return err
 	} else if container != nil {
-		input, err := util.ToJsonBufferE(req)
+		hostPath, err := cri.TransferToHostPathForContainer(container, req.Path, true)
 		if err != nil {
 			return err
 		}
-		return runInContainer(resp, func(ctx context.Context) (cri.ExecResult, error) {
-			return crii.Exec(ctx, container, cri.ExecRequest{
-				Cmd:   []string{core.HelperToolPath, "previewLog"},
-				Input: input,
-			})
-		})
+
+		req2 := &pb.PreviewFileRequest{}
+		_ = proto.Unmarshal(reqBytes, req2)
+		req2.Path = hostPath
+
+		return previewlog.PreviewFile(req2, resp)
 	}
 
 	return previewlog.PreviewFile(req, resp)

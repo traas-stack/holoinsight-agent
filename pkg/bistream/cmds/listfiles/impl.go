@@ -172,3 +172,81 @@ func ListFiles(req *pb.ListFilesRequest, resp *pb.ListFilesResponse) error {
 	}
 	return nil
 }
+
+// Rebase nodes from one dir to another
+// /Users/xzchaoo/logs/a.log -> /home/admin/logs/a.log
+func Rebase(root []*commonpb.FileNode, from, to string) (*commonpb.FileNode, error) {
+	children, err := removePrefixNodes(root[0], from)
+	if err != nil {
+		return nil, err
+	}
+
+	return appendPrefixNodes(children, to)
+}
+
+// appendPrefixNodes append prefix nodes to existing nodes
+// /Users/xzchaoo/logs/a.log + /a/b -> /a/b/Users/xzchaoo/logs/a.log
+func appendPrefixNodes(root []*commonpb.FileNode, dir string) (*commonpb.FileNode, error) {
+	newRoot, last, err := makeDirTree(dir)
+	if err != nil {
+		return nil, err
+	}
+	last.Children = root
+	return newRoot, nil
+}
+
+// removePrefixNodes append remove nodes from existing nodes
+// /Users/xzchaoo/logs/a.log - /Usersb -> /xzchaoo/logs/a.log
+func removePrefixNodes(root *commonpb.FileNode, dir string) ([]*commonpb.FileNode, error) {
+	dir = filepath.Clean(dir)
+	if !strings.HasPrefix(dir, string(os.PathSeparator)) {
+		return nil, errors.New("must be a absolute path")
+	}
+	ss := strings.Split(dir, string(os.PathSeparator))
+	for i, segment := range ss {
+		if segment == "" {
+			continue
+		}
+		if root.Name != segment {
+			return nil, errors.New("nodes is not prefix with dir")
+		}
+		if i+1 < len(ss) {
+			if len(root.Children) != 1 {
+				return nil, errors.New("nodes is not prefix with dir")
+			}
+			root = root.Children[0]
+		}
+	}
+	return root.Children, nil
+}
+
+func makeDirTree(dir string) (*commonpb.FileNode, *commonpb.FileNode, error) {
+	dir = filepath.Clean(dir)
+
+	if !strings.HasPrefix(dir, string(os.PathSeparator)) {
+		return nil, nil, errors.New("must be a absolute path")
+	}
+
+	ss := strings.Split(dir, string(os.PathSeparator))
+	var newRoot *commonpb.FileNode
+	var current *commonpb.FileNode
+	for _, segment := range ss {
+		if segment == "" {
+			continue
+		}
+		node := &commonpb.FileNode{
+			Name:  segment,
+			Dir:   true,
+			Exist: true,
+		}
+		if newRoot == nil {
+			newRoot = node
+			current = node
+		} else {
+			current.Children = append(current.Children, node)
+			current = node
+		}
+	}
+
+	return newRoot, current, nil
+}

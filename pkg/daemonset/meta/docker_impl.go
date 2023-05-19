@@ -516,7 +516,7 @@ func (l *dockerLocalMetaImpl) CopyFromContainer(ctx context.Context, c *cri.Cont
 }
 
 func (l *dockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
-	hostPath, err := cri.TransferToHostPath0(c, dstPath, true)
+	hostPath, err := cri.TransferToHostPathForContainer(c, dstPath, true)
 	if err != nil {
 		return err
 	}
@@ -534,7 +534,7 @@ func (l *dockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri
 
 // copyToContainerByMount copies file from container to local file using mounts info
 func (l *dockerLocalMetaImpl) copyFromContainerByMount(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
-	hostPath, err := cri.TransferToHostPath0(c, srcPath, true)
+	hostPath, err := cri.TransferToHostPathForContainer(c, srcPath, true)
 	if err != nil {
 		return err
 	}
@@ -671,7 +671,7 @@ func (l *dockerLocalMetaImpl) getEtcTimezone0(ctx context.Context, c *cri.Contai
 	// 每个进程的TZ环境变量则可以强制覆盖本进程的时区
 
 	if c.Runtime == cri.Runc {
-		hostPath, err := cri.TransferToHostPath0(c, "/etc/localtime", false)
+		hostPath, err := cri.TransferToHostPathForContainer(c, "/etc/localtime", false)
 		if err != nil {
 			return "", err
 		}
@@ -808,9 +808,15 @@ func (l *dockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.Conta
 
 	// dc.GraphDriver.Name == "overlay2"
 	for k, v := range dc.GraphDriver.Data {
-		if k == dockerutils.MergedDir && v != "" {
-			criContainer.MergedDir = filepath.Join(core.GetHostfs(), v)
-			break
+		if v == "" {
+			continue
+		}
+		switch k {
+		case dockerutils.MergedDir:
+			// MeredDir now only works in runc runtime.
+			if criContainer.Runtime == cri.Runc {
+				criContainer.MergedDir = filepath.Join(core.GetHostfs(), v)
+			}
 		}
 	}
 

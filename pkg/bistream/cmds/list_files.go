@@ -5,14 +5,11 @@
 package cmds
 
 import (
-	"context"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/listfiles"
-	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -32,19 +29,28 @@ func listFiles0(bs []byte, resp *pb.ListFilesResponse) error {
 		return err
 	}
 
-	if crii, container, err := getPodContainer(req.Header); err != nil {
+	if _, container, err := getPodContainer(req.Header); err != nil {
 		return err
 	} else if container != nil {
-		input, err := util.ToJsonBufferE(req)
+		hostPath, err := cri.TransferToHostPathForContainer(container, req.Name, false)
 		if err != nil {
 			return err
 		}
-		return runInContainer(resp, func(ctx context.Context) (cri.ExecResult, error) {
-			return crii.Exec(ctx, container, cri.ExecRequest{
-				Cmd:   []string{core.HelperToolPath, "listFiles"},
-				Input: input,
-			})
-		})
+
+		req2 := &pb.ListFilesRequest{}
+		_ = proto.Unmarshal(bs, req2)
+		req2.Name = hostPath
+		resp2 := &pb.ListFilesResponse{}
+		if err := listfiles.ListFiles(req2, resp2); err != nil {
+			return err
+		}
+		// rebase to container dir
+		newRoot, err := listfiles.Rebase(resp2.Nodes, hostPath, req.Name)
+		if err != nil {
+			return err
+		}
+		resp.Nodes = []*commonpb.FileNode{newRoot}
+		return nil
 	}
 
 	return listfiles.ListFiles(req, resp)

@@ -26,6 +26,7 @@ type (
 	Config struct {
 		Network     string `json:"network"`
 		Port        int    `json:"port"`
+		Ports       []int  `json:"ports"`
 		Timeout     int    `json:"timeout"`
 		Times       int    `json:"times"`
 		NetworkMode string `json:"networkMode"`
@@ -64,19 +65,23 @@ func Parse(task *collecttask.CollectTask) (interface{}, error) {
 	}
 
 	target := task.Target
-	var addr string
-	port := config.Port
+	var host string
+	ports := config.Ports
+	if len(ports) == 0 {
+		ports = []int{config.Port}
+	}
 	if target.IsTypePod() {
-		addr = fmt.Sprintf("%s:%d", target.GetIP(), port)
+		host = target.GetIP()
 	} else if target.IsTypeLocalhost() {
-		addr = fmt.Sprintf("localhost:%d", port)
+		host = "localhost"
 	} else {
 		return nil, fmt.Errorf("unsupported target type %v", target)
 	}
 
 	return &dialcheck.Input{Config: &dialcheck.Config{
 		Network:     network,
-		Addr:        addr,
+		Host:        host,
+		Ports:       ports,
 		Timeout:     timeout,
 		Times:       times,
 		NetworkMode: config.NetworkMode,

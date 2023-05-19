@@ -56,7 +56,7 @@ func (m *PodRegexpFileMatcher) Find() ([]FatPath, int, error) {
 
 	// 方法1:
 	// 我们认为被采集的文件一定在 volumes 下, 那么可以直接transfer父目录到物理机目录, 然后替换一下结果重新match
-	basedirInHost, err := cri.TransferToHostPath0(container, m.dir, true)
+	basedirInHost, err := cri.TransferToHostPathForContainer(container, m.dir, true)
 	if err != nil {
 		return nil, 0, err
 	}

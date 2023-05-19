@@ -34,6 +34,7 @@ func fillError(h *commonpb.CommonResponseHeader, err error) {
 	h.Message = err.Error()
 }
 
+// getPodContainer get target pod main biz container
 func getPodContainer(header *commonpb.CommonRequestHeader) (cri.Interface, *cri.Container, error) {
 	if header == nil {
 		return nil, nil, nil
