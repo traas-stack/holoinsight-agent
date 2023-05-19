@@ -55,4 +55,5 @@ const (
 	NsEnter_NET
 	NsEnter_UTS
 	Runc = "runc"
+	Rund = "rund"
 )

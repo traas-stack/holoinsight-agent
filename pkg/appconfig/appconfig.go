@@ -82,7 +82,8 @@ type (
 	}
 	K8sConfig_Cri struct {
 		// docker pouch
-		Type string `json:"type,omitempty" yaml:"type" toml:"type"`
+		Type  string            `json:"type,omitempty" yaml:"type" toml:"type"`
+		Pouch K8sCriPouchConfig `json:"pouch,omitempty" yaml:"pouch" toml:"pouch"`
 	}
 	K8sMetaConfig struct {
 		AppRef          string                `json:"appRef,omitempty" yaml:"appRef" toml:"appRef"`
@@ -119,6 +120,9 @@ type (
 	}
 	K8sMetricsConfig struct {
 		FiveSecondsEnabled bool `json:"fiveSecondsEnabled,omitempty" yaml:"fiveSecondsEnabled" toml:"fiveSecondsEnabled"`
+	}
+	K8sCriPouchConfig struct {
+		CpWorkaroundEnabled bool `json:"cpWorkaroundEnabled,omitempty" yaml:"cpWorkaroundEnabled"`
 	}
 )
 

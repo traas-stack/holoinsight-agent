@@ -5,7 +5,11 @@
 package util
 
 import (
+	"bytes"
+	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 )
 
@@ -36,4 +40,18 @@ func CreateDirIfNotExists(dir string, perm os.FileMode) error {
 		return nil
 	}
 	return os.ErrExist
+}
+
+// CopyFileUsingCp copies file using cp binary (in agent container)
+func CopyFileUsingCp(ctx context.Context, src, dst string) error {
+	cmd := exec.CommandContext(ctx, "cp", src, dst)
+	stdout := bytes.NewBuffer(nil)
+	stderr := bytes.NewBuffer(nil)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	err := cmd.Run()
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("cp error, cmd=[%s] code=[%d] stdout=[%s] stderr=[%s]", cmd.String(), cmd.ProcessState.ExitCode(), stdout.String(), stderr.String())
 }

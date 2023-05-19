@@ -16,6 +16,7 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/pkg/errors"
+	appconfig2 "github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
@@ -35,7 +36,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -47,6 +47,7 @@ const (
 	inspectContainersTimeout = 3 * time.Second
 	// shortContainerIdLength is the short container id length
 	shortContainerIdLength = 12
+	tempFilePrefix         = ".temp_holoinsight_"
 )
 
 type (
@@ -57,6 +58,7 @@ type (
 		rs           *registry.Service
 		k8smm        *k8smeta.Manager
 		oomRecoder   *oomRecoder
+		isPouch      bool
 	}
 	internalState struct {
 		Pods                 []*cri.Pod
@@ -76,6 +78,7 @@ type (
 
 var (
 	errContainerIsNil = errors.New("container is nil")
+	errPouchCp        = errors.New("docker cp is unsupported in pouch")
 	defaultExecUser   = "root"
 )
 
@@ -112,6 +115,8 @@ func New(rs *registry.Service, k8smm *k8smeta.Manager, docker *dockersdk.Client)
 		// 每次k8s元数据变化后,
 		syncDebounce: debounce.New(time.Second),
 		oomRecoder:   newOOMRecorder(),
+		// TODO Use a more elegant way to determine whether to use pouch mode.
+		isPouch: strings.HasPrefix(docker.DaemonHost(), "pouchd.sock"),
 	}
 	impl.Start()
 	return impl
@@ -377,9 +382,14 @@ func (l *dockerLocalMetaImpl) syncOnce() {
 			}
 		}
 
+		var sandboxCid string
+		if sandboxContainer != nil {
+			sandboxCid = sandboxContainer.ID
+		}
 		logger.Metaz("[local] build pod",
 			zap.String("ns", pod.Namespace),
 			zap.String("pod", pod.Name),
+			zap.String("sandbox", util.SubstringMax(sandboxCid, 12)),
 			zap.Int("all", len(criPod.All)),
 			zap.Int("biz", len(criPod.Biz)),
 			zap.Int("sidecar", len(criPod.Sidecar)),
@@ -469,7 +479,11 @@ func (l *dockerLocalMetaImpl) CopyToContainer(ctx context.Context, c *cri.Contai
 	case cri.Runc:
 		return l.copyToContainerByMount(ctx, c, srcPath, dstPath)
 	default:
-		return l.copyToContainerByDockerAPI(ctx, c, srcPath, dstPath)
+		if l.isPouch {
+			return l.copyToContainerForPouch(ctx, c, srcPath, dstPath)
+		} else {
+			return l.copyToContainerByDockerAPI(ctx, c, srcPath, dstPath)
+		}
 	}
 }
 
@@ -493,7 +507,11 @@ func (l *dockerLocalMetaImpl) CopyFromContainer(ctx context.Context, c *cri.Cont
 	case cri.Runc:
 		return l.copyFromContainerByMount(ctx, c, srcPath, dstPath)
 	default:
-		return l.copyFromContainerByDockerAPI(ctx, c, srcPath, dstPath)
+		if l.isPouch {
+			return l.copyFromContainerForPouch(ctx, c, srcPath, dstPath)
+		} else {
+			return l.copyFromContainerByDockerAPI(ctx, c, srcPath, dstPath)
+		}
 	}
 }
 
@@ -507,12 +525,11 @@ func (l *dockerLocalMetaImpl) copyToContainerByMount(ctx context.Context, c *cri
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "/usr/bin/cp", srcPath, hostPath)
-	err = cmd.Run()
-	if err != nil {
-		err = errors.Wrapf(err, "copy to container error src=[%s] dst=[%s]", srcPath, hostPath)
+	if err := util.CopyFileUsingCp(ctx, srcPath, hostPath); err != nil {
+		return err
 	}
-	return err
+
+	return nil
 }
 
 // copyToContainerByMount copies file from container to local file using mounts info
@@ -526,12 +543,11 @@ func (l *dockerLocalMetaImpl) copyFromContainerByMount(ctx context.Context, c *c
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "/usr/bin/cp", hostPath, dstPath)
-	err = cmd.Run()
-	if err != nil {
-		err = errors.Wrapf(err, "copy from container error src=[%s] dst=[%s]", hostPath, dstPath)
+	if err := util.CopyFileUsingCp(ctx, hostPath, dstPath); err != nil {
+		return err
 	}
-	return err
+
+	return nil
 }
 
 func (l *dockerLocalMetaImpl) copyFromContainerByDockerAPI(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
@@ -569,6 +585,7 @@ func (l *dockerLocalMetaImpl) Exec(ctx context.Context, c *cri.Container, req cr
 		cost := time.Now().Sub(begin)
 		logger.Dockerz("[digest] exec",
 			zap.String("cid", c.Id),
+			zap.String("runtime", c.Runtime),
 			zap.Strings("cmd", req.Cmd),
 			zap.Int("code", r.ExitCode),
 			zap.String("stdout", string(util.SubBytesMax(r.Stdout.Bytes(), 1024))),
@@ -851,7 +868,6 @@ func (l *dockerLocalMetaImpl) buildCriContainer(criPod *cri.Pod, dc *types.Conta
 		if !strings.HasPrefix(criPod.Namespace, "kube-") && !criContainer.Sandbox {
 			begin := time.Now()
 			// TODO 或许我们直接复制到根目录下 /.holoinsight-agent-helper 这样更简单一些? 因为这样肯定不需要创建父目录
-			// . 开头是为了隐藏文件
 			err := l.CopyToContainer(context.Background(), criContainer, core.HelperToolLocalPath, core.HelperToolPath)
 			cost := time.Now().Sub(begin)
 			if err != nil {
@@ -930,4 +946,111 @@ func (l *dockerLocalMetaImpl) emitOOMMetrics() {
 
 	}
 
+}
+
+// copyToContainerForPouch 'docker cp' failed when using pouch with non-rund runtime.
+// Here I try to use mount or 'docker exec' to workaround.
+func (l *dockerLocalMetaImpl) copyToContainerForPouch(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+	// mkdir -p
+	if _, err := l.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"mkdir", "-p", filepath.Dir(dstPath)}}); err != nil {
+		return err
+	}
+
+	// try 'mount' workaround
+	// Find first available mount. Use it as a 'transfer station':
+	// 1. cp file to 'transfer station'
+	// 2. mv file from 'transfer station' to dstPath using 'docker exec'
+	for _, mount := range c.Mounts {
+		if mount.Destination == "/dev/shm" {
+			continue
+		}
+		tempFile := tempFilePrefix + filepath.Base(dstPath)
+		tempPath := filepath.Join(mount.Source, tempFile)
+		if err := util.CopyFileUsingCp(ctx, srcPath, tempPath); err != nil {
+			logger.Errorz("[pouch] cp error", //
+				zap.String("cid", c.Id),
+				zap.Error(err))
+			continue
+		}
+
+		// We assume that there is a mv command in each container.
+		// Some thin images do not contain mv. Such as prometheus node exporter.
+		if _, err := l.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"mv", filepath.Join(mount.Destination, tempFile), dstPath}}); err != nil {
+			logger.Errorz("[pouch] mv error",
+				zap.String("cid", c.Id),           //
+				zap.String("mount", mount.Source), //
+				zap.String("src", srcPath),        //
+				zap.String("dst", dstPath),        //
+				zap.Error(err))
+			// remove temp file
+			os.Remove(tempPath)
+			continue
+		}
+
+		// workaround success
+		logger.Dockerz("[pouch] copy to container", //
+			zap.String("cid", c.Id),           //
+			zap.String("mount", mount.Source), //
+			zap.String("src", srcPath),        //
+			zap.String("dst", dstPath),        //
+		)
+		return nil
+	}
+
+	// 'docker exec' workaround. This workaround is a bit slow.
+	// Technical principle: docker exec -i "sh -c 'cat >/dstPath && chmod a+x /dstPath' < /srcPath
+
+	// But there is a bug in rund <2.7.19, it may lose some input stream leading to a broken file (not executable).
+
+	return errPouchCp
+}
+
+// copyFromContainerForPouch workaround for pouch
+func (l *dockerLocalMetaImpl) copyFromContainerForPouch(ctx context.Context, c *cri.Container, srcPath, dstPath string) error {
+	if !appconfig2.StdAgentConfig.K8s.Cri.Pouch.CpWorkaroundEnabled {
+		return errPouchCp
+	}
+
+	// TODO impl workaround for pouch:
+	// 1. If target file is in mounts then `docker cp` will success.
+	// 2. just like 'copyToContainerForPouch': Find first available mount. Use it as a 'transfer station':
+	// 2.1. cp srcFile to 'transfer station' using 'docker exec mv'
+	// 2.2. mv file from 'transfer station' to agent dstFile using
+	for _, mount := range c.Mounts {
+		if mount.Destination == "/dev/shm" {
+			continue
+		}
+
+		tempFile := tempFilePrefix + filepath.Base(srcPath)
+		tempPath := filepath.Join(mount.Destination, tempFile)
+		if _, err := l.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"cp", srcPath, tempPath}}); err != nil {
+			logger.Errorz("[pouch] cp error",
+				zap.String("cid", c.Id),                //
+				zap.String("mount", mount.Destination), //
+				zap.String("src", srcPath),             //
+				zap.String("dst", tempPath),            //
+				zap.Error(err))
+			continue
+		}
+
+		tempPathInHost := filepath.Join(mount.Source, tempFile)
+		if err := util.CopyFileUsingCp(ctx, tempPathInHost, dstPath); err != nil {
+			logger.Errorz("[pouch] cp error", //
+				zap.String("cid", c.Id),
+				zap.Error(err))
+			os.Remove(tempPathInHost)
+			continue
+		}
+
+		// workaround success
+		logger.Dockerz("[pouch] copy to container", //
+			zap.String("cid", c.Id),           //
+			zap.String("mount", mount.Source), //
+			zap.String("src", srcPath),        //
+			zap.String("dst", dstPath),        //
+		)
+		return nil
+	}
+
+	return errPouchCp
 }
