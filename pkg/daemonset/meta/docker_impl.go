@@ -116,7 +116,7 @@ func New(rs *registry.Service, k8smm *k8smeta.Manager, docker *dockersdk.Client)
 		syncDebounce: debounce.New(time.Second),
 		oomRecoder:   newOOMRecorder(),
 		// TODO Use a more elegant way to determine whether to use pouch mode.
-		isPouch: strings.HasPrefix(docker.DaemonHost(), "pouchd.sock"),
+		isPouch: strings.HasSuffix(docker.DaemonHost(), "pouchd.sock"),
 	}
 	impl.Start()
 	return impl
