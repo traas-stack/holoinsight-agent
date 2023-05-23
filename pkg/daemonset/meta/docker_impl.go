@@ -583,13 +583,23 @@ func (l *dockerLocalMetaImpl) Exec(ctx context.Context, c *cri.Container, req cr
 	begin := time.Now()
 	defer func() {
 		cost := time.Now().Sub(begin)
+		stdout := ""
+		stderr := ""
+
+		if r.Stdout != nil {
+			stdout = string(util.SubBytesMax(r.Stdout.Bytes(), 1024))
+		}
+		if r.Stderr != nil {
+			stderr = string(util.SubBytesMax(r.Stderr.Bytes(), 1024))
+		}
+
 		logger.Dockerz("[digest] exec",
 			zap.String("cid", c.Id),
 			zap.String("runtime", c.Runtime),
 			zap.Strings("cmd", req.Cmd),
 			zap.Int("code", r.ExitCode),
-			zap.String("stdout", string(util.SubBytesMax(r.Stdout.Bytes(), 1024))),
-			zap.String("stderr", string(util.SubBytesMax(r.Stderr.Bytes(), 1024))),
+			zap.String("stdout", stdout),
+			zap.String("stderr", stderr),
 			zap.Duration("cost", cost),
 			zap.Error(err))
 	}()
