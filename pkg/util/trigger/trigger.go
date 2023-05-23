@@ -15,8 +15,9 @@ type (
 		interval time.Duration
 	}
 	fixedRate struct {
-		align  time.Duration
-		offset time.Duration
+		align    time.Duration
+		offset   time.Duration
+		lastTime time.Time
 	}
 )
 
@@ -38,5 +39,10 @@ func (f *fixedDelay) Next(context TriggerContext) time.Time {
 }
 
 func (f *fixedRate) Next(context TriggerContext) time.Time {
-	return time.Now().Truncate(f.align).Add(f.align).Add(f.offset)
+	if f.lastTime.IsZero() {
+		f.lastTime = time.Now().Truncate(f.align).Add(f.align).Add(f.offset)
+	} else {
+		f.lastTime = f.lastTime.Add(f.align)
+	}
+	return f.lastTime
 }
