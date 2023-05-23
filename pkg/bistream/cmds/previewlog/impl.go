@@ -7,30 +7,17 @@ package previewlog
 import (
 	"bytes"
 	"errors"
-	"github.com/saintfish/chardet"
-	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/text"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
-	"go.uber.org/zap"
 	"golang.org/x/text/encoding"
-	"golang.org/x/text/encoding/simplifiedchinese"
 	"os"
 )
 
 const (
 	maxBytes = 1024 * 1024
 	// UTF8 is default charset of Golang
-	UTF8 = "UTF-8"
 )
-
-var (
-	expectedCharsets = []string{UTF8, "GB-18030"}
-	decoderMap       = make(map[string]func() *encoding.Decoder)
-)
-
-func init() {
-	decoderMap["GB-18030"] = simplifiedchinese.GB18030.NewDecoder
-}
 
 func PreviewFile(req *pb.PreviewFileRequest, resp *pb.PreviewFileResponse) error {
 	charset, content, err := previewFile0(req)
@@ -77,15 +64,14 @@ func previewFile0(req *pb.PreviewFileRequest) (string, []string, error) {
 	}
 	dst = dst[:n]
 
-	charset := detectCharset(dst)
-	logger.Infoz("detect charset", zap.String("charset", charset))
+	charset := text.DetectCharset(dst)
 
 	var decoder *encoding.Decoder
-	if charset != UTF8 {
-		if decoderProvider, ok := decoderMap[charset]; !ok {
+	if charset != text.UTF8 {
+		if encoding2 := text.GetEncoding(charset); encoding2 == nil {
 			return "", nil, errors.New("unsupported charset " + charset)
 		} else {
-			decoder = decoderProvider()
+			decoder = encoding2.NewDecoder()
 		}
 	}
 
@@ -102,7 +88,7 @@ func previewFile0(req *pb.PreviewFileRequest) (string, []string, error) {
 				firstLine = false
 			} else {
 				decoded := ""
-				if charset != UTF8 {
+				if charset != text.UTF8 {
 					if d, err := decoder.Bytes(dst[offset+1:]); err == nil {
 						decoded = string(d)
 					} else {
@@ -119,19 +105,4 @@ func previewFile0(req *pb.PreviewFileRequest) (string, []string, error) {
 	util.ReverseStringSlice(content)
 
 	return charset, content, nil
-}
-
-// detectCharset detects charset from bytes
-func detectCharset(dst []byte) string {
-	if charsetResults, err := chardet.NewTextDetector().DetectAll(dst); err == nil {
-		for _, expected := range expectedCharsets {
-			for _, result := range charsetResults {
-				if result.Charset == expected {
-					return result.Charset
-				}
-			}
-		}
-	}
-
-	return UTF8
 }

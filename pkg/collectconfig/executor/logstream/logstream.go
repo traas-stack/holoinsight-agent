@@ -4,7 +4,14 @@
 
 package logstream
 
-import "time"
+import (
+	"errors"
+	"github.com/traas-stack/holoinsight-agent/pkg/text"
+	"golang.org/x/text/encoding"
+	"sync"
+	"time"
+	"unicode/utf8"
+)
 
 type (
 	LogStream interface {
@@ -61,9 +68,61 @@ type (
 
 		// 剩余可读次数
 		remainCount int32
+
+		decodeMutex  sync.Mutex
+		decodedCache map[string][]string
 	}
 )
 
 func (resp *ReadResponse) Bytes() int64 {
 	return resp.EndOffset - resp.BeginOffset
+}
+
+// GetDecodedLines returns lines decoded using specified charset
+func (resp *ReadResponse) GetDecodedLines(charset string) ([]string, error) {
+	if charset == "" || charset == text.UTF8 {
+		// There is a situation: configure charset=UTF-8, but the actual data is gb18030. Garbled characters will still be generated at this time.
+		return resp.Lines, nil
+	}
+
+	// TODO AUTO detect from data ?
+
+	supportedEncoding := text.GetEncoding(charset)
+	if supportedEncoding == nil {
+		return nil, errors.New("unsupported charset: " + charset)
+	}
+
+	resp.decodeMutex.Lock()
+	defer resp.decodeMutex.Unlock()
+
+	if resp.decodedCache == nil {
+		resp.decodedCache = make(map[string][]string)
+	}
+
+	if cached, ok := resp.decodedCache[charset]; ok {
+		return cached, nil
+	}
+
+	decoded := make([]string, len(resp.Lines))
+	decoder := supportedEncoding.NewDecoder()
+
+	for i, line := range resp.Lines {
+		if d, err := maybeDecode(line, decoder); err == nil {
+			decoded[i] = d
+		} else {
+			decoded[i] = line
+		}
+	}
+
+	resp.decodedCache[charset] = decoded
+	return decoded, nil
+}
+
+// maybeDecode decodes string to utf8
+// If the given string is already a valid utf8 string, returns itself.
+func maybeDecode(s string, decoder *encoding.Decoder) (string, error) {
+	if utf8.ValidString(s) {
+		return s, nil
+	}
+	return decoder.String(s)
 }

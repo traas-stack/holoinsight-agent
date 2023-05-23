@@ -523,11 +523,17 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 	oneLine := &LogGroup{Lines: []string{""}}
 	var err error
 
-	for i := 0; i <= len(resp.Lines); i++ {
+	lines := resp.Lines
+	if decoded, err := resp.GetDecodedLines(c.task.From.Log.Charset); err == nil {
+		lines = decoded
+	} else {
+		logger.Errorz("[log] [consumer] decode error", zap.String("key", c.key), zap.String("charset", c.task.From.Log.Charset))
+	}
+	for i := 0; i <= len(lines); i++ {
 		var fullGroup *LogGroup
 
 		// 特殊处理
-		if i == len(resp.Lines) {
+		if i == len(lines) {
 			if c.multilineAccumulator == nil {
 				// 没有多行模式, 不需要
 				continue
@@ -550,7 +556,7 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 
 			fullGroup = pending
 		} else {
-			line := resp.Lines[i]
+			line := lines[i]
 			oneLine.SetOneLine(line)
 			if c.multilineAccumulator != nil {
 				ctx.log = oneLine
