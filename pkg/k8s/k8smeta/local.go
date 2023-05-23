@@ -18,6 +18,11 @@ func (m *LocalMeta) Namespace() string {
 	return os.Getenv("POD_NAMESPACE")
 }
 
+// PodName returns current agent pod name
+func (m *LocalMeta) PodName() string {
+	return os.Getenv("POD_NAME")
+}
+
 func (m *LocalMeta) PodIP() string {
 	return os.Getenv("POD_IP")
 }

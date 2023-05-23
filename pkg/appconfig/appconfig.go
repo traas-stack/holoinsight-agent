@@ -46,12 +46,13 @@ type (
 		Gateway  GatewayConfig  `json:"gateway" yaml:"gateway" toml:"gateway"`
 		Version  string         `json:"version" yaml:"version" toml:"version"`
 		// 该配置存在的原因: toml 根表无法后置, 因此不太好在shell里进行配置 " echo "a=1" >> xxx.toml " 于是单独给它分配一个节
-		Basic     *BasicConfig  `json:"basic" yaml:"basic" toml:"basic"`
-		Central   CentralConfig `json:"central" yaml:"central" toml:"central"`
-		K8s       K8sConfig     `json:"k8s" yaml:"k8s" toml:"k8s"`
-		Workspace string        `json:"workspace" yaml:"workspace" toml:"workspace"`
-		Cluster   string        `json:"cluster" yaml:"cluster" toml:"cluster"`
-		Data      DataConfig    `json:"data" yaml:"data" toml:"data"`
+		Basic       *BasicConfig      `json:"basic" yaml:"basic" toml:"basic"`
+		Central     CentralConfig     `json:"central" yaml:"central" toml:"central"`
+		K8s         K8sConfig         `json:"k8s" yaml:"k8s" toml:"k8s"`
+		Workspace   string            `json:"workspace" yaml:"workspace" toml:"workspace"`
+		Cluster     string            `json:"cluster" yaml:"cluster" toml:"cluster"`
+		Data        DataConfig        `json:"data" yaml:"data" toml:"data"`
+		Daemonagent DaemonagentConfig `json:"daemonagent" yaml:"daemonagent" toml:"daemonagent"`
 	}
 	BasicConfig struct {
 		App       string         `json:"app" yaml:"app" toml:"app"`
@@ -123,6 +124,10 @@ type (
 	}
 	K8sCriPouchConfig struct {
 		CpWorkaroundEnabled bool `json:"cpWorkaroundEnabled,omitempty" yaml:"cpWorkaroundEnabled"`
+	}
+	// DaemonagentConfig daemonagent config
+	DaemonagentConfig struct {
+		ClusterAgentEnabled bool `json:"clusterAgentEnabled" yaml:"clusterAgentEnabled"`
 	}
 )
 

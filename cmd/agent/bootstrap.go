@@ -5,8 +5,10 @@
 package main
 
 import (
+	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/agent/server"
 	bootstrap2 "github.com/traas-stack/holoinsight-agent/pkg/bootstrap"
+	"github.com/traas-stack/holoinsight-agent/pkg/clusteragent"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	daemonsetmeta "github.com/traas-stack/holoinsight-agent/pkg/daemonset/meta"
@@ -15,6 +17,7 @@ import (
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssync"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics"
+	"github.com/traas-stack/holoinsight-agent/pkg/master"
 	"github.com/traas-stack/holoinsight-agent/pkg/openmetric"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
@@ -79,27 +82,24 @@ func bootstrap() error {
 	logger.Infoz("[bootstrap] network", zap.String("ip", util.GetLocalIp()), zap.String("hostname", util.GetHostname()))
 	if util.GetLocalIp() == "" {
 		logger.Errorz("[bootstrap] invalid ip")
-		os.Exit(1)
+		return errors.New("[bootstrap] invalid ip")
 	}
 
 	if os.Getenv("DEBUG") == "true" {
 		logger.DebugEnabled = true
 	}
 
-	{
-		wd, err := os.Getwd()
-		if err != nil {
-			logger.Errorz("[bootstrap] get working directory error", zap.Error(err))
-		} else {
-			logger.Infoz("[bootstrap] working directory", zap.String("wd", wd))
-		}
+	if wd, err := os.Getwd(); err != nil {
+		logger.Errorz("[bootstrap] get working directory error", zap.Error(err))
+		return err
+	} else {
+		logger.Infoz("[bootstrap] working directory", zap.String("wd", wd))
 	}
 
 	stat.SetupStat()
 
 	// setup agent id
-	err := agentmeta.SetupAgentId()
-	if err != nil {
+	if err := agentmeta.SetupAgentId(); err != nil {
 		logger.Errorz("[bootstrap] setup agent id error", zap.Error(err))
 		return err
 	}
@@ -173,26 +173,32 @@ func bootstrap() error {
 			return err
 		}
 
+		pm := pipeline.NewManager(ctm)
+		pm.Start()
+
 		om := openmetric.NewManager(ctm)
 		om.Start()
 
 		bsm := bistream.NewManager(rs, bizbistream.GetBiStreamHandlerRegistry())
 		bsm.Start()
 
-		pm := pipeline.NewManager(ctm)
-		pm.Start()
+		app.stopComponents = append(app.stopComponents, pm, om, bsm)
 
-		app.stopComponents = append(app.stopComponents, om, bsm, pm)
+		if appconfig.StdAgentConfig.Daemonagent.ClusterAgentEnabled {
+			masterMaintainer := master.NewK8sNodeMasterMaintainer(ioc.K8smm)
+			masterMaintainer.Register(&clusteragent.MasterComponent{})
+			go masterMaintainer.Start()
+			app.stopComponents = append(app.stopComponents, masterMaintainer)
+		}
 
 	case core.AgentModeClusteragent:
 		setupForK8s()
 
-		clientset, err := initK8sClientset()
-		if err != nil {
-			panic(err)
+		if _, err := initK8sClientset(); err != nil {
+			return err
 		}
 
-		k8sm := k8ssync.NewMetaSyncer(rs, clientset)
+		k8sm := k8ssync.NewMetaSyncer(rs, ioc.K8sClientset)
 		k8sm.Start()
 		app.stopComponents = append(app.stopComponents, k8sm)
 	case core.AgentModeCentral:
@@ -274,10 +280,14 @@ func setupForK8s() {
 func initK8sClientset() (*kubernetes.Clientset, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return kubernetes.NewForConfig(config)
+	clientset, err := kubernetes.NewForConfig(config)
+	if err == nil {
+		ioc.K8sClientset = clientset
+	}
+	return clientset, err
 }
 
 func initK8sMetaManager() error {
@@ -343,7 +353,7 @@ func stop0() (ret error) {
 func initCri() error {
 	sock, sockOk := dockerutils.DetectSock()
 	if !sockOk {
-		panic("no docker sock")
+		return errors.New("no docker sock")
 	}
 	host := "unix://" + sock
 	docker, pingResp, err := dockerutils.NewDockerClient(host)

@@ -59,7 +59,7 @@ func (m *Manager) Start() {
 	// Or use k8s helper cache.WaitForCacheSync(nil, controller.HasSynced) ?
 	for _, controller := range controllers {
 		for !controller.HasSynced() {
-			logger.Metaz("[k8s] [meta] wait meta sync")
+			logger.Infoz("[bootstrap] [k8s] [meta] wait meta sync")
 			time.Sleep(b.Duration())
 		}
 	}
