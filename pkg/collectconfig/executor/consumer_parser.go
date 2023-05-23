@@ -51,6 +51,8 @@ func parseConsumer(st *api.SubTask) (*Consumer, error) {
 		Interval: interval,
 	}
 
+	task.From.Log.Charset = strings.ToUpper(task.From.Log.Charset)
+
 	var logParser LogParser
 	var timeParser TimeParser
 	var beforeParseWhere XWhere
