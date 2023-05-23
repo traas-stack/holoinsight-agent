@@ -7,7 +7,6 @@ package k8ssync
 import (
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
-	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/listwatchext"
@@ -19,6 +18,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"time"
 )
@@ -29,9 +29,13 @@ const (
 )
 
 type (
+	MetaSyncer interface {
+		Start()
+		Stop()
+	}
 	metaSyncer struct {
 		rs               *registry.Service
-		k8smm            *k8smeta.Manager
+		clientset        *kubernetes.Clientset
 		namespaceChanged int32
 		nodeChanged      int32
 		podChanged       int32
@@ -53,17 +57,17 @@ type (
 	}
 )
 
-func NewMetaSyncer(rs *registry.Service, k8smm *k8smeta.Manager) *metaSyncer {
+func NewMetaSyncer(rs *registry.Service, clientset *kubernetes.Clientset) MetaSyncer {
 	return &metaSyncer{
-		rs:    rs,
-		k8smm: k8smm,
+		rs:        rs,
+		clientset: clientset,
 	}
 }
 
 func newResourceSyncer(ms *metaSyncer, resource string, namespace string, objType runtime.Object, reportType string, funcs resourceFuncs) *resourceSyncer {
 	return &resourceSyncer{
 		ms:         ms,
-		getter:     ms.k8smm.Clientset.CoreV1().RESTClient(),
+		getter:     ms.clientset.CoreV1().RESTClient(),
 		resource:   resource,
 		namespace:  namespace,
 		objType:    objType,

@@ -15,6 +15,7 @@ import (
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssync"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics"
+	"github.com/traas-stack/holoinsight-agent/pkg/openmetric"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/bistream"
@@ -35,7 +36,6 @@ import (
 	bizbistream "github.com/traas-stack/holoinsight-agent/pkg/bistream"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/openmetric"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/all"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/output/all"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
@@ -137,78 +137,27 @@ func bootstrap() error {
 	am := agent.NewManager(rs)
 	am.Start()
 
-	// 初始化采集配置同步模块
-	ctm, err := collecttask.NewManager(rs, agentmeta.GetAgentId())
-	if err != nil {
-		am.Stop()
-		rs.Stop()
-		return err
-	}
-	// 从本地加载采集配置
-	// 立即从 Registry 同步一次配置 (拖慢启动速度)
-	ctm.InitLoad()
-
-	//// 启动 pipeline manager
-	//pm := pipeline.NewManager(ctm)
-	//pm.Start()
-
-	// 启动监听
-	ctm.StartListen()
-	ctm.AddHttpFuncs()
-	ioc.CollectTaskManager = ctm
-
-	// 双向流
-	bsm := bistream.NewManager(rs, bizbistream.GetBiStreamHandlerRegistry())
-	bsm.Start()
-
-	om := openmetric.NewManager(ctm)
-	om.Start()
-
-	app.stopComponents = append(app.stopComponents, am, rs, ctm, bsm)
+	app.stopComponents = append(app.stopComponents, am, rs)
 
 	switch appconfig.StdAgentConfig.Mode {
 	case core.AgentModeDaemonset:
 		setupForK8s()
 
-		config, err := rest.InClusterConfig()
-		if err != nil {
-			panic(err)
+		if err := initK8sMetaManager(); err != nil {
+			return err
 		}
 
-		clientset, err := kubernetes.NewForConfig(config)
-		if err != nil {
-			panic(err)
+		if err := initCri(); err != nil {
+			return err
 		}
 
-		k8smm := k8smeta.NewManager(clientset)
-		k8smm.Start()
-		ioc.K8smm = k8smm
-		app.stopComponents = append(app.stopComponents, k8smm)
-
-		sock, sockOk := dockerutils.DetectSock()
-		if !sockOk {
-			panic("no docker sock")
-		}
-		host := "unix://" + sock
-		docker, pingResp, err := dockerutils.NewDockerClient(host)
-		if err != nil {
-			logger.Errorz("[bootstrap] init docker client error", zap.Error(err))
-			time.Sleep(time.Second)
-			panic(err)
-		}
-		logger.Infoz("[bootstrap] init docker client", zap.String("host", host), zap.Any("ping", pingResp))
-		logger.Dockerz("[init] docker client", zap.String("host", host), zap.Any("ping", pingResp))
-
-		dm := daemonsetmeta.New(rs, k8smm, docker)
-		ioc.Crii = dm
-
-		// 5秒级系统指标任务采集
+		// 5s system metrics
 		//{
 		//	c := k8ssync.NewPodSystemResourceCollector(m.MetaManager, "_5s", 5*time.Second)
 		//	c.Start()
 		//}
-		// 分钟级系统指标任务采集
 
+		// minute system metrics
 		{
 			if c, err := k8ssysmetrics.NewPodSystemResourceCollector("", time.Minute); err == nil {
 				logger.Infof("[bootstrap] [k8s] use %s system metrics collector", c.Name())
@@ -219,35 +168,50 @@ func bootstrap() error {
 
 		bootstrap2.TriggerDaemonsetHooks()
 
+		ctm, err := initCollectTaskManager(rs)
+		if err != nil {
+			return err
+		}
+
+		om := openmetric.NewManager(ctm)
+		om.Start()
+
+		bsm := bistream.NewManager(rs, bizbistream.GetBiStreamHandlerRegistry())
+		bsm.Start()
+
+		pm := pipeline.NewManager(ctm)
+		pm.Start()
+
+		app.stopComponents = append(app.stopComponents, om, bsm, pm)
+
 	case core.AgentModeClusteragent:
 		setupForK8s()
 
-		// TODO 重复代码太多
-		config, err := rest.InClusterConfig()
+		clientset, err := initK8sClientset()
 		if err != nil {
 			panic(err)
 		}
 
-		clientset, err := kubernetes.NewForConfig(config)
-		if err != nil {
-			panic(err)
-		}
-
-		k8smm := k8smeta.NewManager(clientset)
-		k8smm.Start()
-		ioc.K8smm = k8smm
-		app.stopComponents = append(app.stopComponents, k8smm)
-
-		k8sm := k8ssync.NewMetaSyncer(rs, k8smm)
+		k8sm := k8ssync.NewMetaSyncer(rs, clientset)
 		k8sm.Start()
 		app.stopComponents = append(app.stopComponents, k8sm)
 	case core.AgentModeCentral:
+
+		ctm, err := initCollectTaskManager(rs)
+		if err != nil {
+			return err
+		}
+
+		om := openmetric.NewManager(ctm)
+		om.Start()
+
+		pm := pipeline.NewManager(ctm)
+		pm.Start()
+
+		app.stopComponents = append(app.stopComponents, om, pm)
+
 	default:
 	}
-
-	pm := pipeline.NewManager(ctm)
-	pm.Start()
-	app.stopComponents = append(app.stopComponents, pm)
 
 	// 等待关闭
 	// 如果是以交互方式运行 则监听 Ctrl+C
@@ -307,6 +271,29 @@ func setupForK8s() {
 
 }
 
+func initK8sClientset() (*kubernetes.Clientset, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err)
+	}
+
+	return kubernetes.NewForConfig(config)
+}
+
+func initK8sMetaManager() error {
+	clientset, err := initK8sClientset()
+	if err != nil {
+		return err
+	}
+
+	k8smm := k8smeta.NewManager(clientset)
+	k8smm.Start()
+	ioc.K8smm = k8smm
+	app.stopComponents = append(app.stopComponents, k8smm)
+
+	return nil
+}
+
 func Stop() error {
 	// 没有启动成功 那就不用stop
 	if !app.started {
@@ -351,4 +338,37 @@ func stop0() (ret error) {
 	}
 
 	return nil
+}
+
+func initCri() error {
+	sock, sockOk := dockerutils.DetectSock()
+	if !sockOk {
+		panic("no docker sock")
+	}
+	host := "unix://" + sock
+	docker, pingResp, err := dockerutils.NewDockerClient(host)
+	if err != nil {
+		logger.Errorz("[bootstrap] init docker client error", zap.Error(err))
+		return err
+	}
+	logger.Infoz("[bootstrap] init docker client", zap.String("host", host), zap.Any("ping", pingResp))
+	logger.Dockerz("[init] docker client", zap.String("host", host), zap.Any("ping", pingResp))
+
+	dm := daemonsetmeta.New(ioc.RegistryService, ioc.K8smm, docker)
+	ioc.Crii = dm
+
+	return nil
+}
+
+func initCollectTaskManager(rs *registry.Service) (*collecttask.Manager, error) {
+	ctm, err := collecttask.NewManager(rs, agentmeta.GetAgentId())
+	if err != nil {
+		return nil, err
+	}
+	ctm.InitLoad()
+	ioc.CollectTaskManager = ctm
+	ctm.StartListen()
+	ctm.AddHttpFuncs()
+	app.stopComponents = append(app.stopComponents, ctm)
+	return ctm, nil
 }

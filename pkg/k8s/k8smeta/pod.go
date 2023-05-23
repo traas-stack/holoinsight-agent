@@ -51,9 +51,11 @@ var (
 )
 
 func newPodMeta(localNodeName string, getter cache.Getter) *PodMeta {
-	// TODO Check whether the code logic is enough to keep the pods of this node?
-	// selector := fields.OneTermEqualSelector("spec.nodeName", localNodeName)
-	selector := fields.Everything()
+	if localNodeName == "" {
+		panic("local nodeName is empty")
+	}
+	// Only subscribe pods which belongs to current node
+	selector := fields.OneTermEqualSelector("spec.nodeName", localNodeName)
 	listWatch := cache.NewListWatchFromClient(getter, string(v1.ResourcePods), v1.NamespaceAll, selector)
 	informer := cache.NewSharedIndexInformer(listWatch, &v1.Pod{}, 0, podIndexers)
 	informer.SetWatchErrorHandler(func(r *cache.Reflector, err error) {
