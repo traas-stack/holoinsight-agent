@@ -8,6 +8,7 @@ import (
 	"context"
 	"github.com/docker/docker/api/types"
 	dockersdk "github.com/docker/docker/client"
+	"strings"
 	"time"
 )
 
@@ -24,9 +25,13 @@ func NewDockerClient(host string) (*dockersdk.Client, types.Ping, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
 	defer cancel()
 
-	// 协商 docker api 版本
 	pingResp, err := docker.Ping(ctx)
 	if err == nil {
+		// HACK: for pouch, set APIVersion to 1.25
+		// which is required by github.com/docker/docker/client/container_exec.go#ContainerExecCreate
+		if strings.HasSuffix(host, "pouchd.sock") {
+			pingResp.APIVersion = "1.25"
+		}
 		docker.NegotiateAPIVersionPing(pingResp)
 	}
 	return docker, pingResp, err
