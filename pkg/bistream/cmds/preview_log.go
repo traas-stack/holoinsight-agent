@@ -20,8 +20,6 @@ const (
 func PreviewFile(_ int32, reqBytes []byte) (int32, interface{}, error) {
 	resp := &pb.PreviewFileResponse{
 		Header: &commonpb.CommonResponseHeader{},
-		// TODO 猜测编码
-		Charset: "UTF-8",
 	}
 	err := previewFile0(reqBytes, resp)
 	fillError(resp.Header, err)
