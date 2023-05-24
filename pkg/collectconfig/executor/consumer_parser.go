@@ -52,6 +52,11 @@ func parseConsumer(st *api.SubTask) (*Consumer, error) {
 	}
 
 	task.From.Log.Charset = strings.ToUpper(task.From.Log.Charset)
+	// Trim extra space
+	for _, path := range task.From.Log.Path {
+		path.Dir = strings.TrimSpace(path.Dir)
+		path.Pattern = strings.TrimSpace(path.Pattern)
+	}
 
 	var logParser LogParser
 	var timeParser TimeParser
