@@ -175,7 +175,7 @@ func ListFiles(req *pb.ListFilesRequest, resp *pb.ListFilesResponse) error {
 
 // Rebase nodes from one dir to another
 // /Users/xzchaoo/logs/a.log -> /home/admin/logs/a.log
-func Rebase(root []*commonpb.FileNode, from, to string) (*commonpb.FileNode, error) {
+func Rebase(root []*commonpb.FileNode, from, to string) ([]*commonpb.FileNode, error) {
 	children, err := removePrefixNodes(root[0], from)
 	if err != nil {
 		return nil, err
@@ -186,13 +186,17 @@ func Rebase(root []*commonpb.FileNode, from, to string) (*commonpb.FileNode, err
 
 // appendPrefixNodes append prefix nodes to existing nodes
 // /Users/xzchaoo/logs/a.log + /a/b -> /a/b/Users/xzchaoo/logs/a.log
-func appendPrefixNodes(root []*commonpb.FileNode, dir string) (*commonpb.FileNode, error) {
+func appendPrefixNodes(root []*commonpb.FileNode, dir string) ([]*commonpb.FileNode, error) {
 	newRoot, last, err := makeDirTree(dir)
 	if err != nil {
 		return nil, err
 	}
-	last.Children = root
-	return newRoot, nil
+	if newRoot != nil {
+		last.Children = root
+		return []*commonpb.FileNode{newRoot}, nil
+	} else {
+		return root, nil
+	}
 }
 
 // removePrefixNodes append remove nodes from existing nodes

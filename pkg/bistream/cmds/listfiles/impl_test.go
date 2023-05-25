@@ -31,21 +31,21 @@ func TestSplit(t *testing.T) {
 	}, resp)
 	originalNodes := resp.Nodes
 
-	node, err := appendPrefixNodes(originalNodes, "/a//b/////")
+	nodes, err := appendPrefixNodes(originalNodes, "/a//b/////")
 	if err != nil {
 		log.Fatalln(err)
 	}
-	print("", node)
+	print("", nodes[0])
 
-	assert.Equal(t, "a", node.Name)
-	assert.Equal(t, "b", node.Children[0].Name)
-	assert.Equal(t, originalNodes[0].Name, node.Children[0].Children[0].Name)
+	assert.Equal(t, "a", nodes[0].Name)
+	assert.Equal(t, "b", nodes[0].Children[0].Name)
+	assert.Equal(t, originalNodes[0].Name, nodes[0].Children[0].Children[0].Name)
 
-	node, err = Rebase(originalNodes, "/Users/xzchaoo/logs", "/home/admin/logs")
+	nodes, err = Rebase(originalNodes, "/Users/xzchaoo/logs", "/home/admin/logs")
 	if err != nil {
 		log.Fatalln(err)
 	}
-	print("", node)
+	print("", nodes[0])
 }
 
 func print(ident string, node *commonpb.FileNode) {

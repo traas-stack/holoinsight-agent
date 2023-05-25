@@ -5,12 +5,14 @@
 package cmds
 
 import (
+	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/listfiles"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"google.golang.org/protobuf/proto"
+	"path/filepath"
 )
 
 func ListFiles(_ int32, bytes []byte) (int32, interface{}, error) {
@@ -29,6 +31,11 @@ func listFiles0(bs []byte, resp *pb.ListFilesResponse) error {
 		return err
 	}
 
+	cleaned := filepath.Clean(req.Name)
+	if cleaned == "" || cleaned == "/" {
+		return errors.New("list '/' is disallowed")
+	}
+
 	if _, container, err := getPodContainer(req.Header); err != nil {
 		return err
 	} else if container != nil {
@@ -42,14 +49,14 @@ func listFiles0(bs []byte, resp *pb.ListFilesResponse) error {
 		req2.Name = hostPath
 		resp2 := &pb.ListFilesResponse{}
 		if err := listfiles.ListFiles(req2, resp2); err != nil {
-			return err
+			return trimErrorPathInfo(err, hostPath, req.Name)
 		}
 		// rebase to container dir
 		newRoot, err := listfiles.Rebase(resp2.Nodes, hostPath, req.Name)
 		if err != nil {
-			return err
+			return trimErrorPathInfo(err, hostPath, req.Name)
 		}
-		resp.Nodes = []*commonpb.FileNode{newRoot}
+		resp.Nodes = newRoot
 		return nil
 	}
 

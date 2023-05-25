@@ -6,6 +6,8 @@ package cri
 
 import (
 	"errors"
+	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,12 +23,17 @@ var (
 
 // TransferToHostPathForContainer transfer container path into host path
 func TransferToHostPathForContainer(c *Container, ctrPath string, respectSymbol bool) (string, error) {
-	return transferToHostPath0(c.MergedDir, c.Mounts, ctrPath, respectSymbol, 0)
-}
-
-// TransferToHostPath transfer container path into host path
-func TransferToHostPath(mergedDir string, mounts []*MountPoint, ctrPath string, respectSymbol bool) (string, error) {
-	return transferToHostPath0(mergedDir, mounts, ctrPath, respectSymbol, 0)
+	if c.Runtime == Runc && c.MergedDir == "" && c.State.Pid > 0 {
+		if ctrPath == "/" {
+			return "", errors.New("container path '/' is disallowed")
+		}
+		// Notice: /hostfs/proc/${pid}/root is a link to '/' .
+		// When you cd to it using bash, its content belongs to the target container. That's ok!
+		// But if you open this dir using Golang, it will really link to '/' of agent container!!!
+		return filepath.Join(core.GetHostfs(), "proc", cast.ToString(c.State.Pid), "root", ctrPath), nil
+	} else {
+		return transferToHostPath0(c.MergedDir, c.Mounts, ctrPath, respectSymbol, 0)
+	}
 }
 
 // transferToHostPath0 transfer container path into host path. This method takes into account the case of symbolic links.
