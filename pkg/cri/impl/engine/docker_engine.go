@@ -2,7 +2,7 @@
  * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
  */
 
-package meta
+package engine
 
 import (
 	"bytes"
@@ -27,6 +27,11 @@ type (
 		Client  *dockersdk.Client
 		isPouch bool
 	}
+)
+
+var (
+	// Make sure *DockerContainerEngine impl cri.ContainerEngine
+	_ cri.ContainerEngine = &DockerContainerEngine{}
 )
 
 func (e *DockerContainerEngine) Init() error {

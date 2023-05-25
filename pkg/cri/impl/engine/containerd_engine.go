@@ -2,7 +2,7 @@
  * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
  */
 
-package meta
+package engine
 
 import (
 	"bytes"
@@ -39,6 +39,11 @@ type (
 		Client  *containerd.Client
 		fifoDir string
 	}
+)
+
+var (
+	// Make sure *ContainerdContainerEngine impl cri.ContainerEngine
+	_ cri.ContainerEngine = &ContainerdContainerEngine{}
 )
 
 func init() {

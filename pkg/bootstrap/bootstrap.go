@@ -1,3 +1,7 @@
+/*
+ * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
+ */
+
 package bootstrap
 
 import (
@@ -10,7 +14,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/clusteragent"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
-	daemonsetmeta "github.com/traas-stack/holoinsight-agent/pkg/daemonset/meta"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/impl"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssync"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics"
@@ -333,7 +337,7 @@ func (b *AgentBootstrap) setupCRI() error {
 
 	engine = b.callCustomizers("containerEngine-setup", engine).(cri.ContainerEngine)
 
-	i := daemonsetmeta.New(ioc.K8smm, engine)
+	i := impl.New(ioc.K8smm, engine)
 	ioc.Crii = i
 	if err := i.Start(); err != nil {
 		return err

@@ -116,9 +116,6 @@ type (
 )
 
 const (
-	NsEnter_MNT NsEnterType = iota
-	NsEnter_NET
-	NsEnter_UTS
 	Runc = "runc"
 	Rund = "rund"
 

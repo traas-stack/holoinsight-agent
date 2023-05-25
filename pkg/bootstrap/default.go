@@ -1,3 +1,7 @@
+/*
+ * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
+ */
+
 package bootstrap
 
 import (
@@ -8,7 +12,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/containerdutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
-	daemonsetmeta "github.com/traas-stack/holoinsight-agent/pkg/daemonset/meta"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/impl/engine"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
@@ -26,7 +30,7 @@ func InitContainerdEngine() (cri.ContainerEngine, error) {
 	}
 	logger.Infoz("[bootstrap] [cri] init containerd client", zap.String("addr", client.Conn().Target()), zap.Any("version", versionResp))
 	logger.Criz("[bootstrap] containerd client", zap.String("addr", client.Conn().Target()), zap.Any("version", versionResp))
-	return &daemonsetmeta.ContainerdContainerEngine{Client: client}, nil
+	return &engine.ContainerdContainerEngine{Client: client}, nil
 }
 
 func InitDockerEngine() (cri.ContainerEngine, error) {
@@ -37,7 +41,7 @@ func InitDockerEngine() (cri.ContainerEngine, error) {
 	}
 	logger.Infoz("[bootstrap] init docker client", zap.String("host", docker.DaemonHost()), zap.Any("ping", pingResp))
 	logger.Criz("[bootstrap] docker client", zap.String("host", docker.DaemonHost()), zap.Any("ping", pingResp))
-	return &daemonsetmeta.DockerContainerEngine{Client: docker}, nil
+	return &engine.DockerContainerEngine{Client: docker}, nil
 }
 
 func InitCollectTaskManager(rs *registry.Service) (*collecttask.Manager, error) {
@@ -55,9 +59,9 @@ func InitCollectTaskManager(rs *registry.Service) (*collecttask.Manager, error) 
 
 func maybeInitDockerOOMManager() {
 	i := ioc.Crii
-	engine := i.Engine()
-	if x, ok := engine.(*daemonsetmeta.DockerContainerEngine); ok {
-		oomManager := daemonsetmeta.NewOOMManager(i, x.Client)
+	e := i.Engine()
+	if x, ok := e.(*engine.DockerContainerEngine); ok {
+		oomManager := engine.NewOOMManager(i, x.Client)
 		oomManager.Start()
 		App.AddStopComponent(oomManager)
 	}
