@@ -20,7 +20,6 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
-	"github.com/traas-stack/holoinsight-agent/pkg/util/trigger"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"math"
@@ -81,19 +80,17 @@ func (c *cadvisorSysCollector) Stop() {
 
 func (c *cadvisorSysCollector) Start() {
 	go func() {
-		trg := trigger.WithFixedRate(c.interval, 1*time.Second)
-		next := trg.Next(nil)
-		timer := time.NewTimer(next.Sub(time.Now()))
+		defer c.stopSig.StopDone()
+
+		timer, emitTime := util.NewAlignedTimer(c.interval, time.Second, false, true)
 		defer timer.Stop()
 
 		for {
 			select {
 			case <-timer.C:
 				// 时间要算在上个周期上: 57分1秒算出的数据计在 56分 的时间戳上
-				c.collectOnce(next.Add(-(c.interval + 1*time.Second)))
-
-				next = trg.Next(nil)
-				timer.Reset(next.Sub(time.Now()))
+				c.collectOnce(emitTime.Add(-(c.interval + 1*time.Second)))
+				emitTime = timer.Next()
 			case <-c.stopSig.C:
 				return
 			}

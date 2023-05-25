@@ -7,6 +7,7 @@ package collecttask
 const (
 	TargetLocalhost = "localhost"
 	TargetPod       = "pod"
+	TargetContainer = "container"
 
 	// ext
 	TargetObNodeTenant = "ob_node_tenant"

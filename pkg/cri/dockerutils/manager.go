@@ -6,8 +6,10 @@ package dockerutils
 
 import (
 	"context"
+	"errors"
 	"github.com/docker/docker/api/types"
 	dockersdk "github.com/docker/docker/client"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"strings"
 	"time"
 )
@@ -16,7 +18,17 @@ const (
 	pingTimeout = 3 * time.Second
 )
 
-func NewDockerClient(host string) (*dockersdk.Client, types.Ping, error) {
+// NewClientFromEnv create a docker client based on the agreed environment configuration information.
+func NewClientFromEnv(addrs ...string) (*dockersdk.Client, types.Ping, error) {
+	// Default to two well known docker sock
+	defaultAddrs := append(addrs, "/var/run/docker.sock", "/var/run/pouchd.sock")
+
+	addr := core.FindFirstSockInHostfs("DOCKER_SOCK", defaultAddrs...)
+	if addr == "" {
+		return nil, types.Ping{}, errors.New("no docker sock")
+	}
+
+	host := "unix://" + addr
 	docker, err := dockersdk.NewClientWithOpts(dockersdk.WithHost(host))
 	if err != nil {
 		return nil, types.Ping{}, err

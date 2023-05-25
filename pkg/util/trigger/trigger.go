@@ -15,9 +15,10 @@ type (
 		interval time.Duration
 	}
 	fixedRate struct {
-		align    time.Duration
-		offset   time.Duration
-		lastTime time.Time
+		align             time.Duration
+		offset            time.Duration
+		lastTime          time.Time
+		skipExpiredWindow bool
 	}
 )
 
@@ -27,10 +28,11 @@ func WithFixedDelay(interval time.Duration) Trigger {
 	}
 }
 
-func WithFixedRate(align, offset time.Duration) Trigger {
+func WithFixedRate(align, offset time.Duration, skipExpiredWindow bool) Trigger {
 	return &fixedRate{
-		align:  align,
-		offset: offset,
+		align:             align,
+		offset:            offset,
+		skipExpiredWindow: skipExpiredWindow,
 	}
 }
 
@@ -39,7 +41,7 @@ func (f *fixedDelay) Next(context TriggerContext) time.Time {
 }
 
 func (f *fixedRate) Next(context TriggerContext) time.Time {
-	if f.lastTime.IsZero() {
+	if f.lastTime.IsZero() || f.skipExpiredWindow {
 		f.lastTime = time.Now().Truncate(f.align).Add(f.align).Add(f.offset)
 	} else {
 		f.lastTime = f.lastTime.Add(f.align)

@@ -26,7 +26,7 @@ type (
 	}
 	PodValueExtractFunc  func(pod *v1.Pod) string
 	NodeValueExtractFunc func(node *v1.Node) string
-	SandboxCheckHook     func(containerName string, labels map[string]string) bool
+	SandboxCheckHook     func(k8sContainerName string, labels map[string]string) bool
 
 	Env struct {
 		Name  string

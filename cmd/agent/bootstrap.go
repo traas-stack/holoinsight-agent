@@ -10,6 +10,8 @@ import (
 	bootstrap2 "github.com/traas-stack/holoinsight-agent/pkg/bootstrap"
 	"github.com/traas-stack/holoinsight-agent/pkg/clusteragent"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/containerdutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	daemonsetmeta "github.com/traas-stack/holoinsight-agent/pkg/daemonset/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
@@ -49,17 +51,13 @@ type (
 	stopComponent interface {
 		Stop()
 	}
+	appStruct struct {
+		stopComponents []stopComponent
+	}
 )
 
 // 实例信息
-var app = struct {
-	stopComponents []stopComponent
-	stop           chan struct{}
-	stopped        chan error
-	started        bool
-}{
-	stopped: make(chan error, 1),
-}
+var app = appStruct{}
 
 func bootstrap() error {
 	// 启动流程 begin
@@ -137,7 +135,7 @@ func bootstrap() error {
 	am := agent.NewManager(rs)
 	am.Start()
 
-	app.stopComponents = append(app.stopComponents, am, rs)
+	app.addStopComponent(am, rs)
 
 	switch appconfig.StdAgentConfig.Mode {
 	case core.AgentModeDaemonset:
@@ -162,7 +160,7 @@ func bootstrap() error {
 			if c, err := k8ssysmetrics.NewPodSystemResourceCollector("", time.Minute); err == nil {
 				logger.Infof("[bootstrap] [k8s] use %s system metrics collector", c.Name())
 				c.Start()
-				app.stopComponents = append(app.stopComponents, c)
+				app.addStopComponent(c)
 			}
 		}
 
@@ -182,13 +180,13 @@ func bootstrap() error {
 		bsm := bistream.NewManager(rs, bizbistream.GetBiStreamHandlerRegistry())
 		bsm.Start()
 
-		app.stopComponents = append(app.stopComponents, pm, om, bsm)
+		app.addStopComponent(pm, om, bsm)
 
 		if appconfig.StdAgentConfig.Daemonagent.ClusterAgentEnabled {
 			masterMaintainer := master.NewK8sNodeMasterMaintainer(ioc.K8smm)
 			masterMaintainer.Register(&clusteragent.MasterComponent{})
 			go masterMaintainer.Start()
-			app.stopComponents = append(app.stopComponents, masterMaintainer)
+			app.addStopComponent(masterMaintainer)
 		}
 
 	case core.AgentModeClusteragent:
@@ -200,7 +198,7 @@ func bootstrap() error {
 
 		k8sm := k8ssync.NewMetaSyncer(rs, ioc.K8sClientset)
 		k8sm.Start()
-		app.stopComponents = append(app.stopComponents, k8sm)
+		app.addStopComponent(k8sm)
 	case core.AgentModeCentral:
 
 		ctm, err := initCollectTaskManager(rs)
@@ -214,34 +212,16 @@ func bootstrap() error {
 		pm := pipeline.NewManager(ctm)
 		pm.Start()
 
-		app.stopComponents = append(app.stopComponents, om, pm)
+		app.addStopComponent(om, pm)
 
 	default:
 	}
 
-	// 等待关闭
-	// 如果是以交互方式运行 则监听 Ctrl+C
 	logger.Infoz("[bootstrap] start success", zap.Int("pid", os.Getpid()), zap.Duration("cost", time.Now().Sub(begin)))
-	app.started = true
 	go server.StartHTTPController()
+	// bootstrap end
 
-	// 启动流程 end
-
-	if appconfig.IsInteractive() {
-		// 如果处于交互式模式则监听退出信号
-		c := make(chan os.Signal, 16)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-		sig := <-c
-		signal.Stop(c)
-		logger.Infof("[agent] receive %s, stop agent", sig.String())
-	} else {
-		// 否则等待我们自己内部的一个信号
-		// 另外一个地方会去操作这个信号
-		app.stop = make(chan struct{})
-		<-app.stop
-	}
-
-	return stop0()
+	return waitStop()
 }
 
 func setupForK8s() {
@@ -299,75 +279,105 @@ func initK8sMetaManager() error {
 	k8smm := k8smeta.NewManager(clientset)
 	k8smm.Start()
 	ioc.K8smm = k8smm
-	app.stopComponents = append(app.stopComponents, k8smm)
+	app.addStopComponent(k8smm)
 
 	return nil
 }
 
-func Stop() error {
-	// 没有启动成功 那就不用stop
-	if !app.started {
-		return nil
-	}
+func waitStop() (ret error) {
+	c := make(chan os.Signal, 16)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	sig := <-c
+	signal.Stop(c)
+	logger.Infoz("[agent] receive stop signal", zap.String("signal", sig.String()), zap.Int("components", len(app.stopComponents)))
 
-	// 如果处于非交互式模式, 则关闭这个chan, 触发程序停止
-	if !appconfig.IsInteractive() {
-		close(app.stop)
-	}
-	// 等待停止结果
-	timer := time.NewTimer(3 * time.Second)
-	defer timer.Stop()
-
-	select {
-	case err := <-app.stopped:
-		return err
-	case <-timer.C:
-		// timeout
-		return nil
-	}
-}
-
-func stop0() (ret error) {
-	defer func() {
-		app.stopped <- ret
-	}()
-
+	begin0 := time.Now()
 	for i := len(app.stopComponents) - 1; i >= 0; i-- {
 		begin := time.Now()
 		component := app.stopComponents[i]
 
 		logger.Infoz("[agent] try to stop component", //
+			zap.Int("index", i),                        //
 			zap.Any("type", reflect.TypeOf(component)), //
 		) //
 
 		component.Stop()
-		end := time.Now()
+		cost := time.Now().Sub(begin)
 		logger.Infoz("[agent] stop component", //
 			zap.Any("type", reflect.TypeOf(component)), //
-			zap.Duration("cost", end.Sub(begin)))       //
+			zap.Duration("cost", cost))                 //
 	}
-
+	cost := time.Now().Sub(begin0)
+	logger.Infoz("[agent] stop done", zap.Duration("cost", cost))
 	return nil
 }
 
 func initCri() error {
-	sock, sockOk := dockerutils.DetectSock()
-	if !sockOk {
-		return errors.New("no docker sock")
+	var engine cri.ContainerEngine
+	var err error
+	switch appconfig.StdAgentConfig.K8s.Cri.Type {
+	case "containerd":
+		engine, err = initContainerdEngine()
+	case "docker":
+		engine, err = initDockerEngine()
+	case "":
+		engine, err = initDockerEngine()
+		if err != nil {
+			engine, err = initContainerdEngine()
+			if err != nil {
+				err = errors.New("fail to init cri automatically")
+			}
+		}
+	default:
+		return errors.New("unsupported cri type: " + appconfig.StdAgentConfig.K8s.Cri.Type)
 	}
-	host := "unix://" + sock
-	docker, pingResp, err := dockerutils.NewDockerClient(host)
 	if err != nil {
-		logger.Errorz("[bootstrap] init docker client error", zap.Error(err))
 		return err
 	}
-	logger.Infoz("[bootstrap] init docker client", zap.String("host", host), zap.Any("ping", pingResp))
-	logger.Dockerz("[init] docker client", zap.String("host", host), zap.Any("ping", pingResp))
 
-	dm := daemonsetmeta.New(ioc.RegistryService, ioc.K8smm, docker)
-	ioc.Crii = dm
+	if err := engine.Init(); err != nil {
+		logger.Errorz("[bootstrap] container engine init error", zap.String("engine", engine.Type()), zap.Error(err))
+		return err
+	}
 
+	i := daemonsetmeta.New(ioc.K8smm, engine)
+	ioc.Crii = i
+	if err := i.Start(); err != nil {
+		return err
+	}
+	app.addStopComponent(i)
+	maybeInitDockerOOMManager()
 	return nil
+}
+
+func maybeInitDockerOOMManager() {
+	i := ioc.Crii
+	engine := i.Engine()
+	if x, ok := engine.(*daemonsetmeta.DockerContainerEngine); ok {
+		oomManager := daemonsetmeta.NewOOMManager(i, x.Client)
+		oomManager.Start()
+		app.addStopComponent(oomManager)
+	}
+}
+
+func initContainerdEngine() (cri.ContainerEngine, error) {
+	client, versionResp, err := containerdutils.NewClientFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	logger.Infoz("[bootstrap] [cri] init containerd client", zap.String("addr", client.Conn().Target()), zap.Any("version", versionResp))
+	logger.Criz("[bootstrap] containerd client", zap.String("addr", client.Conn().Target()), zap.Any("version", versionResp))
+	return &daemonsetmeta.ContainerdContainerEngine{Client: client}, nil
+}
+func initDockerEngine() (cri.ContainerEngine, error) {
+	docker, pingResp, err := dockerutils.NewClientFromEnv()
+	if err != nil {
+		logger.Errorz("[bootstrap] init docker client error", zap.Error(err))
+		return nil, err
+	}
+	logger.Infoz("[bootstrap] init docker client", zap.String("host", docker.DaemonHost()), zap.Any("ping", pingResp))
+	logger.Criz("[bootstrap] docker client", zap.String("host", docker.DaemonHost()), zap.Any("ping", pingResp))
+	return &daemonsetmeta.DockerContainerEngine{Client: docker}, nil
 }
 
 func initCollectTaskManager(rs *registry.Service) (*collecttask.Manager, error) {
@@ -379,6 +389,10 @@ func initCollectTaskManager(rs *registry.Service) (*collecttask.Manager, error) 
 	ioc.CollectTaskManager = ctm
 	ctm.StartListen()
 	ctm.AddHttpFuncs()
-	app.stopComponents = append(app.stopComponents, ctm)
+	app.addStopComponent(ctm)
 	return ctm, nil
+}
+
+func (app *appStruct) addStopComponent(components ...stopComponent) {
+	app.stopComponents = append(app.stopComponents, components...)
 }

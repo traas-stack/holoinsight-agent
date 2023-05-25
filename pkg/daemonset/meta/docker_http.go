@@ -9,12 +9,12 @@ import (
 	"net/http"
 )
 
-func (l *dockerLocalMetaImpl) registerHttpHandlers() {
+func (e *defaultCri) registerHttpHandlers() {
 	http.HandleFunc("/api/meta/local/get", func(writer http.ResponseWriter, request *http.Request) {
 		ns := request.URL.Query().Get("ns")
 		podName := request.URL.Query().Get("pod")
 
-		pod, ok := l.GetPod(ns, podName)
+		pod, ok := e.GetPod(ns, podName)
 		if !ok {
 			writer.Write([]byte("no found"))
 			return
@@ -24,7 +24,7 @@ func (l *dockerLocalMetaImpl) registerHttpHandlers() {
 	})
 	http.HandleFunc("/api/meta/local/getByCid", func(writer http.ResponseWriter, request *http.Request) {
 		cid := request.URL.Query().Get("cid")
-		container, ok := l.GetContainerByCid(cid)
+		container, ok := e.GetContainerByCid(cid)
 		if !ok {
 			writer.Write([]byte("no found"))
 			return
@@ -37,7 +37,7 @@ func (l *dockerLocalMetaImpl) registerHttpHandlers() {
 		if listType == "" {
 			listType = "detail"
 		}
-		state := l.state
+		state := e.state
 		if listType == "detail" {
 			json.NewEncoder(writer).Encode(state)
 		} else {

@@ -5,22 +5,22 @@
 package openmetric
 
 import (
-	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"context"
 	"fmt"
 	"github.com/prometheus/common/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"go.uber.org/zap"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/run"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 )
 
 type (
@@ -99,9 +99,13 @@ func NewManager(ctm *collecttask.Manager) *Manager {
 				select {
 				case <-term:
 					level.Warn(promLogger).Log("msg", "Received SIGTERM, exiting gracefully...")
-					reloadReady.Close()
+					if reloadReady.Close != nil {
+						reloadReady.Close()
+					}
 				case <-cancel:
-					reloadReady.Close()
+					if reloadReady.Close != nil {
+						reloadReady.Close()
+					}
 				}
 				return nil
 			},

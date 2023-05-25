@@ -31,7 +31,7 @@ type (
 		configS *zap.SugaredLogger
 		meta    *zap.Logger
 		metaS   *zap.SugaredLogger
-		docker  *zap.Logger
+		cri     *zap.Logger
 	}
 )
 
@@ -214,7 +214,7 @@ func IsDebugEnabled() bool {
 	return DebugEnabled
 }
 
-// Dockerz prints logs to docker.log
-func Dockerz(msg string, fields ...zap.Field) {
-	zapLogger.docker.Info(msg, fields...)
+// Criz prints logs to cri.log
+func Criz(msg string, fields ...zap.Field) {
+	zapLogger.cri.Info(msg, fields...)
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 var isLinux = runtime.GOOS == "linux"
@@ -54,4 +55,16 @@ func CopyFileUsingCp(ctx context.Context, src, dst string) error {
 		return nil
 	}
 	return fmt.Errorf("cp error, cmd=[%s] code=[%d] stdout=[%s] stderr=[%s]", cmd.String(), cmd.ProcessState.ExitCode(), stdout.String(), stderr.String())
+}
+
+// ParseStringSliceEnvToMap parse envs from []string to map[string]string
+func ParseStringSliceEnvToMap(envs []string) map[string]string {
+	ret := make(map[string]string, len(envs))
+	for _, pair := range envs {
+		ss := strings.SplitN(pair, "=", 2)
+		if len(ss) == 2 {
+			ret[ss[0]] = ss[1]
+		}
+	}
+	return ret
 }

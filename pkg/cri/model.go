@@ -12,8 +12,11 @@ import (
 )
 
 // TODO 我们推出一个规范 让用户按我们规范做 就认为它是主容器
-var ErrMultiBiz = errors.New("multi biz containers")
-var ErrNoBiz = errors.New("no biz container")
+var (
+	ErrMultiBiz        = errors.New("multi biz containers")
+	ErrNoBiz           = errors.New("no biz container")
+	ErrNoSuchContainer = errors.New("no such container")
+)
 
 type (
 	Pod struct {
@@ -51,9 +54,6 @@ type (
 
 		// 一些我们运行时会用到的值
 
-		// 标准输出路径, 已经转换到hostfs
-		LogPath string
-
 		// 挂载点 已经转换到hostfs
 		Mounts []*MountPoint
 
@@ -89,17 +89,16 @@ type (
 		NetworkMode string
 	}
 	ContainerState struct {
-		Pid       int
-		StartedAt string
-		Status    string
+		Pid    int
+		Status string
 	}
 
 	MountPoint struct {
-		// TODO type ?
-		// path in host, 已经转换到hostfs
+		// Source is the path in agent (already starts with core.GetHostFs())
 		Source string
-		// path in container
+		// Destination is the container path
 		Destination string
+		RW          bool
 	}
 	ExecResult struct {
 		Cmd      string
@@ -140,10 +139,27 @@ func (p *Pod) IsRunning() bool {
 	return p.Status.Phase == v1.PodRunning
 }
 
+func (p *Pod) GetContainer(k8sContainerName string) (*Container, error) {
+	for _, container := range p.All {
+		if container.K8sContainerName == k8sContainerName {
+			return container, nil
+		}
+	}
+	return nil, ErrNoSuchContainer
+}
+
 func (c *Container) IsRunning() bool {
-	return c.State.Status == "running"
+	return c.State.Pid > 0 && c.State.Status == "running"
+}
+
+func (c *Container) ShortContainerID() string {
+	return ShortContainerId(c.Id)
 }
 
 func NoPodError(ns, pod string) error {
 	return fmt.Errorf("no pod ns=[%s] pod=[%s]", ns, pod)
+}
+
+func (s *ContainerState) IsRunning() bool {
+	return s.Status == "running"
 }

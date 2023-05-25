@@ -78,7 +78,7 @@ func NewPipeline(executeRule *collectconfig.ExecuteRule, task *collecttask.Colle
 		intervalMills = 60_000
 	}
 	interval := time.Duration(intervalMills) * time.Millisecond
-	trigger := trigger2.WithFixedRate(interval, 0)
+	trigger := trigger2.WithFixedRate(interval, 0, false)
 
 	if transform.MetricPrefix == "" {
 		if ip, ok := input.(api2.Input); ok {

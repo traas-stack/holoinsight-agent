@@ -14,3 +14,12 @@ func GetMainBizContainerE(i cri.Interface, ns string, pod string) (*cri.Containe
 	}
 	return p.MainBizE()
 }
+
+func GetContainerE(i cri.Interface, ns, pod, k8sContainerName string) (*cri.Container, error) {
+	p, err := i.GetPodE(ns, pod)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.GetContainer(k8sContainerName)
+}

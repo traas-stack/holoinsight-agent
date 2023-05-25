@@ -2,6 +2,8 @@
  * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
  */
 
+// Package ioc is a place for Inversion of Control / DI.
+// But currently its implementation is very crude.
 package ioc
 
 import (

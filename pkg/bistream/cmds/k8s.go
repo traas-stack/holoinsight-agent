@@ -16,6 +16,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"go.uber.org/zap"
+	"strings"
 	"time"
 )
 
@@ -79,4 +80,11 @@ func runInContainer(resp interface{}, callHelper func(ctx context.Context) (cri.
 		return fmt.Errorf("inspect error %s", temp.Message)
 	}
 	return nil
+}
+
+func trimErrorPathInfo(err error, hostPath, containerPath string) error {
+	if err == nil {
+		return nil
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), hostPath, containerPath))
 }

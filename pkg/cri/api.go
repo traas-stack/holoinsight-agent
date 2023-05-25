@@ -10,7 +10,7 @@ import (
 )
 
 type (
-	Interface interface {
+	MetaStore interface {
 		// GetAllPods returns all local pods
 		GetAllPods() []*Pod
 
@@ -28,6 +28,15 @@ type (
 		// TODO This function is somewhat problematic because the hostname may repeat
 		GetPodByHostname(hostname string) (*Pod, bool)
 
+		Start() error
+
+		Stop()
+	}
+
+	// Interface is the entrance of accessing pod/container meta and executing container commands.
+	Interface interface {
+		MetaStore
+
 		// CopyToContainer copies file to container
 		CopyToContainer(ctx context.Context, c *Container, srcPath, dstPath string) error
 
@@ -36,6 +45,62 @@ type (
 
 		// Exec runs command in target container
 		Exec(ctx context.Context, c *Container, req ExecRequest) (ExecResult, error)
+
+		Start() error
+
+		Stop()
+
+		// Engine returns the underlying ContainerEngine
+		Engine() ContainerEngine
+	}
+
+	// ContainerEngine is an abstraction for docker/pouch/containerd
+	ContainerEngine interface {
+		// Init initializes the engine
+		Init() error
+
+		// Type returns engine type, such as "docker" "containerd"
+		Type() string
+
+		ListAllContainers(ctx context.Context) ([]*EngineSimpleContainer, error)
+
+		GetContainerDetail(ctx context.Context, cid string) (*EngineDetailContainer, error)
+
+		Exec(ctx context.Context, c *Container, req ExecRequest) (ExecResult, error)
+
+		// CopyToContainer copies file from src(in agent) to dst(in container)
+		CopyToContainer(ctx context.Context, c *Container, src, dst string) error
+
+		// CopyFromContainer copies file from src(in container) to dst(in agent)
+		CopyFromContainer(ctx context.Context, c *Container, src, dst string) error
+
+		// Supports checks if engine supports the specified feature
+		Supports(feature ContainerEngineFeature) bool
+	}
+
+	ContainerEngineFeature uint8
+
+	EngineSimpleContainer struct {
+		ID     string
+		Labels map[string]string
+		Source interface{}
+	}
+
+	// EngineDetailContainer Contains the most common container properties, provided by almost all advanced container runtimes.
+	EngineDetailContainer struct {
+		ID          string
+		Name        string
+		Labels      map[string]string
+		Env         []string
+		Source      interface{}
+		IsSandbox   bool
+		SandboxId   string
+		Hostname    string
+		Runtime     string
+		NetworkMode string
+		MergedDir   string
+		Mounts      []*MountPoint
+		State       ContainerState
 	}
 	NsEnterType uint8
 
@@ -56,4 +121,6 @@ const (
 	NsEnter_UTS
 	Runc = "runc"
 	Rund = "rund"
+
+	ContainerEngineFeatureCopy ContainerEngineFeature = iota
 )

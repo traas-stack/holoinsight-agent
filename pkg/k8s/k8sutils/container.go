@@ -5,7 +5,6 @@
 package k8sutils
 
 import (
-	"github.com/docker/docker/api/types"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	v1 "k8s.io/api/core/v1"
 	"strings"
@@ -29,8 +28,8 @@ func IsSandbox(containerName string, k8sContainerName string, labels map[string]
 }
 
 // IsInitContainer checks whether the container is the init container of the pod
-func IsInitContainer(pod *v1.Pod, container *types.ContainerJSON) bool {
-	containerName := k8slabels.GetContainerName(container.Config.Labels)
+func IsInitContainer(pod *v1.Pod, containerLabels map[string]string) bool {
+	containerName := k8slabels.GetContainerName(containerLabels)
 	for i := range pod.Spec.InitContainers {
 		if pod.Spec.InitContainers[i].Name == containerName {
 			return true

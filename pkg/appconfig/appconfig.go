@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"gopkg.in/yaml.v3"
-	"io/fs"
 	"os"
 )
 
@@ -271,22 +270,6 @@ func SetupAppConfig() error {
 	}
 	StdAgentConfig.Version = agentVersion
 	return nil
-}
-
-func ensureExist(dir string) error {
-	if _, err := os.Stat(dir); err == nil {
-		return nil
-		// exist
-	} else if os.IsNotExist(err) {
-		// no exist
-		return os.MkdirAll(dir, fs.ModePerm)
-	} else {
-		return err
-	}
-}
-
-func IsInteractive() bool {
-	return false
 }
 
 func (c *AgentConfig) IsDaemonset() bool {

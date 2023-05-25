@@ -97,3 +97,29 @@ func copyToContainerByDockerAPI(docker *dockersdk.Client, ctx context.Context, c
 
 	return docker.CopyToContainer(ctx, cid, resolvedDstPath, content, options)
 }
+
+func copyFromContainerByDockerAPI(client *dockersdk.Client, ctx context.Context, c *cri.Container, src, dst string) error {
+	content, stat, err := client.CopyFromContainer(ctx, c.Id, src)
+	if err != nil {
+		return err
+	}
+	defer content.Close()
+
+	srcInfo := archive.CopyInfo{
+		Path:   src,
+		Exists: true,
+		IsDir:  stat.Mode.IsDir(),
+	}
+
+	return archive.CopyTo(content, srcInfo, dst)
+}
+
+func ValidateOutputPathFileMode(fileMode os.FileMode) error {
+	switch {
+	case fileMode&os.ModeDevice != 0:
+		return errors.New("got a device")
+	case fileMode&os.ModeIrregular != 0:
+		return errors.New("got an irregular file")
+	}
+	return nil
+}
