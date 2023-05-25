@@ -65,7 +65,7 @@ func StartHTTPController() {
 	var f func()
 	f = func() {
 		util.GoWithRecover(func() {
-			addr := fmt.Sprintf("0.0.0.0:%d", bindPort)
+			addr := fmt.Sprintf("127.0.0.1:%d", bindPort)
 			logger.Infoz("[debug] start debug http server", zap.String("addr", addr))
 			err := http.ListenAndServe(addr, apiHandleFuncMux)
 			if err != nil {

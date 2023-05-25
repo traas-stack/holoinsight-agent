@@ -25,6 +25,7 @@ func RegisterPodSystemResourceCollector(name string, provider common.SysCollecto
 }
 
 func NewPodSystemResourceCollector(suffix string, interval time.Duration) (common.SysCollector, error) {
+
 	k8sSysCollector := os.Getenv("HI_K8S_SYS_COLLECTOR")
 
 	if p, ok := providers[k8sSysCollector]; ok {

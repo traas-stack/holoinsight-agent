@@ -6,15 +6,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/traas-stack/holoinsight-agent/pkg/k8s/resources"
+	"github.com/traas-stack/holoinsight-agent/pkg/bootstrap"
 	"os"
 )
 
 // agent entry
 func main() {
-	resources.SetupCpuAndMemoryLimit()
-
-	if err := bootstrap(); err != nil {
+	if err := bootstrap.App.Bootstrap(); err != nil {
 		fmt.Printf("bootstrap error %+v\n", err)
 		os.Exit(1)
 	}
