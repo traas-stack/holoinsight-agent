@@ -96,7 +96,6 @@ func (m *K8sNodeMasterMaintainer) Stop() {
 }
 
 func (m *K8sNodeMasterMaintainer) onChange() {
-	logger.Metaz("[master] pod onChange")
 	m.debounce(m.onChange0)
 }
 
@@ -108,7 +107,7 @@ func (m *K8sNodeMasterMaintainer) onChange0() {
 		return
 	}
 
-	logger.Metaz("[master] pod onChange0")
+	logger.Metaz("[master] pod onChange")
 	items := m.store.List()
 
 	var selfPod *v1.Pod
