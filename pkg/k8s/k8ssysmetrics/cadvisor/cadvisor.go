@@ -9,7 +9,6 @@ import (
 	"fmt"
 	cadvisorclient "github.com/google/cadvisor/client"
 	cv1 "github.com/google/cadvisor/info/v1"
-	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
@@ -25,25 +24,22 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
 const (
-	// cadvisor 是我们自己部署的 非主机网络模式 端口不会冲突
 	cadvisorPort = 8080
+	cadvisor     = "cadvisor"
 )
 
 type (
 	cadvisorSysCollector struct {
-		k8smm     *k8smeta.Manager
-		crii      cri.Interface
-		agentMode core.AgentMode
-		suffix    string
-		cache1    *sync.Map
-		cache2    *sync.Map
-		interval  time.Duration
-		stopSig   *util.StopSignal
+		k8smm    *k8smeta.K8sLocalMetaManager
+		crii     cri.Interface
+		suffix   string
+		interval time.Duration
+		stopSig  *util.StopSignal
+		state    *internalState
 	}
 	// pod cgroup 级别的labels上是没有相关标签的, 我们需要自己在内存里构建出来关系
 	cadvisorPodCGroupInfo struct {
@@ -51,11 +47,14 @@ type (
 		pod       string
 		// sum of usage of filesystem of children cgroup
 		diskUsage float64
-		pod2      *v1.Pod
 	}
 	containerStatCache struct {
 		stat    *cv1.ContainerStats
 		metrics []*model.Metric
+	}
+	internalState struct {
+		cache1 map[string]*containerStatCache
+		cache2 map[string]*containerStatCache
 	}
 )
 
@@ -63,14 +62,14 @@ func (c *cadvisorSysCollector) Name() string {
 	return "cadvisor"
 }
 
-func NewPodSystemResourceCollector(k8smm *k8smeta.Manager, crii cri.Interface, suffix string, interval time.Duration) common.SysCollector {
+func NewPodSystemResourceCollector(k8smm *k8smeta.K8sLocalMetaManager, crii cri.Interface, suffix string, interval time.Duration) common.SysCollector {
 	return &cadvisorSysCollector{
-		k8smm:     k8smm,
-		crii:      crii,
-		agentMode: core.AgentModeDaemonset,
-		suffix:    suffix,
-		interval:  interval,
-		stopSig:   util.NewStopSignal(),
+		k8smm:    k8smm,
+		crii:     crii,
+		suffix:   suffix,
+		interval: interval,
+		stopSig:  util.NewStopSignal(),
+		state:    &internalState{},
 	}
 }
 
@@ -79,155 +78,76 @@ func (c *cadvisorSysCollector) Stop() {
 }
 
 func (c *cadvisorSysCollector) Start() {
-	go func() {
-		defer c.stopSig.StopDone()
-
-		timer, emitTime := util.NewAlignedTimer(c.interval, time.Second, false, true)
-		defer timer.Stop()
-
-		for {
-			select {
-			case <-timer.C:
-				// 时间要算在上个周期上: 57分1秒算出的数据计在 56分 的时间戳上
-				c.collectOnce(emitTime.Add(-(c.interval + 1*time.Second)))
-				emitTime = timer.Next()
-			case <-c.stopSig.C:
-				return
-			}
-		}
-	}()
+	go c.taskLoop()
 }
 
-func (c *cadvisorSysCollector) filterSelfNodeCadvisorPod(pods []*v1.Pod) *v1.Pod {
-	hostIP := c.k8smm.LocalMeta.HostIP()
-	for _, pod := range pods {
-		if isCadvisor(pod) && pod.Status.HostIP == hostIP {
-			return pod
+func (c *cadvisorSysCollector) taskLoop() {
+	defer c.stopSig.StopDone()
+
+	timer, emitTime := util.NewAlignedTimer(c.interval, time.Second, false, false)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-timer.C:
+			// executes at {interval+1s, 2*interval+1s, ...}
+			c.collectOnce(emitTime.Truncate(c.interval).Add(-c.interval))
+			emitTime = timer.Next()
+		case <-c.stopSig.C:
+			return
 		}
 	}
-	return nil
 }
 
 func (c *cadvisorSysCollector) collectOnce(alignT time.Time) {
+	begin := time.Now()
+
 	defer func() {
-		c.cache1 = c.cache2
-		c.cache2 = nil
+		c.state.cache1 = c.state.cache2
+		c.state.cache2 = nil
 	}()
 
-	var cPods []*v1.Pod
-
-	selfNs := c.k8smm.LocalMeta.Namespace()
-	if selfNs != v1.NamespaceAll {
-		// "" 会被认为是 all namespace
-		cPods = c.k8smm.PodMeta.GetPodsByNamespace(selfNs)
-	}
-	if len(cPods) == 0 {
-		cPods = c.k8smm.PodMeta.GetPodsByNamespace(cadvisor)
+	cadvisorPod := c.findCadvisorPod()
+	if cadvisorPod == nil {
+		logger.Warnf("[k8s] [cadvisor] no cadvisor pod in local node")
+		return
 	}
 
-	if c.agentMode == core.AgentModeDaemonset {
-		// daemonset 模式下只关心自己所属物理机的指标
-		nodeCadvisorPod := c.filterSelfNodeCadvisorPod(cPods)
-		if nodeCadvisorPod != nil {
-			cPods = []*v1.Pod{nodeCadvisorPod}
-		} else {
-			cPods = nil
-		}
+	if c.state.cache1 == nil {
+		c.state.cache1 = make(map[string]*containerStatCache)
 	}
+	if c.state.cache2 == nil {
+		c.state.cache2 = make(map[string]*containerStatCache)
+	}
+	err := c.collectOnce0(alignT, cadvisorPod)
+	cost := time.Now().Sub(begin)
 
-	if len(cPods) == 0 {
-		logger.Warnf("[k8s] [cadvisor] no cadvisor pod in ns [%s, %s]", selfNs, cadvisor)
-	}
-
-	var wg sync.WaitGroup
-
-	if c.cache1 == nil {
-		c.cache1 = &sync.Map{}
-	}
-	if c.cache2 == nil {
-		c.cache2 = &sync.Map{}
-	}
-	for _, pod := range cPods {
-		if !isCadvisor(pod) {
-			continue
-		}
-		bak := pod
-		wg.Add(1)
-		util.GoWithRecover(func() {
-			defer wg.Done()
-			c.collectPodResourcesWithCAdvisor(alignT, bak)
-		})
-	}
-
-	wg.Wait()
+	logger.Infoz("[cadvisor] collect once done", zap.Duration("cost", cost), zap.Error(err))
 }
 
-const (
-	cadvisor = "cadvisor"
-)
-
-func isCadvisor(pod *v1.Pod) bool {
-	if k8slabels.GetApp(pod.Labels) != cadvisor {
-		return false
-	}
-	if pod.Status.Phase != v1.PodRunning {
-		return false
-	}
-	return true
-}
-
-func (c *cadvisorSysCollector) collectPodResourcesWithCAdvisor(alignT time.Time, cAdvisorPod *v1.Pod) {
+func (c *cadvisorSysCollector) collectOnce0(metricTime time.Time, cAdvisorPod *v1.Pod) error {
 	var metrics []*model.Metric
 
-	cadvisorIp := cAdvisorPod.Status.PodIP
-	url := fmt.Sprintf("http://%s:%d/", cadvisorIp, cadvisorPort)
+	url := fmt.Sprintf("http://%s:%d/", cAdvisorPod.Status.PodIP, cadvisorPort)
+
 	cc, err := cadvisorclient.NewClient(url)
 	if err != nil {
-		logger.Errorz("[cadvisor] NewClient error",
-			zap.String("cadvisor", cadvisorIp),
-			zap.Error(err))
-		return
+		return err
 	}
+
 	mi, err := cc.MachineInfo()
 	if err != nil {
-		logger.Errorz("[cadvisor] get machine info error",
-			zap.String("cadvisor", cadvisorIp),
-			zap.Error(err))
-		return
+		return err
 	}
 
 	ctrs, err := cc.SubcontainersInfo("", &cv1.ContainerInfoRequest{})
 	if err != nil {
-		logger.Errorz("[cadvisor] get container info error", zap.String("cadvisorIp", cadvisorIp), zap.Error(err))
-		return
+		return err
 	}
 
-	// 处理pod指标
-	var cadvisorPodInfoMap = make(map[string]*cadvisorPodCGroupInfo)
+	podCGroupInfo := c.makePodCGroupInfo(ctrs)
 
-	{
-		for _, ctr := range ctrs {
-			if len(ctr.Subcontainers) == 0 {
-				namespace := k8slabels.GetNamespace(ctr.Spec.Labels)
-				pod := k8slabels.GetPodName(ctr.Spec.Labels)
-
-				if namespace == "" || pod == "" {
-					continue
-				}
-
-				parent := filepath.Dir(ctr.Name)
-				if _, ok := cadvisorPodInfoMap[parent]; !ok {
-					cadvisorPodInfoMap[parent] = &cadvisorPodCGroupInfo{
-						namespace: namespace,
-						pod:       pod,
-					}
-				}
-			}
-		}
-	}
-
-	alignTs := alignT.UnixMilli()
-
+	alignTs := metricTime.UnixMilli()
 	for i := range ctrs {
 		ctr := &ctrs[i]
 		if len(ctr.Stats) == 0 {
@@ -236,8 +156,8 @@ func (c *cadvisorSysCollector) collectPodResourcesWithCAdvisor(alignT time.Time,
 
 		var lastStat *containerStatCache
 
-		if i, ok := c.cache1.Load(ctr.Name); ok {
-			lastStat = i.(*containerStatCache)
+		if x, ok := c.state.cache1[ctr.Name]; ok {
+			lastStat = x
 		}
 
 		newStat := ctr.Stats[len(ctr.Stats)-1]
@@ -245,8 +165,16 @@ func (c *cadvisorSysCollector) collectPodResourcesWithCAdvisor(alignT time.Time,
 		newStatCache := &containerStatCache{
 			stat: newStat,
 		}
-		c.cache2.Store(ctr.Name, newStatCache)
+		c.state.cache2[ctr.Name] = newStatCache
 
+		// lastStat == nil means that we haven't run enough for two cycles.
+		if lastStat == nil {
+			continue
+		}
+
+		// 'lastStat.stat.Timestamp == newStat.Timestamp' means that: It means that we call too frequently, exceeding the collection frequency of cadvisor.
+		// Or there is a problem inside cadvisor.
+		// At this time, we will this period with the data of the previous period.
 		if lastStat != nil && lastStat.stat.Timestamp == newStat.Timestamp {
 			for _, metric := range lastStat.metrics {
 				x := *metric
@@ -254,80 +182,60 @@ func (c *cadvisorSysCollector) collectPodResourcesWithCAdvisor(alignT time.Time,
 				newStatCache.metrics = append(newStatCache.metrics, &x)
 			}
 			metrics = append(metrics, newStatCache.metrics...)
-			// logger.Warnf("[cadvisor] id=[%s] reuse last period size=[%d]", id, len(newStatCache.metrics))
-			continue
-		}
-
-		if lastStat == nil {
-			// logger.Warnf("[cadvisor] id=[%s] last stat is nil", id)
 			continue
 		}
 
 		s1 := lastStat.stat
 		s2 := newStat
 
-		// 两次测量的间隔时间 (单位纳秒)
 		deltaTime := s2.Timestamp.Sub(s1.Timestamp) / time.Nanosecond
 		if deltaTime == 0 {
-			// logger.Warnf("[cadvisor] id=[%s] delta time is 0", id)
 			continue
 		}
 
-		// 是物理机的 cgroup
+		// '/' is the node cgroup
 		if ctr.Name == "/" {
 			newStatCache.metrics = c.collectNode(ctr, cAdvisorPod, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
 			metrics = append(metrics, newStatCache.metrics...)
 			continue
 		}
 
-		// 是 pod 级 cgroup
-		if cpi, ok := cadvisorPodInfoMap[ctr.Name]; ok {
+		// pod level cgroup
+		if cpi, ok := podCGroupInfo[ctr.Name]; ok {
 			newStatCache.metrics = c.collectPodCGroup(ctr, cpi, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
 			metrics = append(metrics, newStatCache.metrics...)
 			continue
 		}
 
-		// 是sandbox
-		if criCtr, ok := c.crii.GetContainerByCid(ctr.Id); ok && extractor.PodMetaServiceInstance.IsSandbox(criCtr) {
+		// sandbox: it holds network traffic metrics
+		if criCtr, ok := c.crii.GetContainerByCid(ctr.Id); ok && criCtr.Sandbox {
 			newStatCache.metrics = c.collectPodSandbox(ctr, newStatCache.metrics, s1, s2, deltaTime, alignTs)
 			metrics = append(metrics, newStatCache.metrics...)
 			continue
 		}
 
-		// 是 container 级 cgroup (叶子 cgroup)
+		// container cgroup
 		if len(ctr.Subcontainers) == 0 {
 			newStatCache.metrics = c.collectPodContainer(ctr, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
-
-			parentCgroup := filepath.Base(ctr.Name)
-			if parentCgroup != "" {
-				if cpi, ok := cadvisorPodInfoMap[parentCgroup]; ok {
-					for _, metric := range newStatCache.metrics {
-						if metric.Name == "k8s_container_disk_usage" {
-							cpi.diskUsage += metric.Value
-							break
-						}
-					}
-				}
-			}
 		}
 
 		metrics = append(metrics, newStatCache.metrics...)
 	}
 
-	for _, cpi := range cadvisorPodInfoMap {
-		if cpi.pod2 != nil {
-			tags := meta.ExtractPodCommonTags(cpi.pod2)
-			metrics = append(metrics, &model.Metric{
-				Name:      "k8s_pod_disk_usage",
-				Tags:      tags,
-				Timestamp: alignTs,
-				Value:     cpi.diskUsage,
-			})
-		}
-	}
+	// TODO Inaccurate
+	//for _, cpi := range podCGroupInfo {
+	//	if cpi.pod2 != nil {
+	//		tags := meta.ExtractPodCommonTags(cpi.pod2)
+	//		metrics = append(metrics, &model.Metric{
+	//			Name:      "k8s_pod_disk_usage",
+	//			Tags:      tags,
+	//			Timestamp: alignTs,
+	//			Value:     cpi.diskUsage,
+	//		})
+	//	}
+	//}
 
 	{
-		// TODO 物理机的指标?
 		nodeTags := make(map[string]string)
 		nodeTags["ip"] = cAdvisorPod.Status.HostIP
 
@@ -370,21 +278,22 @@ func (c *cadvisorSysCollector) collectPodResourcesWithCAdvisor(alignT time.Time,
 	} else {
 		logger.Errorz("[cadvisor] [output] get gateway error", zap.Error(err))
 	}
+
+	return nil
 }
 
 func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics []*model.Metric, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
-	pod := c.k8smm.PodMeta.GetPodByName(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
+	pod := c.k8smm.LocalPodMeta.GetPodByName(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
 	if pod == nil {
 		return metrics
 	}
 
-	// sandbox 特殊处理
 	tags := meta.ExtractPodCommonTags(pod)
 
+	// traffic
 	{
-		trafficIn, trafficOut, ok := calcTraffic("eth0", s2.Network, s1.Network, deltaTime)
-		if ok {
-
+		// TODO hardcode 'eth0'. Should we add up the traffic of all interfaces?
+		if trafficIn, trafficOut, ok := calcTraffic("eth0", s2.Network, s1.Network, deltaTime); ok {
 			metrics = append(metrics, &model.Metric{
 				Name:      "k8s_pod_traffic_bytin",
 				Tags:      tags,
@@ -400,8 +309,8 @@ func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics
 		}
 	}
 
+	// tcp
 	{
-		// tcp
 		metrics = append(metrics, &model.Metric{
 			Name:      "k8s_pod_tcp_established",
 			Tags:      tags,
@@ -415,11 +324,12 @@ func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics
 			Value:     float64(s2.Network.Tcp.Listen),
 		})
 	}
+
 	return metrics
 }
 
 func (c *cadvisorSysCollector) collectPodContainer(ctr *cv1.ContainerInfo, metrics []*model.Metric, mi *cv1.MachineInfo, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
-	pod := c.k8smm.PodMeta.GetPodByName(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
+	pod := c.k8smm.LocalPodMeta.GetPodByName(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
 	if pod == nil {
 		return metrics
 	}
@@ -427,15 +337,15 @@ func (c *cadvisorSysCollector) collectPodContainer(ctr *cv1.ContainerInfo, metri
 	tags := meta.ExtractPodCommonTags(pod)
 	tags["container"] = k8slabels.GetContainerName(ctr.Spec.Labels)
 
+	// TODO This data is not very useful now, and the server does not display it
 	return c.collectCGroupStats(ctr, metrics, tags, "k8s_container", mi, s1, s2, deltaTime, metricTime, true)
 }
 
 func (c *cadvisorSysCollector) collectPodCGroup(ctr *cv1.ContainerInfo, cpi *cadvisorPodCGroupInfo, metrics []*model.Metric, mi *cv1.MachineInfo, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
-	pod := c.k8smm.PodMeta.GetPodByName(cpi.namespace, cpi.pod)
+	pod := c.k8smm.LocalPodMeta.GetPodByName(cpi.namespace, cpi.pod)
 	if pod == nil {
 		return metrics
 	}
-	cpi.pod2 = pod
 
 	tags := meta.ExtractPodCommonTags(pod)
 
@@ -447,47 +357,30 @@ func (c *cadvisorSysCollector) collectCGroupStats(ctr *cv1.ContainerInfo, metric
 	if ctr.Spec.Cpu.Quota > 0 && ctr.Spec.Cpu.Period > 0 {
 		limitCpu = float64(ctr.Spec.Cpu.Quota) / float64(ctr.Spec.Cpu.Period)
 	}
+
 	limitMem := mi.MemoryCapacity
 	if ctr.Spec.Memory.Limit > 0 && ctr.Spec.Memory.Limit < mi.MemoryCapacity {
 		limitMem = ctr.Spec.Memory.Limit
 	}
 
+	// cpu
 	{
-		// cpu
-		// Cpu.Usage.Total "累计"消耗的CPU时间
-		// 消耗2个核4秒 那么值就为8
-
-		// 两次测量的CPU时间增量 (单位纳秒)
 		deltaTotal := s2.Cpu.Usage.Total - s1.Cpu.Usage.Total
 		deltaUser := s2.Cpu.Usage.User - s1.Cpu.Usage.User
 		deltaSys := s2.Cpu.Usage.System - s1.Cpu.Usage.System
+		// deltaOther := deltaTotal - deltaUser - deltaSys
 		if deltaUser+deltaSys > 0 {
 
-			// fmt.Println(s2.Timestamp, float64(deltaTotal)/float64(deltaTime/time.Second)*100)
-			// 该公式可以用于算出使用了多少核算力
-			// float64(deltaTotal) / float64(deltaTime)
-
-			// 修正不超过100
 			utilCpuP := math.Min(float64(deltaTotal)/float64(deltaTime)/limitCpu*100, 100)
-			userCpuP := math.Min(float64(deltaTotal)*float64(deltaUser)/float64(deltaUser+deltaSys)/float64(deltaTime)/limitCpu*100, 100)
-			sysCpuP := utilCpuP - userCpuP
+			userCpuP := math.Min(float64(deltaUser)/float64(deltaTime)/limitCpu*100, 100)
+			sysCpuP := math.Min(float64(deltaSys)/float64(deltaTime)/limitCpu*100, 100)
 
-			// 结果说明 cpu_total 似乎总是比 cpu_user/cpu_sys 的范围小? 咋回事...
-			// 所以当3个值放在一起时, cpu_util > cpu_user + cpu_sys
-
-			//fmt.Println(float64(s2.Cpu.Usage.Total-s1.Cpu.Usage.Total) / float64(deltaTime) / limitCpu)
-			//fmt.Println(float64(s2.Cpu.Usage.User-s1.Cpu.Usage.User) / float64(deltaTime) / limitCpu)
-			//fmt.Println(float64(s2.Cpu.Usage.System-s1.Cpu.Usage.System) / float64(deltaTime) / limitCpu)
-			//fmt.Println(float64(int64(s2.Cpu.Usage.Total-s1.Cpu.Usage.Total)-int64(s2.Cpu.Usage.User-s1.Cpu.Usage.User+s2.Cpu.Usage.System-s1.Cpu.Usage.System)) / float64(deltaTime) / limitCpu)
-
-			// 已经使用的cpu算力
 			metrics = append(metrics, &model.Metric{
 				Name:      metricPrefix + "_cpu_inuse_cores",
 				Tags:      tags,
 				Timestamp: metricTime,
 				Value:     float64(deltaTotal) / float64(deltaTime),
 			})
-			// cpu算力 上限
 			metrics = append(metrics, &model.Metric{
 				Name:      metricPrefix + "_cpu_total_cores",
 				Tags:      tags,
@@ -515,8 +408,8 @@ func (c *cadvisorSysCollector) collectCGroupStats(ctr *cv1.ContainerInfo, metric
 		}
 	}
 
+	// mem
 	{
-		// mem
 		useMem := s2.Memory.Usage
 		metrics = append(metrics, &model.Metric{
 			Name:      metricPrefix + "_mem_cache",
@@ -550,6 +443,7 @@ func (c *cadvisorSysCollector) collectCGroupStats(ctr *cv1.ContainerInfo, metric
 		})
 	}
 
+	// TODO Inaccurate
 	// disk
 	if includeDisk {
 		usage := uint64(0)
@@ -567,45 +461,21 @@ func (c *cadvisorSysCollector) collectCGroupStats(ctr *cv1.ContainerInfo, metric
 }
 
 func (c *cadvisorSysCollector) collectNode(ctr *cv1.ContainerInfo, cAdvisorPod *v1.Pod, metrics []*model.Metric, mi *cv1.MachineInfo, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
-	nodeIp := cAdvisorPod.Status.HostIP
 	limitCpu := float64(mi.NumCores)
 	if ctr.Spec.Cpu.Quota > 0 && ctr.Spec.Cpu.Period > 0 {
 		limitCpu = float64(ctr.Spec.Cpu.Quota) / float64(ctr.Spec.Cpu.Period)
 	}
+
 	limitMem := mi.MemoryCapacity
 	if ctr.Spec.Memory.Limit > 0 && ctr.Spec.Memory.Limit < mi.MemoryCapacity {
 		limitMem = ctr.Spec.Memory.Limit
 	}
-	tags := map[string]string{
-		"ip": nodeIp,
-	}
-	node := c.k8smm.NodeMeta.GetNodeByIp(nodeIp)
-	if node != nil {
-		tags["name"] = node.Name
-		tags["hostname"] = extractor.PodMetaServiceInstance.NodeHostname(node)
-		tags["region"] = k8slabels.GetRegion(node.Labels)
-		tags["zone"] = k8slabels.GetZone(node.Labels)
-		tags["os"] = node.Labels[k8slabels.LabelK8sOs]
-		tags["arch"] = node.Labels[k8slabels.LabelK8sArch]
-		tags["instanceType"] = node.Labels[k8slabels.LabelK8sNodeInstanceType]
 
-		// 现镜像数
-		//metrics = append(metrics, &model.Metric{
-		//	Name:      "k8s_node_images",
-		//	Tags:      tags,
-		//	Timestamp: metricTime,
-		//	Value:     float64(len(node.Status.Images)),
-		//})
+	tags := c.extractNodeTags(cAdvisorPod)
 
-		// TODO 磁盘使用率?
-		// cadvisor 工作不是很好, 因为它很多信息都是基于cgroup的, 有很多虚拟cgroup干扰
-		// 参考一下prometheus的 https://github.com/prometheus/node_exporter
-	}
-
+	// network traffic
 	{
-		trafficIn, trafficOut, ok := calcTraffic("eth0", s2.Network, s1.Network, deltaTime)
-		if ok {
-
+		if trafficIn, trafficOut, ok := calcTraffic("eth0", s2.Network, s1.Network, deltaTime); ok {
 			metrics = append(metrics, &model.Metric{
 				Name:      "k8s_node_traffic_bytin",
 				Tags:      tags,
@@ -621,9 +491,8 @@ func (c *cadvisorSysCollector) collectNode(ctr *cv1.ContainerInfo, cAdvisorPod *
 		}
 	}
 
-	// TODO 不太准
+	// tcp
 	{
-		// tcp
 		metrics = append(metrics, &model.Metric{
 			Name:      "k8s_node_tcp_established",
 			Tags:      tags,
@@ -638,42 +507,30 @@ func (c *cadvisorSysCollector) collectNode(ctr *cv1.ContainerInfo, cAdvisorPod *
 		})
 	}
 
+	// TODO code duplicated
+	// cpu
 	{
-		// cpu
-		// Cpu.Usage.Total "累计"消耗的CPU时间
-		// 消耗2个核4秒 那么值就为8
-
-		// 两次测量的CPU时间增量 (单位纳秒)
 		deltaTotal := s2.Cpu.Usage.Total - s1.Cpu.Usage.Total
 		deltaUser := s2.Cpu.Usage.User - s1.Cpu.Usage.User
 		deltaSys := s2.Cpu.Usage.System - s1.Cpu.Usage.System
+		// TODO What exactly does deltaOther include?
+		// deltaOther := deltaTotal - deltaUser - deltaSys
 		if deltaUser+deltaSys > 0 {
 
-			// fmt.Println(s2.Timestamp, float64(deltaTotal)/float64(deltaTime/time.Second)*100)
-			// 该公式可以用于算出使用了多少核算力
-			// float64(deltaTotal) / float64(deltaTime)
-
-			// 修正不超过100
+			// TODO There seems to be some problems with this calculation, and the relationship between util, user, and sys has not been clarified.
 			utilCpuP := math.Min(float64(deltaTotal)/float64(deltaTime)/limitCpu*100, 100)
-			userCpuP := math.Min(float64(deltaTotal)*float64(deltaUser)/float64(deltaUser+deltaSys)/float64(deltaTime)/limitCpu*100, 100)
-			sysCpuP := utilCpuP - userCpuP
+			userCpuP := math.Min(float64(deltaUser)/float64(deltaTime)/limitCpu*100, 100)
+			sysCpuP := math.Min(float64(deltaSys)/float64(deltaTime)/limitCpu*100, 100)
+			//userCpuP := math.Min(float64(deltaTotal)*float64(deltaUser)/float64(deltaUser+deltaSys)/float64(deltaTime)/limitCpu*100, 100)
+			//sysCpuP := utilCpuP - userCpuP
 
-			// 结果说明 cpu_total 似乎总是比 cpu_user/cpu_sys 的范围小? 咋回事...
-			// 所以当3个值放在一起时, cpu_util > cpu_user + cpu_sys
-
-			//fmt.Println(float64(s2.Cpu.Usage.Total-s1.Cpu.Usage.Total) / float64(deltaTime) / limitCpu)
-			//fmt.Println(float64(s2.Cpu.Usage.User-s1.Cpu.Usage.User) / float64(deltaTime) / limitCpu)
-			//fmt.Println(float64(s2.Cpu.Usage.System-s1.Cpu.Usage.System) / float64(deltaTime) / limitCpu)
-			//fmt.Println(float64(int64(s2.Cpu.Usage.Total-s1.Cpu.Usage.Total)-int64(s2.Cpu.Usage.User-s1.Cpu.Usage.User+s2.Cpu.Usage.System-s1.Cpu.Usage.System)) / float64(deltaTime) / limitCpu)
-
-			// 已经使用的cpu算力
 			metrics = append(metrics, &model.Metric{
 				Name:      "k8s_node_cpu_inuse_cores",
 				Tags:      tags,
 				Timestamp: metricTime,
 				Value:     float64(deltaTotal) / float64(deltaTime),
 			})
-			// cpu算力 上限
+
 			metrics = append(metrics, &model.Metric{
 				Name:      "k8s_node_cpu_total_cores",
 				Tags:      tags,
@@ -701,8 +558,8 @@ func (c *cadvisorSysCollector) collectNode(ctr *cv1.ContainerInfo, cAdvisorPod *
 		}
 	}
 
+	// mem
 	{
-		// mem
 		useMem := s2.Memory.Usage
 		metrics = append(metrics, &model.Metric{
 			Name:      "k8s_node_mem_cache",
@@ -736,53 +593,72 @@ func (c *cadvisorSysCollector) collectNode(ctr *cv1.ContainerInfo, cAdvisorPod *
 		})
 	}
 
-	//{
-	//	// processes
-	//	metrics = append(metrics, &model.Metric{
-	//		Name:      "k8s.container.processes_threads",
-	//		Tags:      tags,
-	//		Timestamp: metricTime,
-	//		Value:     float64(s2.Processes.ThreadsCurrent),
-	//	})
-	//}
-	//
-	//{
-	//	// TODO 不准
-	//	// disk
-	//	total := uint64(0)
-	//	used := uint64(0)
-	//	for _, fsStat := range s2.Filesystem {
-	//		total += fsStat.Limit
-	//		used += fsStat.Usage
-	//	}
-	//	metrics = append(metrics, &model.Metric{
-	//		Name:      "k8s.container.disk_used",
-	//		Tags:      tags,
-	//		Timestamp: metricTime,
-	//		Value:     float64(used),
-	//	})
-	//	metrics = append(metrics, &model.Metric{
-	//		Name:      "k8s.container.disk_total",
-	//		Tags:      tags,
-	//		Timestamp: metricTime,
-	//		Value:     float64(total),
-	//	})
-	//	if total > 0 {
-	//		metrics = append(metrics, &model.Metric{
-	//			Name:      "k8s.container.disk_util",
-	//			Tags:      tags,
-	//			Timestamp: metricTime,
-	//			Value:     float64(used) / float64(total) * 100,
-	//		})
-	//	}
-	//}
-
 	return metrics
 }
 
-func calcTraffic(ifz string, n2 cv1.NetworkStats, n1 cv1.NetworkStats, deltaTime time.Duration) (float64, float64, bool) {
+// findCadvisorPod returns cadvisor pod in current node
+func (c *cadvisorSysCollector) findCadvisorPod() *v1.Pod {
+	pods := c.k8smm.LocalPodMeta.GetPodsByNamespace(c.k8smm.LocalAgentMeta.Namespace())
+	for _, pod := range pods {
+		if k8slabels.GetApp(pod.Labels) != cadvisor {
+			continue
+		}
+		if pod.Status.Phase != v1.PodRunning {
+			continue
+		}
+		return pod
+	}
+	return nil
+}
+
+// makePodCGroupInfo builds a map, whose key is pod level cgroup path
+func (c *cadvisorSysCollector) makePodCGroupInfo(ctrs []cv1.ContainerInfo) map[string]*cadvisorPodCGroupInfo {
+	cadvisorPodInfoMap := make(map[string]*cadvisorPodCGroupInfo)
+	for _, ctr := range ctrs {
+		if len(ctr.Subcontainers) == 0 {
+			namespace := k8slabels.GetNamespace(ctr.Spec.Labels)
+			pod := k8slabels.GetPodName(ctr.Spec.Labels)
+
+			// skip non k8s container
+			if namespace == "" || pod == "" {
+				continue
+			}
+
+			// container group: /kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod5c51e64f_4bde_4f55_bdc0_6067bad00435.slice/docker-2937209ace573c40e882b8781f9256d7e2c0a94071784613bc634a8ba72f885c.scope
+			// pod cgroup: /kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod5c51e64f_4bde_4f55_bdc0_6067bad00435.slice
+			parent := filepath.Dir(ctr.Name)
+			if _, ok := cadvisorPodInfoMap[parent]; !ok {
+				cadvisorPodInfoMap[parent] = &cadvisorPodCGroupInfo{
+					namespace: namespace,
+					pod:       pod,
+				}
+			}
+		}
+	}
+
+	return cadvisorPodInfoMap
+}
+
+func (c *cadvisorSysCollector) extractNodeTags(cAdvisorPod *v1.Pod) map[string]string {
+	// Prepare node level tags
+	tags := map[string]string{
+		"ip": cAdvisorPod.Status.HostIP,
+	}
+	if node := c.k8smm.NodeMeta.GetNodeByIp(cAdvisorPod.Status.HostIP); node != nil {
+		tags["name"] = node.Name
+		tags["hostname"] = extractor.PodMetaServiceInstance.NodeHostname(node)
+		tags["region"] = k8slabels.GetRegion(node.Labels)
+		tags["zone"] = k8slabels.GetZone(node.Labels)
+		tags["os"] = node.Labels[k8slabels.LabelK8sOs]
+		tags["arch"] = node.Labels[k8slabels.LabelK8sArch]
+		tags["instanceType"] = node.Labels[k8slabels.LabelK8sNodeInstanceType]
+	}
+	return tags
+}
+
+func calcTraffic(interfaceName string, n2 cv1.NetworkStats, n1 cv1.NetworkStats, deltaTime time.Duration) (float64, float64, bool) {
 	for _, s2 := range n2.Interfaces {
-		if s2.Name == ifz {
+		if s2.Name == interfaceName {
 
 			for _, s1 := range n1.Interfaces {
 				if s2.Name == s1.Name {

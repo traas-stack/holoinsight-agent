@@ -8,7 +8,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	v1 "k8s.io/api/core/v1"
+)
+
+const (
+	DefaultSampleOutputLength = 1024
 )
 
 // TODO 我们推出一个规范 让用户按我们规范做 就认为它是主容器
@@ -162,4 +167,14 @@ func NoPodError(ns, pod string) error {
 
 func (s *ContainerState) IsRunning() bool {
 	return s.Status == "running"
+}
+
+func (r *ExecResult) SampleOutput() (stdout string, stderr string) {
+	if r.Stdout != nil {
+		stdout = util.SubstringMax(r.Stdout.String(), DefaultSampleOutputLength)
+	}
+	if r.Stderr != nil {
+		stderr = util.SubstringMax(r.Stderr.String(), DefaultSampleOutputLength)
+	}
+	return
 }

@@ -22,7 +22,8 @@ const (
 )
 
 type (
-	PodMeta struct {
+	// LocalPodMeta holds pods of node agent is running on
+	LocalPodMeta struct {
 		informer cache.SharedIndexInformer
 		store    cache.Indexer
 		stopCh   chan struct{}
@@ -50,7 +51,7 @@ var (
 	}
 )
 
-func newPodMeta(localNodeName string, getter cache.Getter) *PodMeta {
+func newPodMeta(localNodeName string, getter cache.Getter) *LocalPodMeta {
 	if localNodeName == "" {
 		panic("local nodeName is empty")
 	}
@@ -61,37 +62,37 @@ func newPodMeta(localNodeName string, getter cache.Getter) *PodMeta {
 	informer.SetWatchErrorHandler(func(r *cache.Reflector, err error) {
 		logger.Errorf("[meta] watch error %+v", err)
 	})
-	return &PodMeta{
+	return &LocalPodMeta{
 		informer: informer,
 		store:    informer.GetIndexer(),
 		stopCh:   make(chan struct{}),
 	}
 }
 
-func (m *PodMeta) start() {
+func (m *LocalPodMeta) start() {
 	go m.informer.Run(m.stopCh)
 }
 
-func (m *PodMeta) stop() {
+func (m *LocalPodMeta) stop() {
 	close(m.stopCh)
 }
 
-func (m *PodMeta) GetPodsByNamespace(ns string) []*v1.Pod {
+func (m *LocalPodMeta) GetPodsByNamespace(ns string) []*v1.Pod {
 	objs, err := m.store.ByIndex(PodIndexByNamespace, ns)
 	return toPods(objs, err)
 }
 
-func (m *PodMeta) GetPodsByHostIP(hostIP string) []*v1.Pod {
+func (m *LocalPodMeta) GetPodsByHostIP(hostIP string) []*v1.Pod {
 	objs, err := m.store.ByIndex(PodIndexByHostIP, hostIP)
 	return toPods(objs, err)
 }
 
-func (m *PodMeta) GetPodsByIP(ip string) []*v1.Pod {
+func (m *LocalPodMeta) GetPodsByIP(ip string) []*v1.Pod {
 	objs, err := m.store.ByIndex(PodIndexByIP, ip)
 	return toPods(objs, err)
 }
 
-func (m *PodMeta) GetPodsByApp(namespace, app string) []*v1.Pod {
+func (m *LocalPodMeta) GetPodsByApp(namespace, app string) []*v1.Pod {
 	objs, err := m.store.ByIndex(PodIndexByNamespace, namespace)
 	pods := toPods(objs, err)
 
@@ -104,7 +105,7 @@ func (m *PodMeta) GetPodsByApp(namespace, app string) []*v1.Pod {
 	return filtered
 }
 
-func (m *PodMeta) GetPodByName(ns, pod string) *v1.Pod {
+func (m *LocalPodMeta) GetPodByName(ns, pod string) *v1.Pod {
 	objs, err := m.store.Index(PodIndexByNamespacePod, &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ns,
@@ -128,6 +129,6 @@ func toPods(objs []interface{}, err error) []*v1.Pod {
 	return pods
 }
 
-func (m *PodMeta) AddEventHandler(handler cache.ResourceEventHandler) {
+func (m *LocalPodMeta) AddEventHandler(handler cache.ResourceEventHandler) {
 	m.informer.AddEventHandler(handler)
 }

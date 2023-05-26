@@ -19,35 +19,36 @@ import (
 
 type (
 	// k8s 元数据管理器入口, 在我们代码里要获取跟k8s相关的元数据都从它来拿
-	Manager struct {
-		Clientset *kubernetes.Clientset
-		PodMeta   *PodMeta
-		NodeMeta  *NodeMeta
-		LocalMeta *LocalMeta
+	// TODO This struct is a bit repetitive compared to cri.MetaStore.
+	K8sLocalMetaManager struct {
+		Clientset      *kubernetes.Clientset
+		LocalPodMeta   *LocalPodMeta
+		NodeMeta       *NodeMeta
+		LocalAgentMeta *LocalAgentMeta
 	}
 )
 
-func NewManager(clientset *kubernetes.Clientset) *Manager {
-	lm := &LocalMeta{}
-	m := &Manager{
-		Clientset: clientset,
-		LocalMeta: lm,
-		PodMeta:   newPodMeta(lm.NodeName(), clientset.CoreV1().RESTClient()),
-		NodeMeta:  newNodeMeta(clientset.CoreV1().RESTClient()),
+func NewK8sLocalMetaManager(clientset *kubernetes.Clientset) *K8sLocalMetaManager {
+	lm := &LocalAgentMeta{}
+	m := &K8sLocalMetaManager{
+		Clientset:      clientset,
+		LocalAgentMeta: lm,
+		LocalPodMeta:   newPodMeta(lm.NodeName(), clientset.CoreV1().RESTClient()),
+		NodeMeta:       newNodeMeta(clientset.CoreV1().RESTClient()),
 	}
 	return m
 }
 
-func (m *Manager) Stop() {
-	m.PodMeta.stop()
+func (m *K8sLocalMetaManager) Stop() {
+	m.LocalPodMeta.stop()
 	m.NodeMeta.stop()
 }
 
-func (m *Manager) Start() {
-	m.PodMeta.start()
+func (m *K8sLocalMetaManager) Start() {
+	m.LocalPodMeta.start()
 	m.NodeMeta.start()
 
-	controllers := []cache.Controller{m.PodMeta.informer, m.NodeMeta.informer}
+	controllers := []cache.Controller{m.LocalPodMeta.informer, m.NodeMeta.informer}
 
 	b := &backoff.Backoff{
 		Factor: 2,
@@ -67,16 +68,16 @@ func (m *Manager) Start() {
 	m.registerHttpHandlers()
 }
 
-func (m *Manager) GetLocalHostPods() []*v1.Pod {
-	return m.PodMeta.GetPodsByHostIP(m.LocalMeta.HostIP())
+func (m *K8sLocalMetaManager) GetLocalHostPods() []*v1.Pod {
+	return m.LocalPodMeta.GetPodsByHostIP(m.LocalAgentMeta.HostIP())
 }
 
-func (m *Manager) registerHttpHandlers() {
+func (m *K8sLocalMetaManager) registerHttpHandlers() {
 	// Query local pod info by namespace and podName
 	http.HandleFunc("/api/meta/k8s/pods/get", func(writer http.ResponseWriter, request *http.Request) {
 		ns := request.URL.Query().Get("ns")
 		name := request.URL.Query().Get("name")
-		pod := m.PodMeta.GetPodByName(ns, name)
+		pod := m.LocalPodMeta.GetPodByName(ns, name)
 		if pod == nil {
 			writer.Write([]byte("not found"))
 			return
@@ -87,7 +88,7 @@ func (m *Manager) registerHttpHandlers() {
 	// Query local pod info by podIP
 	http.HandleFunc("/api/meta/k8s/pods/byIp", func(writer http.ResponseWriter, request *http.Request) {
 		ip := request.URL.Query().Get("ip")
-		pods := m.PodMeta.GetPodsByIP(ip)
+		pods := m.LocalPodMeta.GetPodsByIP(ip)
 		simple := m.convertToSimplePods(pods)
 		json.NewEncoder(writer).Encode(simple)
 	})
@@ -103,7 +104,7 @@ func (m *Manager) registerHttpHandlers() {
 	http.HandleFunc("/api/meta/k8s/pods/byApp", func(writer http.ResponseWriter, request *http.Request) {
 		namespace := request.URL.Query().Get("namespace")
 		app := request.URL.Query().Get("app")
-		pods := m.PodMeta.GetPodsByApp(namespace, app)
+		pods := m.LocalPodMeta.GetPodsByApp(namespace, app)
 		simple := m.convertToSimplePods(pods)
 		json.NewEncoder(writer).Encode(simple)
 	})
@@ -117,7 +118,7 @@ func (m *Manager) registerHttpHandlers() {
 	})
 }
 
-func (m *Manager) convertToSimplePods(pods []*v1.Pod) []interface{} {
+func (m *K8sLocalMetaManager) convertToSimplePods(pods []*v1.Pod) []interface{} {
 	var simple []interface{}
 
 	for _, pod := range pods {
@@ -126,7 +127,7 @@ func (m *Manager) convertToSimplePods(pods []*v1.Pod) []interface{} {
 	return simple
 }
 
-func (m *Manager) convertToSimplePod(pod *v1.Pod) map[string]interface{} {
+func (m *K8sLocalMetaManager) convertToSimplePod(pod *v1.Pod) map[string]interface{} {
 	var containers []string
 	for i, c := range pod.Spec.InitContainers {
 		// 实际的cid能不能打印一下

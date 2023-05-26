@@ -21,7 +21,7 @@ import (
 type (
 	// K8sNodeMasterMaintainer selects the agent pod with the smallest nodeName as the master agent pod.
 	K8sNodeMasterMaintainer struct {
-		k8smm            *k8smeta.Manager
+		k8smm            *k8smeta.K8sLocalMetaManager
 		stopCh           chan struct{}
 		store            cache.Store
 		masterPod        *v1.Pod
@@ -35,7 +35,7 @@ type (
 	}
 )
 
-func NewK8sNodeMasterMaintainer(k8smm *k8smeta.Manager) *K8sNodeMasterMaintainer {
+func NewK8sNodeMasterMaintainer(k8smm *k8smeta.K8sLocalMetaManager) *K8sNodeMasterMaintainer {
 	return &K8sNodeMasterMaintainer{
 		k8smm:    k8smm,
 		stopCh:   make(chan struct{}, 1),
@@ -54,7 +54,7 @@ func (m *K8sNodeMasterMaintainer) Start() {
 	defer m.mutex.Unlock()
 
 	// Listen to holoinsight-agent namespace pods
-	agentNamespace := m.k8smm.LocalMeta.Namespace()
+	agentNamespace := m.k8smm.LocalAgentMeta.Namespace()
 	selector := fields.Everything()
 	getter := m.k8smm.Clientset.CoreV1().RESTClient()
 	listWatch := cache.NewListWatchFromClient(getter, string(v1.ResourcePods), agentNamespace, selector)
@@ -112,7 +112,7 @@ func (m *K8sNodeMasterMaintainer) onChange0() {
 	items := m.store.List()
 
 	var selfPod *v1.Pod
-	selfPodName := m.k8smm.LocalMeta.PodName()
+	selfPodName := m.k8smm.LocalAgentMeta.PodName()
 	for i := range items {
 		pod := items[i].(*v1.Pod)
 		if pod.Name == selfPodName {
@@ -179,7 +179,7 @@ func (m *K8sNodeMasterMaintainer) onChange0() {
 }
 
 func (m *K8sNodeMasterMaintainer) iAmMaster(masterPod *v1.Pod) bool {
-	return masterPod != nil && masterPod.Spec.NodeName == m.k8smm.LocalMeta.NodeName()
+	return masterPod != nil && masterPod.Spec.NodeName == m.k8smm.LocalAgentMeta.NodeName()
 }
 
 func (m *K8sNodeMasterMaintainer) onMasterEnter() {

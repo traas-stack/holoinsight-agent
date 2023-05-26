@@ -30,13 +30,12 @@ import (
 
 const (
 	defaultOpTimeout = 5 * time.Second
-	execSampleLength = 1024
 )
 
 type (
 	defaultCri struct {
 		*defaultMetaStore
-		k8smm        *k8smeta.Manager
+		k8smm        *k8smeta.K8sLocalMetaManager
 		syncThrottle func(func())
 		stopCh       chan struct{}
 		engine       cri.ContainerEngine
@@ -48,7 +47,7 @@ var (
 	defaultExecUser   = "root"
 )
 
-func New(k8smm *k8smeta.Manager, engine cri.ContainerEngine) cri.Interface {
+func New(k8smm *k8smeta.K8sLocalMetaManager, engine cri.ContainerEngine) cri.Interface {
 	return &defaultCri{
 		defaultMetaStore: &defaultMetaStore{
 			state: newInternalState(),
@@ -75,7 +74,7 @@ func (e *defaultCri) Start() error {
 	}
 	e.syncOnce()
 
-	e.k8smm.PodMeta.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	e.k8smm.LocalPodMeta.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if e.isLocalPod(obj) {
 				pod := obj.(*v1.Pod)
@@ -190,15 +189,7 @@ func (e *defaultCri) Exec(ctx context.Context, c *cri.Container, req cri.ExecReq
 	begin := time.Now()
 	defer func() {
 		cost := time.Now().Sub(begin)
-		stdout := ""
-		stderr := ""
-
-		if r.Stdout != nil {
-			stdout = string(util.SubBytesMax(r.Stdout.Bytes(), execSampleLength))
-		}
-		if r.Stderr != nil {
-			stderr = string(util.SubBytesMax(r.Stderr.Bytes(), execSampleLength))
-		}
+		stdout, stderr := r.SampleOutput()
 
 		logger.Criz("[digest] exec",
 			zap.String("engine", e.engine.Type()),
@@ -457,7 +448,7 @@ func (e *defaultCri) syncLoop() {
 
 func (e *defaultCri) isLocalPod(obj interface{}) bool {
 	if pod, ok := obj.(*v1.Pod); ok {
-		return e.k8smm.LocalMeta.IsLocalPod(pod)
+		return e.k8smm.LocalAgentMeta.IsLocalPod(pod)
 	}
 	return false
 }

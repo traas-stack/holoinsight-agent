@@ -286,6 +286,7 @@ type (
 		Type string `json:"type" yaml:"type"`
 		// 5s 5000单位毫秒
 		FixedRate interface{} `json:"fixedRate" yaml:"fixedRate"`
+		Offset    int         `json:"offset" yaml:"offset"`
 	}
 	// SQL style task
 	SQLTask struct {

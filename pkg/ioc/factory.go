@@ -16,7 +16,7 @@ import (
 )
 
 var Crii cri.Interface
-var K8smm *k8smeta.Manager
+var K8smm *k8smeta.K8sLocalMetaManager
 var CollectTaskManager *collecttask.Manager
 var RegistryService *registry.Service
 var K8sClientset *kubernetes.Clientset

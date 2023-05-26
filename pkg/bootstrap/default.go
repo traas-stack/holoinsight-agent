@@ -73,7 +73,7 @@ func InitK8sMetaManager() error {
 		return err
 	}
 
-	k8smm := k8smeta.NewManager(clientset)
+	k8smm := k8smeta.NewK8sLocalMetaManager(clientset)
 	k8smm.Start()
 	ioc.K8smm = k8smm
 	App.AddStopComponent(k8smm)
