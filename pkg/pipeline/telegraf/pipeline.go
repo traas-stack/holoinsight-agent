@@ -269,7 +269,7 @@ func (p *Pipeline) getTargetAttachTags() map[string]string {
 	case collecttask.TargetPod:
 		namespace := p.task.Target.GetNamespace()
 		podName := p.task.Target.GetPodName()
-		if pod, ok := ioc.Crii.GetPod(namespace, podName); ok {
+		if pod, err := ioc.Crii.GetPod(namespace, podName); err == nil {
 			attachTags = meta.ExtractPodCommonTags(pod.Pod)
 		}
 	case collecttask.TargetLocalhost:

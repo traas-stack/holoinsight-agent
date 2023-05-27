@@ -14,8 +14,8 @@ func (e *defaultCri) registerHttpHandlers() {
 		ns := request.URL.Query().Get("ns")
 		podName := request.URL.Query().Get("pod")
 
-		pod, ok := e.GetPod(ns, podName)
-		if !ok {
+		pod, err := e.GetPod(ns, podName)
+		if err != nil {
 			writer.Write([]byte("no found"))
 			return
 		}
@@ -33,19 +33,11 @@ func (e *defaultCri) registerHttpHandlers() {
 		json.NewEncoder(writer).Encode(container)
 	})
 	http.HandleFunc("/api/meta/local/list", func(writer http.ResponseWriter, request *http.Request) {
-		listType := request.URL.Query().Get("type")
-		if listType == "" {
-			listType = "detail"
-		}
 		state := e.state
-		if listType == "detail" {
-			json.NewEncoder(writer).Encode(state)
-		} else {
-			ret := []interface{}{}
-			for _, pod := range state.Pods {
-				ret = append(ret, []string{pod.Namespace, pod.Name})
-			}
-			json.NewEncoder(writer).Encode(ret)
+		var ret []interface{}
+		for _, pod := range state.pods {
+			ret = append(ret, []string{pod.Namespace, pod.Name})
 		}
+		json.NewEncoder(writer).Encode(ret)
 	})
 }

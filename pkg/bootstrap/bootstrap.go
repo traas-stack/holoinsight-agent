@@ -279,7 +279,7 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 	SetupConfigForK8s()
 	b.callCustomizers("daemonagent-setup-begin", nil)
 
-	if err := InitK8sMetaManager(); err != nil {
+	if _, err := InitK8sClientsetInCluster(); err != nil {
 		return err
 	}
 
@@ -313,7 +313,7 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 	App.AddStopComponent(pm, om, bsm)
 
 	if appconfig.StdAgentConfig.Daemonagent.ClusterAgentEnabled {
-		masterMaintainer := master.NewK8sNodeMasterMaintainer(ioc.K8smm)
+		masterMaintainer := master.NewK8sNodeMasterMaintainer(ioc.Crii, ioc.K8sClientset)
 		masterMaintainer.Register(&clusteragent.MasterComponent{})
 		go masterMaintainer.Start()
 		App.AddStopComponent(masterMaintainer)
@@ -337,7 +337,7 @@ func (b *AgentBootstrap) setupCRI() error {
 
 	engine = b.callCustomizers("containerEngine-setup", engine).(cri.ContainerEngine)
 
-	i := impl.New(ioc.K8smm, engine)
+	i := impl.NewDefaultCri(ioc.K8sClientset, engine)
 	ioc.Crii = i
 	if err := i.Start(); err != nil {
 		return err

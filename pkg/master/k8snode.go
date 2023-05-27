@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"github.com/bep/debounce"
 	"github.com/jpillora/backoff"
-	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"sync"
 	"time"
@@ -21,7 +22,8 @@ import (
 type (
 	// K8sNodeMasterMaintainer selects the agent pod with the smallest nodeName as the master agent pod.
 	K8sNodeMasterMaintainer struct {
-		k8smm            *k8smeta.K8sLocalMetaManager
+		cri              cri.Interface
+		clientset        *kubernetes.Clientset
 		stopCh           chan struct{}
 		store            cache.Store
 		masterPod        *v1.Pod
@@ -35,11 +37,12 @@ type (
 	}
 )
 
-func NewK8sNodeMasterMaintainer(k8smm *k8smeta.K8sLocalMetaManager) *K8sNodeMasterMaintainer {
+func NewK8sNodeMasterMaintainer(cri cri.Interface, clientset *kubernetes.Clientset) *K8sNodeMasterMaintainer {
 	return &K8sNodeMasterMaintainer{
-		k8smm:    k8smm,
-		stopCh:   make(chan struct{}, 1),
-		debounce: debounce.New(5 * time.Second),
+		cri:       cri,
+		clientset: clientset,
+		stopCh:    make(chan struct{}, 1),
+		debounce:  debounce.New(5 * time.Second),
 	}
 }
 
@@ -54,9 +57,9 @@ func (m *K8sNodeMasterMaintainer) Start() {
 	defer m.mutex.Unlock()
 
 	// Listen to holoinsight-agent namespace pods
-	agentNamespace := m.k8smm.LocalAgentMeta.Namespace()
+	agentNamespace := m.cri.LocalAgentMeta().Namespace()
 	selector := fields.Everything()
-	getter := m.k8smm.Clientset.CoreV1().RESTClient()
+	getter := m.clientset.CoreV1().RESTClient()
 	listWatch := cache.NewListWatchFromClient(getter, string(v1.ResourcePods), agentNamespace, selector)
 
 	store, controller := cache.NewInformer(listWatch, &v1.Pod{}, 0, cache.ResourceEventHandlerFuncs{
@@ -111,7 +114,7 @@ func (m *K8sNodeMasterMaintainer) onChange0() {
 	items := m.store.List()
 
 	var selfPod *v1.Pod
-	selfPodName := m.k8smm.LocalAgentMeta.PodName()
+	selfPodName := m.cri.LocalAgentMeta().PodName()
 	for i := range items {
 		pod := items[i].(*v1.Pod)
 		if pod.Name == selfPodName {
@@ -178,7 +181,7 @@ func (m *K8sNodeMasterMaintainer) onChange0() {
 }
 
 func (m *K8sNodeMasterMaintainer) iAmMaster(masterPod *v1.Pod) bool {
-	return masterPod != nil && masterPod.Spec.NodeName == m.k8smm.LocalAgentMeta.NodeName()
+	return masterPod != nil && masterPod.Spec.NodeName == m.cri.LocalAgentMeta().NodeName()
 }
 
 func (m *K8sNodeMasterMaintainer) onMasterEnter() {

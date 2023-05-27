@@ -14,7 +14,6 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/impl/engine"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
-	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
@@ -65,20 +64,6 @@ func maybeInitDockerOOMManager() {
 		oomManager.Start()
 		App.AddStopComponent(oomManager)
 	}
-}
-
-func InitK8sMetaManager() error {
-	clientset, err := InitK8sClientsetInCluster()
-	if err != nil {
-		return err
-	}
-
-	k8smm := k8smeta.NewK8sLocalMetaManager(clientset)
-	k8smm.Start()
-	ioc.K8smm = k8smm
-	App.AddStopComponent(k8smm)
-
-	return nil
 }
 
 func InitK8sClientsetInCluster() (*kubernetes.Clientset, error) {

@@ -7,26 +7,33 @@ package cri
 import (
 	"context"
 	"io"
+	v1 "k8s.io/api/core/v1"
 )
 
 type (
+	// LocalAgentMeta providers local agent basic info
+	LocalAgentMeta interface {
+		Namespace() string
+		PodName() string
+		PodIP() string
+		NodeName() string
+		NodeIP() string
+		Node() *v1.Node
+		IsLocalPod(pod *v1.Pod) bool
+	}
+
 	MetaStore interface {
 		// GetAllPods returns all local pods
 		GetAllPods() []*Pod
 
+		// GetPod queries one local pod by namespace and podName.
+		// Returns an error if not found.
+		GetPod(namespace, podName string) (*Pod, error)
+
 		// GetContainerByCid queries one container by cid
 		GetContainerByCid(cid string) (*Container, bool)
 
-		// GetPod queries one pod by namespace and podName
-		GetPod(namespace, podName string) (*Pod, bool)
-
-		// GetPodE queries one pod by namespace and podName.
-		// Returns an error if not found.
-		GetPodE(namespace, podName string) (*Pod, error)
-
-		// GetPodByHostname queries one pod by hostname
-		// TODO This function is somewhat problematic because the hostname may repeat
-		GetPodByHostname(hostname string) (*Pod, bool)
+		LocalAgentMeta() LocalAgentMeta
 
 		Start() error
 

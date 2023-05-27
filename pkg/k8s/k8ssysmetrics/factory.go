@@ -16,7 +16,7 @@ var providers = map[string]common.SysCollectorProvider{}
 
 func init() {
 	RegisterPodSystemResourceCollector("cadvisor", func(suffix string, interval time.Duration) (common.SysCollector, error) {
-		return cadvisor.NewPodSystemResourceCollector(ioc.K8smm, ioc.Crii, suffix, interval), nil
+		return cadvisor.NewPodSystemResourceCollector(ioc.Crii, suffix, interval), nil
 	})
 }
 

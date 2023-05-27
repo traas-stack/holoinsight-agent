@@ -13,7 +13,6 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/cricore"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
-	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
@@ -21,6 +20,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/util/throttle"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"os"
 	"path/filepath"
@@ -33,9 +33,9 @@ const (
 )
 
 type (
+	// Default cri impl
 	defaultCri struct {
 		*defaultMetaStore
-		k8smm        *k8smeta.K8sLocalMetaManager
 		syncThrottle func(func())
 		stopCh       chan struct{}
 		engine       cri.ContainerEngine
@@ -45,23 +45,17 @@ type (
 var (
 	errContainerIsNil = errors.New("container is nil")
 	defaultExecUser   = "root"
+	// Make sure defaultCri impl cri.Interface
+	_ cri.Interface = &defaultCri{}
 )
 
-func New(k8smm *k8smeta.K8sLocalMetaManager, engine cri.ContainerEngine) cri.Interface {
+func NewDefaultCri(clientset *kubernetes.Clientset, engine cri.ContainerEngine) cri.Interface {
 	return &defaultCri{
-		defaultMetaStore: &defaultMetaStore{
-			state: newInternalState(),
-		},
-		k8smm:        k8smm,
-		syncThrottle: throttle.ThrottleFirst(time.Second),
-		stopCh:       make(chan struct{}),
-		engine:       engine,
+		defaultMetaStore: newDefaultMetaStore(clientset),
+		syncThrottle:     throttle.ThrottleFirst(time.Second),
+		stopCh:           make(chan struct{}),
+		engine:           engine,
 	}
-}
-
-func (e *defaultCri) Stop() {
-	e.defaultMetaStore.Stop()
-	close(e.stopCh)
 }
 
 func (e *defaultCri) Engine() cri.ContainerEngine {
@@ -74,35 +68,21 @@ func (e *defaultCri) Start() error {
 	}
 	e.syncOnce()
 
-	e.k8smm.LocalPodMeta.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	e.localPodMeta.addEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			if e.isLocalPod(obj) {
-				pod := obj.(*v1.Pod)
-				logger.Metaz("[local] [k8s] add pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
-				e.maybeSync()
-			}
+			pod := obj.(*v1.Pod)
+			logger.Metaz("[local] [k8s] add pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
+			e.maybeSync()
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			trigger := false
-			if e.isLocalPod(oldObj) {
-				trigger = true
-			}
-			if e.isLocalPod(newObj) {
-				trigger = true
-			}
-			if trigger {
-				// oldPod := newObj.(*v1.Pod)
-				pod := newObj.(*v1.Pod)
-				logger.Metaz("[local] [k8s] update pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
-				e.maybeSync()
-			}
+			pod := newObj.(*v1.Pod)
+			logger.Metaz("[local] [k8s] update pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
+			e.maybeSync()
 		},
 		DeleteFunc: func(obj interface{}) {
-			if e.isLocalPod(obj) {
-				e.maybeSync()
-				pod := obj.(*v1.Pod)
-				logger.Metaz("[local] [k8s] delete pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
-			}
+			e.maybeSync()
+			pod := obj.(*v1.Pod)
+			logger.Metaz("[local] [k8s] delete pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
 		},
 	})
 
@@ -111,18 +91,9 @@ func (e *defaultCri) Start() error {
 	return nil
 }
 
-func (e *defaultCri) listDockerContainers() ([]*cri.EngineSimpleContainer, error) {
-	begin := time.Now()
-	defer func() {
-		logger.Criz("[digest] list all containers", //
-			zap.String("engine", e.engine.Type()), //
-			zap.Duration("cost", time.Now().Sub(begin)))
-	}()
-
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
-	defer cancel()
-
-	return e.engine.ListAllContainers(ctx)
+func (e *defaultCri) Stop() {
+	close(e.stopCh)
+	e.defaultMetaStore.Stop()
 }
 
 func (e *defaultCri) CopyToContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
@@ -208,6 +179,20 @@ func (e *defaultCri) Exec(ctx context.Context, c *cri.Container, req cri.ExecReq
 	}
 
 	return e.engine.Exec(ctx, c, req)
+}
+
+func (e *defaultCri) listContainers() ([]*cri.EngineSimpleContainer, error) {
+	begin := time.Now()
+	defer func() {
+		logger.Criz("[digest] list all containers", //
+			zap.String("engine", e.engine.Type()), //
+			zap.Duration("cost", time.Now().Sub(begin)))
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
+	defer cancel()
+
+	return e.engine.ListAllContainers(ctx)
 }
 
 func (e *defaultCri) getEtcTimezone(c *cri.Container) (string, error) {
@@ -446,17 +431,11 @@ func (e *defaultCri) syncLoop() {
 	}()
 }
 
-func (e *defaultCri) isLocalPod(obj interface{}) bool {
-	if pod, ok := obj.(*v1.Pod); ok {
-		return e.k8smm.LocalAgentMeta.IsLocalPod(pod)
-	}
-	return false
-}
-
 func (e *defaultCri) syncOnce() {
+
 	begin := time.Now()
 
-	containers, err := e.listDockerContainers()
+	containers, err := e.listContainers()
 	if err != nil {
 		return
 	}
@@ -487,7 +466,7 @@ func (e *defaultCri) syncOnce() {
 		containersByPod[uid] = append(containersByPod[uid], detail)
 	}
 
-	localPods := e.k8smm.GetLocalHostPods()
+	localPods := e.localPodMeta.getAllPods()
 
 	podPhaseCount := make(map[v1.PodPhase]int)
 
@@ -545,12 +524,12 @@ func (e *defaultCri) syncOnce() {
 					continue
 				}
 
-				cached := oldState.ContainerMap[container.ID]
+				cached := oldState.containerMap[container.ID]
 
 				if cached != nil && !isContainerChanged(cached.engineContainer, container) {
 					cached.criContainer.Pod = criPod
 
-					newState.ContainerMap[container.ID] = &cachedContainer{
+					newState.containerMap[container.ID] = &cachedContainer{
 						criContainer:    cached.criContainer,
 						engineContainer: container,
 					}
@@ -561,7 +540,7 @@ func (e *defaultCri) syncOnce() {
 						engineContainer: container,
 						criContainer:    criContainer,
 					}
-					newState.ContainerMap[container.ID] = cached
+					newState.containerMap[container.ID] = cached
 				}
 
 				criPod.All = append(criPod.All, cached.criContainer)
@@ -588,14 +567,14 @@ func (e *defaultCri) syncOnce() {
 			zap.Int("sidecar", len(criPod.Sidecar)),
 			zap.Int("expired", podExpiredContainers))
 
-		newState.Pods = append(newState.Pods, criPod)
+		newState.pods = append(newState.pods, criPod)
 	}
 	newState.build()
 
 	logger.Metaz("[local] sync once done", //
 		zap.String("engine", e.engine.Type()), //
 		zap.Bool("changed", changed),
-		zap.Int("pods", len(newState.Pods)), //
+		zap.Int("pods", len(newState.pods)), //
 		zap.Int("containers", len(containers)),
 		zap.Duration("cost", time.Now().Sub(begin)), //
 		zap.Int("expired", expiredContainers),       //

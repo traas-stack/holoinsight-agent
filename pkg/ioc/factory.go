@@ -9,14 +9,12 @@ package ioc
 import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
-	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	"k8s.io/client-go/kubernetes"
 	"sync"
 )
 
 var Crii cri.Interface
-var K8smm *k8smeta.K8sLocalMetaManager
 var CollectTaskManager *collecttask.Manager
 var RegistryService *registry.Service
 var K8sClientset *kubernetes.Clientset

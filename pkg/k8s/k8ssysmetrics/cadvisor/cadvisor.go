@@ -11,7 +11,6 @@ import (
 	cv1 "github.com/google/cadvisor/info/v1"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
-	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics/common"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
@@ -34,15 +33,13 @@ const (
 
 type (
 	cadvisorSysCollector struct {
-		k8smm    *k8smeta.K8sLocalMetaManager
-		crii     cri.Interface
+		cri      cri.Interface
 		suffix   string
 		interval time.Duration
 		stopSig  *util.StopSignal
 		state    *internalState
 	}
-	// pod cgroup 级别的labels上是没有相关标签的, 我们需要自己在内存里构建出来关系
-	cadvisorPodCGroupInfo struct {
+	podCGroupInfo struct {
 		namespace string
 		pod       string
 		// sum of usage of filesystem of children cgroup
@@ -53,8 +50,11 @@ type (
 		metrics []*model.Metric
 	}
 	internalState struct {
-		cache1 map[string]*containerStatCache
-		cache2 map[string]*containerStatCache
+		cache1       map[string]*containerStatCache
+		cache2       map[string]*containerStatCache
+		queryCost    time.Duration
+		sendCost     time.Duration
+		metricsCount int
 	}
 )
 
@@ -62,10 +62,9 @@ func (c *cadvisorSysCollector) Name() string {
 	return "cadvisor"
 }
 
-func NewPodSystemResourceCollector(k8smm *k8smeta.K8sLocalMetaManager, crii cri.Interface, suffix string, interval time.Duration) common.SysCollector {
+func NewPodSystemResourceCollector(cri cri.Interface, suffix string, interval time.Duration) common.SysCollector {
 	return &cadvisorSysCollector{
-		k8smm:    k8smm,
-		crii:     crii,
+		cri:      cri,
 		suffix:   suffix,
 		interval: interval,
 		stopSig:  util.NewStopSignal(),
@@ -119,14 +118,21 @@ func (c *cadvisorSysCollector) collectOnce(alignT time.Time) {
 	if c.state.cache2 == nil {
 		c.state.cache2 = make(map[string]*containerStatCache)
 	}
+	c.state.metricsCount = 0
+	c.state.queryCost = 0
+	c.state.sendCost = 0
 	err := c.collectOnce0(alignT, cadvisorPod)
 	cost := time.Now().Sub(begin)
 
-	logger.Infoz("[cadvisor] collect once done", zap.Duration("cost", cost), zap.Error(err))
+	logger.Infoz("[cadvisor] collect once done",
+		zap.Int("metrics", c.state.metricsCount),     //
+		zap.Duration("queryCost", c.state.queryCost), //
+		zap.Duration("sendCost", c.state.sendCost),   //
+		zap.Duration("cost", cost),
+		zap.Error(err))
 }
 
 func (c *cadvisorSysCollector) collectOnce0(metricTime time.Time, cAdvisorPod *v1.Pod) error {
-	var metrics []*model.Metric
 
 	url := fmt.Sprintf("http://%s:%d/", cAdvisorPod.Status.PodIP, cadvisorPort)
 
@@ -135,160 +141,36 @@ func (c *cadvisorSysCollector) collectOnce0(metricTime time.Time, cAdvisorPod *v
 		return err
 	}
 
+	queryBegin := time.Now()
 	mi, err := cc.MachineInfo()
 	if err != nil {
 		return err
 	}
-
-	ctrs, err := cc.SubcontainersInfo("", &cv1.ContainerInfoRequest{})
+	// query latest stat of every container
+	ctrs, err := cc.SubcontainersInfo("", &cv1.ContainerInfoRequest{
+		NumStats: 1,
+	})
 	if err != nil {
 		return err
 	}
+	c.state.queryCost = time.Now().Sub(queryBegin)
 
-	podCGroupInfo := c.makePodCGroupInfo(ctrs)
+	metrics := c.calcMetrics(metricTime, cAdvisorPod, mi, ctrs)
 
-	alignTs := metricTime.UnixMilli()
-	for i := range ctrs {
-		ctr := &ctrs[i]
-		if len(ctr.Stats) == 0 {
-			continue
-		}
+	sendBegin := time.Now()
+	err = c.send(metrics)
+	c.state.sendCost = time.Now().Sub(sendBegin)
 
-		var lastStat *containerStatCache
-
-		if x, ok := c.state.cache1[ctr.Name]; ok {
-			lastStat = x
-		}
-
-		newStat := ctr.Stats[len(ctr.Stats)-1]
-
-		newStatCache := &containerStatCache{
-			stat: newStat,
-		}
-		c.state.cache2[ctr.Name] = newStatCache
-
-		// lastStat == nil means that we haven't run enough for two cycles.
-		if lastStat == nil {
-			continue
-		}
-
-		// 'lastStat.stat.Timestamp == newStat.Timestamp' means that: It means that we call too frequently, exceeding the collection frequency of cadvisor.
-		// Or there is a problem inside cadvisor.
-		// At this time, we will this period with the data of the previous period.
-		if lastStat != nil && lastStat.stat.Timestamp == newStat.Timestamp {
-			for _, metric := range lastStat.metrics {
-				x := *metric
-				x.Timestamp = alignTs
-				newStatCache.metrics = append(newStatCache.metrics, &x)
-			}
-			metrics = append(metrics, newStatCache.metrics...)
-			continue
-		}
-
-		s1 := lastStat.stat
-		s2 := newStat
-
-		deltaTime := s2.Timestamp.Sub(s1.Timestamp) / time.Nanosecond
-		if deltaTime == 0 {
-			continue
-		}
-
-		// '/' is the node cgroup
-		if ctr.Name == "/" {
-			newStatCache.metrics = c.collectNode(ctr, cAdvisorPod, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
-			metrics = append(metrics, newStatCache.metrics...)
-			continue
-		}
-
-		// pod level cgroup
-		if cpi, ok := podCGroupInfo[ctr.Name]; ok {
-			newStatCache.metrics = c.collectPodCGroup(ctr, cpi, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
-			metrics = append(metrics, newStatCache.metrics...)
-			continue
-		}
-
-		// sandbox: it holds network traffic metrics
-		if criCtr, ok := c.crii.GetContainerByCid(ctr.Id); ok && criCtr.Sandbox {
-			newStatCache.metrics = c.collectPodSandbox(ctr, newStatCache.metrics, s1, s2, deltaTime, alignTs)
-			metrics = append(metrics, newStatCache.metrics...)
-			continue
-		}
-
-		// container cgroup
-		if len(ctr.Subcontainers) == 0 {
-			newStatCache.metrics = c.collectPodContainer(ctr, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
-		}
-
-		metrics = append(metrics, newStatCache.metrics...)
-	}
-
-	// TODO Inaccurate
-	//for _, cpi := range podCGroupInfo {
-	//	if cpi.pod2 != nil {
-	//		tags := meta.ExtractPodCommonTags(cpi.pod2)
-	//		metrics = append(metrics, &model.Metric{
-	//			Name:      "k8s_pod_disk_usage",
-	//			Tags:      tags,
-	//			Timestamp: alignTs,
-	//			Value:     cpi.diskUsage,
-	//		})
-	//	}
-	//}
-
-	{
-		nodeTags := make(map[string]string)
-		nodeTags["ip"] = cAdvisorPod.Status.HostIP
-
-		//metrics = append(metrics, &model.Metric{
-		//	Name:      "k8s.node.cpu_total_cores",
-		//	Tags:      nodeTags,
-		//	Timestamp: alignTs,
-		//	Value:     float64(mi.NumCores),
-		//})
-		//metrics = append(metrics, &model.Metric{
-		//	Name:      "k8s.node.mem_total",
-		//	Tags:      nodeTags,
-		//	Timestamp: alignTs,
-		//	Value:     float64(mi.MemoryCapacity),
-		//})
-		metrics = append(metrics, &model.Metric{
-			Name:      "k8s_node_containers",
-			Tags:      nodeTags,
-			Timestamp: alignTs,
-			Value:     float64(len(ctrs)),
-		})
-	}
-
-	if g, err := gateway.Acquire(); err == nil {
-		if c.suffix != "" {
-			for _, metric := range metrics {
-				if !strings.HasSuffix(metric.Name, c.suffix) {
-					metric.Name += c.suffix
-				}
-			}
-		}
-
-		defer gateway.GatewaySingletonHolder.Release()
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		resp, err := g.WriteMetricsV1Extension2(ctx, nil, metrics)
-		if err != nil || resp.Header.Code != 0 {
-			logger.Errorz("[cadvisor] report error", zap.Any("resp", resp), zap.Error(err))
-		}
-	} else {
-		logger.Errorz("[cadvisor] [output] get gateway error", zap.Error(err))
-	}
-
-	return nil
+	return err
 }
 
 func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics []*model.Metric, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
-	pod := c.k8smm.LocalPodMeta.GetPodByName(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
-	if pod == nil {
+	pod, err := c.cri.GetPod(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
+	if err != nil {
 		return metrics
 	}
 
-	tags := meta.ExtractPodCommonTags(pod)
+	tags := meta.ExtractPodCommonTags(pod.Pod)
 
 	// traffic
 	{
@@ -329,25 +211,25 @@ func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics
 }
 
 func (c *cadvisorSysCollector) collectPodContainer(ctr *cv1.ContainerInfo, metrics []*model.Metric, mi *cv1.MachineInfo, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
-	pod := c.k8smm.LocalPodMeta.GetPodByName(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
-	if pod == nil {
+	pod, err := c.cri.GetPod(k8slabels.GetNamespace(ctr.Spec.Labels), k8slabels.GetPodName(ctr.Spec.Labels))
+	if err != nil {
 		return metrics
 	}
 
-	tags := meta.ExtractPodCommonTags(pod)
+	tags := meta.ExtractPodCommonTags(pod.Pod)
 	tags["container"] = k8slabels.GetContainerName(ctr.Spec.Labels)
 
 	// TODO This data is not very useful now, and the server does not display it
 	return c.collectCGroupStats(ctr, metrics, tags, "k8s_container", mi, s1, s2, deltaTime, metricTime, true)
 }
 
-func (c *cadvisorSysCollector) collectPodCGroup(ctr *cv1.ContainerInfo, cpi *cadvisorPodCGroupInfo, metrics []*model.Metric, mi *cv1.MachineInfo, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
-	pod := c.k8smm.LocalPodMeta.GetPodByName(cpi.namespace, cpi.pod)
-	if pod == nil {
+func (c *cadvisorSysCollector) collectPodCGroup(ctr *cv1.ContainerInfo, cpi *podCGroupInfo, metrics []*model.Metric, mi *cv1.MachineInfo, s1 *cv1.ContainerStats, s2 *cv1.ContainerStats, deltaTime time.Duration, metricTime int64) []*model.Metric {
+	pod, e := c.cri.GetPod(cpi.namespace, cpi.pod)
+	if e != nil {
 		return metrics
 	}
 
-	tags := meta.ExtractPodCommonTags(pod)
+	tags := meta.ExtractPodCommonTags(pod.Pod)
 
 	return c.collectCGroupStats(ctr, metrics, tags, "k8s_pod", mi, s1, s2, deltaTime, metricTime, false)
 }
@@ -598,22 +480,26 @@ func (c *cadvisorSysCollector) collectNode(ctr *cv1.ContainerInfo, cAdvisorPod *
 
 // findCadvisorPod returns cadvisor pod in current node
 func (c *cadvisorSysCollector) findCadvisorPod() *v1.Pod {
-	pods := c.k8smm.LocalPodMeta.GetPodsByNamespace(c.k8smm.LocalAgentMeta.Namespace())
+	agentNamespace := c.cri.LocalAgentMeta().Namespace()
+	pods := c.cri.GetAllPods()
 	for _, pod := range pods {
+		if pod.Namespace != agentNamespace {
+			continue
+		}
 		if k8slabels.GetApp(pod.Labels) != cadvisor {
 			continue
 		}
 		if pod.Status.Phase != v1.PodRunning {
 			continue
 		}
-		return pod
+		return pod.Pod
 	}
 	return nil
 }
 
 // makePodCGroupInfo builds a map, whose key is pod level cgroup path
-func (c *cadvisorSysCollector) makePodCGroupInfo(ctrs []cv1.ContainerInfo) map[string]*cadvisorPodCGroupInfo {
-	cadvisorPodInfoMap := make(map[string]*cadvisorPodCGroupInfo)
+func (c *cadvisorSysCollector) makePodCGroupInfo(ctrs []cv1.ContainerInfo) map[string]*podCGroupInfo {
+	cadvisorPodInfoMap := make(map[string]*podCGroupInfo)
 	for _, ctr := range ctrs {
 		if len(ctr.Subcontainers) == 0 {
 			namespace := k8slabels.GetNamespace(ctr.Spec.Labels)
@@ -628,7 +514,7 @@ func (c *cadvisorSysCollector) makePodCGroupInfo(ctrs []cv1.ContainerInfo) map[s
 			// pod cgroup: /kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod5c51e64f_4bde_4f55_bdc0_6067bad00435.slice
 			parent := filepath.Dir(ctr.Name)
 			if _, ok := cadvisorPodInfoMap[parent]; !ok {
-				cadvisorPodInfoMap[parent] = &cadvisorPodCGroupInfo{
+				cadvisorPodInfoMap[parent] = &podCGroupInfo{
 					namespace: namespace,
 					pod:       pod,
 				}
@@ -644,7 +530,7 @@ func (c *cadvisorSysCollector) extractNodeTags(cAdvisorPod *v1.Pod) map[string]s
 	tags := map[string]string{
 		"ip": cAdvisorPod.Status.HostIP,
 	}
-	if node := c.k8smm.NodeMeta.GetNodeByIp(cAdvisorPod.Status.HostIP); node != nil {
+	if node := c.cri.LocalAgentMeta().Node(); node != nil {
 		tags["name"] = node.Name
 		tags["hostname"] = extractor.PodMetaServiceInstance.NodeHostname(node)
 		tags["region"] = k8slabels.GetRegion(node.Labels)
@@ -654,6 +540,144 @@ func (c *cadvisorSysCollector) extractNodeTags(cAdvisorPod *v1.Pod) map[string]s
 		tags["instanceType"] = node.Labels[k8slabels.LabelK8sNodeInstanceType]
 	}
 	return tags
+}
+
+// TODO refactor
+func (c *cadvisorSysCollector) send(metrics []*model.Metric) error {
+	if g, err := gateway.Acquire(); err == nil {
+		if c.suffix != "" {
+			for _, metric := range metrics {
+				if !strings.HasSuffix(metric.Name, c.suffix) {
+					metric.Name += c.suffix
+				}
+			}
+		}
+		c.state.metricsCount = len(metrics)
+
+		defer gateway.GatewaySingletonHolder.Release()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		resp, err := g.WriteMetricsV1Extension2(ctx, nil, metrics)
+		if err != nil || resp.Header.Code != 0 {
+			logger.Errorz("[cadvisor] report error", zap.Any("resp", resp), zap.Error(err))
+		}
+		return err
+	} else {
+		logger.Errorz("[cadvisor] [output] get gateway error", zap.Error(err))
+		return err
+	}
+}
+
+func (c *cadvisorSysCollector) calcMetrics(metricTime time.Time, cAdvisorPod *v1.Pod, mi *cv1.MachineInfo, ctrs []cv1.ContainerInfo) []*model.Metric {
+	alignTs := metricTime.UnixMilli()
+	podCGroupInfo := c.makePodCGroupInfo(ctrs)
+
+	var metrics []*model.Metric
+	for i := range ctrs {
+		ctr := &ctrs[i]
+		if len(ctr.Stats) == 0 {
+			continue
+		}
+
+		var lastStat *containerStatCache
+
+		if x, ok := c.state.cache1[ctr.Name]; ok {
+			lastStat = x
+		}
+
+		newStat := ctr.Stats[len(ctr.Stats)-1]
+
+		newStatCache := &containerStatCache{
+			stat: newStat,
+		}
+		c.state.cache2[ctr.Name] = newStatCache
+
+		// lastStat == nil means that we haven't run enough for two cycles.
+		if lastStat == nil {
+			continue
+		}
+
+		// 'lastStat.stat.Timestamp == newStat.Timestamp' means that: It means that we call too frequently, exceeding the collection frequency of cadvisor.
+		// Or there is a problem inside cadvisor.
+		// At this time, we will this period with the data of the previous period.
+		if lastStat != nil && lastStat.stat.Timestamp == newStat.Timestamp {
+			for _, metric := range lastStat.metrics {
+				x := *metric
+				x.Timestamp = alignTs
+				newStatCache.metrics = append(newStatCache.metrics, &x)
+			}
+			metrics = append(metrics, newStatCache.metrics...)
+			continue
+		}
+
+		s1 := lastStat.stat
+		s2 := newStat
+
+		deltaTime := s2.Timestamp.Sub(s1.Timestamp) / time.Nanosecond
+		if deltaTime == 0 {
+			continue
+		}
+
+		func() {
+			defer func() {
+				metrics = append(metrics, newStatCache.metrics...)
+			}()
+
+			if ctr.Name == "/" {
+				// '/' is the node cgroup
+				newStatCache.metrics = c.collectNode(ctr, cAdvisorPod, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
+			} else if cpi, ok := podCGroupInfo[ctr.Name]; ok {
+				// pod level cgroup
+				newStatCache.metrics = c.collectPodCGroup(ctr, cpi, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
+			} else if criCtr, ok := c.cri.GetContainerByCid(ctr.Id); ok && criCtr.Sandbox {
+				// sandbox: it holds network traffic metrics
+				newStatCache.metrics = c.collectPodSandbox(ctr, newStatCache.metrics, s1, s2, deltaTime, alignTs)
+			} else if len(ctr.Subcontainers) == 0 {
+				// container cgroup
+				newStatCache.metrics = c.collectPodContainer(ctr, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
+			} else {
+				// unknown case
+			}
+		}()
+	}
+
+	// TODO Inaccurate
+	//for _, cpi := range podCGroupInfo {
+	//	if cpi.pod2 != nil {
+	//		tags := meta.ExtractPodCommonTags(cpi.pod2)
+	//		metrics = append(metrics, &model.Metric{
+	//			Name:      "k8s_pod_disk_usage",
+	//			Tags:      tags,
+	//			Timestamp: alignTs,
+	//			Value:     cpi.diskUsage,
+	//		})
+	//	}
+	//}
+
+	{
+		nodeTags := make(map[string]string)
+		nodeTags["ip"] = cAdvisorPod.Status.HostIP
+
+		//metrics = append(metrics, &model.Metric{
+		//	Name:      "k8s.node.cpu_total_cores",
+		//	Tags:      nodeTags,
+		//	Timestamp: alignTs,
+		//	Value:     float64(mi.NumCores),
+		//})
+		//metrics = append(metrics, &model.Metric{
+		//	Name:      "k8s.node.mem_total",
+		//	Tags:      nodeTags,
+		//	Timestamp: alignTs,
+		//	Value:     float64(mi.MemoryCapacity),
+		//})
+		metrics = append(metrics, &model.Metric{
+			Name:      "k8s_node_containers",
+			Tags:      nodeTags,
+			Timestamp: alignTs,
+			Value:     float64(len(ctrs)),
+		})
+	}
+	return metrics
 }
 
 func calcTraffic(interfaceName string, n2 cv1.NetworkStats, n1 cv1.NetworkStats, deltaTime time.Duration) (float64, float64, bool) {
