@@ -171,7 +171,7 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 	}
 
 	logger.Infoz("[pipeline] collect once done", //
-		zap.String("key", p.task.Config.Key),   //
+		zap.String("key", p.task.Key),          //
 		zap.String("type", p.task.Config.Type), //
 		zap.Int("metrics", len(m.Metrics)),     //
 		zap.Duration("sendCost", sendCost),     //
