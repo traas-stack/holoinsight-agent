@@ -91,7 +91,7 @@ func ParsePipeline(task *collecttask.CollectTask) (*Pipeline, error) {
 	tenant := task.Target.GetTenant()
 	to := &Output{
 		Tenant: tenant,
-		o:      out,
+		O:      out,
 	}
 	meta.SuppressCommonTags(tags)
 	return NewPipeline(executeRule, task, i, to, tags, baseConf.Transform)

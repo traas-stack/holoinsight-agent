@@ -26,7 +26,7 @@ type (
 	}
 )
 
-func GetCpuTimes() (*CpuTimeCsStat, error) {
+func getCpuTimes() (*CpuTimeCsStat, error) {
 	times, err := cpu.Times(false)
 	if err != nil {
 		return nil, err

@@ -5,21 +5,18 @@
 package traffic
 
 import (
-	"bytes"
-	"encoding/gob"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 )
 
 type (
 	trafficInput struct {
-		input.BaseInput
-		state *trafficState
+		state *internalState
 	}
-	trafficState struct {
+	internalState struct {
 		Time int64
 		Net  *netTimesStat
 	}
@@ -33,22 +30,15 @@ type (
 	}
 )
 
-func (i *trafficInput) SerializeState() ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
-	err := gob.NewEncoder(buf).Encode(i.state)
-	return buf.Bytes(), err
+func (i *trafficInput) GetDefaultPrefix() string {
+	return ""
 }
 
-func (i *trafficInput) DeserializeState(in []byte) error {
-	i.state = &trafficState{}
-	return gob.NewDecoder(bytes.NewBuffer(in)).Decode(i.state)
-}
-
-func (i *trafficInput) Collect(ctx *input.CollectContext) ([]*model.DetailData, error) {
+func (i *trafficInput) Collect(a api.Accumulator) error {
 	now := util.CurrentMS()
 
 	state := i.state
-	newState := &trafficState{
+	newState := &internalState{
 		Time: now,
 	}
 	i.state = newState
@@ -57,7 +47,7 @@ func (i *trafficInput) Collect(ctx *input.CollectContext) ([]*model.DetailData, 
 		mills = now - state.Time
 	}
 
-	d := model.NewDetailData()
+	values := make(map[string]interface{})
 
 	ioCounters, err := net.IOCounters(true)
 	if err != nil {
@@ -77,17 +67,18 @@ func (i *trafficInput) Collect(ctx *input.CollectContext) ([]*model.DetailData, 
 
 		if state != nil && state.Net != nil {
 			// 这里还需要除以时间才是 bytes/s
-			d.Values["traffic_bytin"] = (st.BytesRecv - state.Net.BytesRecv) * 1000 / uint64(mills)
-			d.Values["traffic_bytout"] = (st.BytesSent - state.Net.BytesSent) * 1000 / uint64(mills)
+			values["traffic_bytin"] = (st.BytesRecv - state.Net.BytesRecv) * 1000 / uint64(mills)
+			values["traffic_bytout"] = (st.BytesSent - state.Net.BytesSent) * 1000 / uint64(mills)
 
 			// pkg/s
-			d.Values["traffic_pktin"] = (st.PacketsRecv - state.Net.PacketsRecv) * 1000 / uint64(mills)
-			d.Values["traffic_pktout"] = (st.PacketsSent - state.Net.PacketsSent) * 1000 / uint64(mills)
-			d.Values["traffic_pktout"] = (st.PacketsSent - state.Net.PacketsSent) * 1000 / uint64(mills)
-			d.Values["traffic_pktdrp"] = (st.Drop - state.Net.Drop) * 1000 / uint64(mills)
-			d.Values["traffic_pkterr"] = (st.Err - state.Net.Err) * 1000 / uint64(mills)
+			values["traffic_pktin"] = (st.PacketsRecv - state.Net.PacketsRecv) * 1000 / uint64(mills)
+			values["traffic_pktout"] = (st.PacketsSent - state.Net.PacketsSent) * 1000 / uint64(mills)
+			values["traffic_pktout"] = (st.PacketsSent - state.Net.PacketsSent) * 1000 / uint64(mills)
+			values["traffic_pktdrp"] = (st.Drop - state.Net.Drop) * 1000 / uint64(mills)
+			values["traffic_pkterr"] = (st.Err - state.Net.Err) * 1000 / uint64(mills)
 		}
 	}
 
-	return model.MakeDetailDataSlice(d), nil
+	input.AddMetrics(a, values)
+	return nil
 }

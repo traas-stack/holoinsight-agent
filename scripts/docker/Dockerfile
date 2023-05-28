@@ -7,7 +7,7 @@ RUN env
 COPY . /workspace
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg \
+    --mount=type=cache,target=/root/go/pkg \
     /workspace/scripts/build/build-using-go.sh && \
   mv /workspace/build/`go env GOOS`-`go env GOARCH`/bin/agent /agent && \
   mv /workspace/build/`go env GOOS`-`go env GOARCH`/bin/helper /helper

@@ -15,6 +15,5 @@ func init() {
 	model.RegisterHandler("cat", catHandler)
 	model.RegisterHandler("previewLog", previewLogHandler)
 	model.RegisterHandler("inspect", inspectHandler)
-	model.RegisterHandler("collectInput", collectInputHandler)
 	model.RegisterHandler("inputProxy", inputProxyHandler)
 }

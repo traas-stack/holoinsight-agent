@@ -12,7 +12,7 @@ import (
 type (
 	Output struct {
 		Tenant string
-		o      output.Output
+		O      output.Output
 	}
 )
 
@@ -20,5 +20,5 @@ func (o *Output) Write(metrics []*model.Metric) {
 	oe := output.Extension{
 		Tenant: o.Tenant,
 	}
-	o.o.WriteMetrics(metrics, oe)
+	o.O.WriteMetrics(metrics, oe)
 }

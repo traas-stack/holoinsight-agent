@@ -148,7 +148,6 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 	m := &accumulator.Memory{}
 	begin := time.Now()
 	err := p.collectOnce0(m)
-	cost := time.Now().Sub(begin)
 
 	var sendCost time.Duration
 	if len(m.Metrics) > 0 {
@@ -157,6 +156,7 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 		p.output.Write(m.Metrics)
 		sendCost = time.Now().Sub(sendBegin)
 	}
+	cost := time.Now().Sub(begin)
 
 	if logger.IsDebugEnabled() {
 		for _, m := range m.Metrics {
@@ -305,6 +305,10 @@ func (p *Pipeline) transformMetrics(metricTime time.Time, m *accumulator.Memory)
 	if x := p.transform.MetricPrefix; x != "" {
 		for _, metric := range m.Metrics {
 			metric.Name = x + metric.Name
+		}
+	} else if x := p.transform.MetricFormat; x != "" {
+		for _, metric := range m.Metrics {
+			metric.Name = fmt.Sprintf(x, metric.Name)
 		}
 	}
 }

@@ -5,11 +5,9 @@
 package process
 
 import (
-	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/model"
-	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
-	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/shirou/gopsutil/v3/process"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
 )
 
 // TODO 问题 系统指标是否作为一个指标存储 还是 作为多个指标(开源倾向)
@@ -18,30 +16,25 @@ import (
 
 type (
 	processInput struct {
-		input.BaseInput
 	}
 )
 
-func (i *processInput) Collect(ctx *input.CollectContext) ([]*model.DetailData, error) {
-	d := model.NewDetailData()
+func (i *processInput) GetDefaultPrefix() string {
+	return ""
+}
 
-	if util.IsLinux() {
-		// 这个只需花1ms 反正是linux上特有的 这个无所谓
-		pids, err := process.Pids()
-		if err != nil {
-			logger.Errorf("get pids error %+v", err)
-			// 要填个0进去
-			d.Values["process_pids"] = 0
-			d.Values["process_threads"] = 0
-		} else {
-			totalThreads := readTotalThreads(pids)
-			d.Values["process_pids"] = len(pids)
-			d.Values["process_threads"] = totalThreads
-		}
-	} else {
-		d.Values["process_pids"] = 0
-		d.Values["process_threads"] = 0
+func (i *processInput) Collect(a api.Accumulator) error {
+
+	pids, err := process.Pids()
+	if err != nil {
+		return err
 	}
 
-	return model.MakeDetailDataSlice(d), nil
+	values := make(map[string]interface{})
+	totalThreads := readTotalThreads(pids)
+	values["process_pids"] = len(pids)
+	values["process_threads"] = totalThreads
+
+	input.AddMetrics(a, values)
+	return nil
 }

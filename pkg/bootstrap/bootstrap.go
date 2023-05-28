@@ -146,7 +146,10 @@ func (b *AgentBootstrap) Bootstrap() error {
 		if err := b.setupCentralAgent(); err != nil {
 			return err
 		}
-
+	case core.AgentModeSidecar:
+		if err := b.setupSidecarAgent(); err != nil {
+			return err
+		}
 	}
 
 	logger.Infoz("[bootstrap] bootstrap success", zap.Int("pid", os.Getpid()), zap.Duration("cost", time.Now().Sub(begin)))
@@ -319,6 +322,27 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 		App.AddStopComponent(masterMaintainer)
 	}
 	b.callCustomizers("daemonagent-setup-end", nil)
+
+	return nil
+}
+
+func (b *AgentBootstrap) setupSidecarAgent() error {
+	b.callCustomizers("sidecaragent-setup-begin", nil)
+
+	ctm, err := InitCollectTaskManager(ioc.RegistryService)
+	if err != nil {
+		return err
+	}
+
+	pm := pipeline.NewManager(ctm)
+	pm.Start()
+
+	bsm := bistream.NewManager(ioc.RegistryService, bizbistream.GetBiStreamHandlerRegistry())
+	bsm.Start()
+
+	App.AddStopComponent(pm, bsm)
+
+	b.callCustomizers("sidecaragent-setup-end", nil)
 
 	return nil
 }

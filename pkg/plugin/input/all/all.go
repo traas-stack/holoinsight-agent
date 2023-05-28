@@ -11,7 +11,6 @@ import (
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/load"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/mem"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/process"
-	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/processperf"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/swap"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/tcp"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/traffic"

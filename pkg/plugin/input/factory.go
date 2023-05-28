@@ -7,13 +7,16 @@ package input
 import (
 	"errors"
 	"fmt"
+	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"runtime"
 
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 )
 
 type (
-	Factory func(Config) (Input, error)
+	Factory func(Config) (api.Input, error)
 	// Config是抽象的, 需要根据各个type而定
 	Config interface{}
 )
@@ -28,7 +31,7 @@ func Register(inputType string, factory Factory) {
 }
 
 // 理论上不会有关于本机的多个相同类型的input任务
-func Parse(inputType string, config Config) (_ Input, retErr error) {
+func Parse(inputType string, config Config) (_ api.Input, retErr error) {
 	defer func() {
 		if r := recover(); r != nil {
 			const size = 64 << 10
@@ -44,4 +47,10 @@ func Parse(inputType string, config Config) (_ Input, retErr error) {
 		return f(config)
 	}
 	return nil, errors.New("unsupported input type " + inputType)
+}
+
+func AddMetrics(a api.Accumulator, values map[string]interface{}) {
+	for k, v := range values {
+		a.AddMetric(&model.Metric{Name: k, Value: cast.ToFloat64(v)})
+	}
 }

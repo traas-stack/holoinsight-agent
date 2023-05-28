@@ -17,5 +17,8 @@ type (
 	Transform struct {
 		// MetricPrefix adds a prefix to the original metric name
 		MetricPrefix string `json:"metricPrefix,omitempty"`
+		// MetricFormat is the format of metric name.
+		// Such as 'system_%s'
+		MetricFormat string
 	}
 )

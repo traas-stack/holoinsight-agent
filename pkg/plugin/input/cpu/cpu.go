@@ -5,11 +5,8 @@
 package cpu
 
 import (
-	"bytes"
-	"encoding/gob"
 	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 )
@@ -20,7 +17,6 @@ import (
 
 type (
 	cpuInput struct {
-		input.BaseInput
 		state *CpuState
 	}
 	CpuState struct {
@@ -33,24 +29,15 @@ type (
 	}
 )
 
-func (i *cpuInput) SerializeState() ([]byte, error) {
-	b := bytes.NewBuffer(nil)
-	err := gob.NewEncoder(b).Encode(i.state)
-	return b.Bytes(), err
+var (
+	_ api.Input = &cpuInput{}
+)
+
+func (i *cpuInput) GetDefaultPrefix() string {
+	return ""
 }
 
-func (i *cpuInput) DeserializeState(in []byte) error {
-	if in == nil {
-		return nil
-	}
-
-	b := bytes.NewBuffer(in)
-	newState := &CpuState{}
-	i.state = newState
-	return gob.NewDecoder(b).Decode(newState)
-}
-
-func (i *cpuInput) Collect(ctx *input.CollectContext) ([]*model.DetailData, error) {
+func (i *cpuInput) Collect(a api.Accumulator) error {
 	now := util.CurrentMS()
 
 	state := i.state
@@ -64,59 +51,43 @@ func (i *cpuInput) Collect(ctx *input.CollectContext) ([]*model.DetailData, erro
 		mills = now - state.Time
 	}
 
-	d := model.NewDetailData()
+	values := make(map[string]interface{})
 
-	// logical 是否包含超线程
-	cpuCounts, err := cpu.Counts(true)
-	if err != nil {
-		logger.Warnf("get cpu counts error %+v", err)
+	if cpuCounts, err := cpu.Counts(true); err == nil {
+		values["cpu_total_cores"] = cpuCounts
 	}
-	d.Values["cpu_total_cores"] = cpuCounts
 
-	cpuTimesNow, err := GetCpuTimes()
-	if err != nil {
-		return nil, err
-	}
+	cpuTimesNow, err := getCpuTimes()
 	newState.Cpu = cpuTimesNow
-
-	if state != nil && state.Cpu != nil {
+	if err == nil && state != nil && state.Cpu != nil {
 		m := state.Cpu.Gauge(cpuTimesNow)
 		cpuTimes, _ := m["cpu-total"]
 		newState.Cpu = cpuTimesNow
 
-		// cpu 基本指标
-		d.Values["cpu_user"] = cpuTimes.User
-		d.Values["cpu_sys"] = cpuTimes.System
-		d.Values["cpu_idle"] = cpuTimes.Idle
-		d.Values["cpu_nice"] = cpuTimes.Nice
-		d.Values["cpu_iowait"] = cpuTimes.Iowait
-		d.Values["cpu_hirq"] = cpuTimes.Irq
-		d.Values["cpu_sirq"] = cpuTimes.Softirq
-		d.Values["cpu_steal"] = cpuTimes.Steal
-		d.Values["cpu_guest"] = cpuTimes.Guest
-		d.Values["cpu_guestnice"] = cpuTimes.GuestNice
-		d.Values["cpu_busy"] = cpuTimes.Busy
-		d.Values["cpu_util"] = cpuTimes.Util
+		values["cpu_user"] = cpuTimes.User
+		values["cpu_sys"] = cpuTimes.System
+		values["cpu_idle"] = cpuTimes.Idle
+		values["cpu_nice"] = cpuTimes.Nice
+		values["cpu_iowait"] = cpuTimes.Iowait
+		values["cpu_hirq"] = cpuTimes.Irq
+		values["cpu_sirq"] = cpuTimes.Softirq
+		values["cpu_steal"] = cpuTimes.Steal
+		values["cpu_guest"] = cpuTimes.Guest
+		values["cpu_guestnice"] = cpuTimes.GuestNice
+		values["cpu_busy"] = cpuTimes.Busy
+		values["cpu_util"] = cpuTimes.Util
 	}
 
-	if util.IsLinux() {
-		ctxt, hirq, sirq, err := readCpuStats()
-		if err != nil {
-			logger.Warnf("get cpu ctxt error %+v", err)
-		} else {
-			newState.Ctxt = ctxt
-			newState.Hirq = hirq
-			newState.Sirq = sirq
-			if state != nil && state.Ctxt > 0 {
-				// 上下文切换次数
-				d.Values["cpu_counter_ctxt"] = (ctxt - state.Ctxt) * 1000 / mills
-				// 硬中断次数
-				d.Values["cpu_counter_hirq"] = (hirq - state.Hirq) * 1000 / mills
-				// 软中断次数
-				d.Values["cpu_counter_sirq"] = (sirq - state.Sirq) * 1000 / mills
-			}
-		}
+	ctxt, hirq, sirq, err := readCpuStats()
+	newState.Ctxt = ctxt
+	newState.Hirq = hirq
+	newState.Sirq = sirq
+	if err == nil && state != nil && state.Ctxt > 0 {
+		values["cpu_counter_ctxt"] = (ctxt - state.Ctxt) * 1000 / mills
+		values["cpu_counter_hirq"] = (hirq - state.Hirq) * 1000 / mills
+		values["cpu_counter_sirq"] = (sirq - state.Sirq) * 1000 / mills
 	}
 
-	return model.MakeDetailDataSlice(d), nil
+	input.AddMetrics(a, values)
+	return nil
 }

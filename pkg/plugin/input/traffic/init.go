@@ -4,10 +4,13 @@
 
 package traffic
 
-import "github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
+import (
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
+)
 
 func init() {
-	input.Register("traffic", func(config input.Config) (input.Input, error) {
+	input.Register("traffic", func(config input.Config) (api.Input, error) {
 		return &trafficInput{}, nil
 	})
 }

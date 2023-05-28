@@ -19,9 +19,11 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/alibabacloud"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/sys"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/all"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/nvidia_smi"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 	"runtime"
@@ -199,9 +201,21 @@ func (m *Manager) createPipeline(task *collecttask.CollectTask, sqlTask *collect
 	case "log":
 		return executor.NewPipeline(&api.SubTask{task, sqlTask}, m.s, m.lsm)
 	default:
-		// 仅在sidecar模式下才生效
 		if appconfig.StdAgentConfig.Mode == core.AgentModeSidecar {
-			return sys.NewSysPipeline(task, sqlTask)
+
+			in, err := input.Parse(sqlTask.From.Type, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			out, err := output.Parse(sqlTask.Output.Type, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			return telegraf.NewPipeline(sqlTask.ExecuteRule, task, in, &telegraf.Output{O: out}, nil, base.Transform{
+				MetricFormat: sqlTask.Output.Gateway.MetricName,
+			})
 		}
 		return nil, fmt.Errorf("unsupported in mode %s", appconfig.StdAgentConfig.Mode)
 	}
