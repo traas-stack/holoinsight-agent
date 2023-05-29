@@ -7,7 +7,7 @@ package jvm
 import (
 	"context"
 	"errors"
-	"github.com/influxdata/telegraf"
+	"fmt"
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
@@ -15,7 +15,9 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"github.com/xin053/hsperfdata"
 	"go.uber.org/zap"
 	"path/filepath"
@@ -46,13 +48,13 @@ func init() {
 	providers.Register("JvmTask", NewTelegrafJvmInput)
 }
 
-func NewTelegrafJvmInput(target *collecttask.CollectTask) (interface{}, error) {
+func NewTelegrafJvmInput(target *collecttask.CollectTask) (api.Input, error) {
 	return &telegrafInput{
 		task: target,
 	}, nil
 }
 
-func (i *telegrafInput) SampleConfig() string {
+func (i *telegrafInput) GetDefaultPrefix() string {
 	return ""
 }
 
@@ -117,7 +119,7 @@ func (i *telegrafInput) getPerfDataPaths() (map[string]string, perfDataReader, e
 	return pathMap, readPerfData, nil
 }
 
-func (i *telegrafInput) Gather(a telegraf.Accumulator) error {
+func (i *telegrafInput) Collect(a api.Accumulator) error {
 	oldState := i.state
 	newState := &jvmState{
 		byPid: make(map[string]*pidJvmState),
@@ -167,7 +169,13 @@ func (i *telegrafInput) Gather(a telegraf.Accumulator) error {
 		}
 		finalMetrics := calcFinalMetrics(rawMetrics, lastPidState)
 
-		a.AddFields(measurement, finalMetrics, tags)
+		for k, v := range finalMetrics {
+			a.AddMetric(&model.Metric{
+				Name:  fmt.Sprintf("jvm_%s", k),
+				Tags:  tags,
+				Value: cast.ToFloat64(v),
+			})
+		}
 	}
 
 	return nil

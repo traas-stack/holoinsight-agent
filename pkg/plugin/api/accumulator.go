@@ -16,7 +16,7 @@ type (
 	}
 
 	MemoryAccumulator struct {
-		Memory []*model.Metric
+		Metrics []*model.Metric
 	}
 	prefixAccumulator struct {
 		a      Accumulator
@@ -29,12 +29,12 @@ func NewMemoryAccumulator() *MemoryAccumulator {
 }
 
 func (ma *MemoryAccumulator) AddMetric(metric *model.Metric) {
-	ma.Memory = append(ma.Memory, metric)
+	ma.Metrics = append(ma.Metrics, metric)
 }
 
 func (ma *MemoryAccumulator) PrintTo(writer io.Writer) error {
-	for i := range ma.Memory {
-		_, err := fmt.Fprintf(writer, "%v\n", ma.Memory[i])
+	for i := range ma.Metrics {
+		_, err := fmt.Fprintf(writer, "%v\n", ma.Metrics[i])
 		if err != nil {
 			return err
 		}

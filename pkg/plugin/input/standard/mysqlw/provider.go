@@ -8,16 +8,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
 	"github.com/influxdata/telegraf/plugins/inputs/mysql"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 )
 
 func init() {
 	providers.Register("MysqlTask", parse)
 }
 
-func parse(task *collecttask.CollectTask) (interface{}, error) {
+func parse(task *collecttask.CollectTask) (api.Input, error) {
 	conf := &MySQLConf{}
 	err := json.Unmarshal(task.Config.Content, conf)
 	if err != nil {
@@ -35,7 +37,7 @@ func parse(task *collecttask.CollectTask) (interface{}, error) {
 	if len(servers) == 0 {
 		return nil, errors.New("empty servers")
 	}
-	return &mysql.Mysql{
+	return telegraf.NewInputAdapter(&mysql.Mysql{
 		Servers: servers,
-	}, nil
+	}), nil
 }

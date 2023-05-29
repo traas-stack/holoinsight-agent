@@ -8,7 +8,8 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"os"
 	"path/filepath"
 )
@@ -31,9 +32,8 @@ func IsNvidiaEnabled() bool {
 	return false
 }
 
-// registry task
 func init() {
-	providers.Register("gpu", func(task *collecttask.CollectTask) (interface{}, error) {
+	providers.Register("gpu", func(task *collecttask.CollectTask) (api.Input, error) {
 		return &NvidiaInput{}, nil
 	})
 }

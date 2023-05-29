@@ -7,11 +7,12 @@ package providers
 import (
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"sync"
 )
 
 type (
-	InputProvider func(task *collecttask.CollectTask) (interface{}, error)
+	InputProvider func(task *collecttask.CollectTask) (api.Input, error)
 )
 
 var (

@@ -1,4 +1,4 @@
-package telegraf_nginx
+package nginx
 
 import (
 	"encoding/json"
@@ -8,7 +8,8 @@ import (
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/inputs/nginx"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ type (
 )
 
 func init() {
-	providers.Register("telegraf_nginx", func(task *collecttask.CollectTask) (interface{}, error) {
+	providers.Register("telegraf_nginx", func(task *collecttask.CollectTask) (api.Input, error) {
 		conf := &Conf{}
 		if err := json.Unmarshal(task.Config.Content, conf); err != nil {
 			return nil, err

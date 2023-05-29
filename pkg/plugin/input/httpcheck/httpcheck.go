@@ -69,7 +69,7 @@ func (i *Input) ExecuteRequest(configBytes []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(ma.Memory)
+	return json.Marshal(ma.Metrics)
 }
 
 func (i *Input) ProcessResponse(_ interface{}, respBytes []byte, err error, accumulator api.Accumulator) error {

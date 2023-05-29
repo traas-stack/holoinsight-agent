@@ -1,4 +1,4 @@
-package telegraf_mongodb
+package mongodb
 
 import (
 	"encoding/json"
@@ -7,7 +7,8 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs/mongodb"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 )
 
@@ -18,7 +19,7 @@ type (
 )
 
 func init() {
-	providers.Register("telegraf_mongodb", func(task *collecttask.CollectTask) (interface{}, error) {
+	providers.Register("telegraf_mongodb", func(task *collecttask.CollectTask) (api.Input, error) {
 		conf := &Conf{}
 		if err := json.Unmarshal(task.Config.Content, conf); err != nil {
 			return nil, err

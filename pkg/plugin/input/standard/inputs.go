@@ -2,23 +2,23 @@
  * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
  */
 
-package telegraf
+package standard
 
 import (
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
-	_ "github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/mysqlw"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/dialcheckw"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/httpcheckw"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/jvm"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/nvidia_smi"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/springboot"
-	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_mongodb"
-	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_mysql"
-	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_nginx"
-	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_ping"
-	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_redis"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/mysqlw"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/telegraf_adapters/mongodb"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/telegraf_adapters/mysql"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/telegraf_adapters/nginx"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/telegraf_adapters/ping"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/telegraf_adapters/redis"
 	"strings"
 )
 
@@ -30,7 +30,7 @@ func trimType(t string) string {
 	return t[index+1:]
 }
 
-func parseInput(task *collecttask.CollectTask) (interface{}, error) {
+func ParseInput(task *collecttask.CollectTask) (interface{}, error) {
 	trimmedType := trimType(task.Config.Type)
 
 	if provider, ok := providers.Get(trimmedType); ok {

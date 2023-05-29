@@ -19,10 +19,11 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/alibabacloud"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/standard"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/all"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/nvidia_smi"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
@@ -92,22 +93,10 @@ func (m *Manager) Start() {
 	m.ctm.Listen(m.listener)
 }
 
-var telegrafStyleTaskTypes = make(map[string]bool)
-
-func init() {
-	telegrafStyleTaskTypes["jvmtask"] = true
-	telegrafStyleTaskTypes["springboottask"] = true
-	telegrafStyleTaskTypes["mysqltask"] = true
-	telegrafStyleTaskTypes["httpcheck"] = true
-	telegrafStyleTaskTypes["dialcheck"] = true
-	telegrafStyleTaskTypes["obcollector"] = true
-	telegrafStyleTaskTypes["gpu"] = true
-}
-
 func (m *Manager) processTask(task *collecttask.CollectTask, add bool, init bool) {
 	configType := standardizeType(task.Config.Type)
-	if telegrafStyleTaskTypes[configType] {
-		m.processTelegrafTasks(task, add, init)
+	if _, ok := providers.Get(configType); ok {
+		m.processStandardTasks(task, add, init)
 		return
 	}
 
@@ -212,7 +201,7 @@ func (m *Manager) createPipeline(task *collecttask.CollectTask, sqlTask *collect
 			if err != nil {
 				return nil, err
 			}
-			return telegraf.NewPipeline(task, &base.Conf{
+			return standard.NewPipeline(task, &base.Conf{
 				Name:        task.Config.Key,
 				Type:        sqlTask.From.Type,
 				ExecuteRule: sqlTask.ExecuteRule,
@@ -220,7 +209,7 @@ func (m *Manager) createPipeline(task *collecttask.CollectTask, sqlTask *collect
 				Transform: base.Transform{
 					MetricFormat: sqlTask.Output.Gateway.MetricName,
 				},
-			}, in, &telegraf.Output{O: out})
+			}, in, &standard.Output{O: out})
 		}
 		return nil, fmt.Errorf("unsupported in mode %s", appconfig.StdAgentConfig.Mode)
 	}
@@ -285,7 +274,7 @@ func (m *Manager) processAliCloudTask(task *collecttask.CollectTask, add, init b
 	}
 }
 
-func (m *Manager) processTelegrafTasks(task *collecttask.CollectTask, add bool, init bool) {
+func (m *Manager) processStandardTasks(task *collecttask.CollectTask, add bool, init bool) {
 	if add {
 		// 处理重复添加的case: 立即停掉 然后重建任务即可
 		var old api.Pipeline
@@ -297,7 +286,7 @@ func (m *Manager) processTelegrafTasks(task *collecttask.CollectTask, add bool, 
 
 		{
 			// new add
-			p, err := telegraf.ParsePipeline(task)
+			p, err := standard.ParsePipeline(task)
 			if err != nil {
 				logger.Errorz("[pm] parse telegraf style task error", //
 					zap.String("key", task.Key), //

@@ -8,9 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/influxdata/telegraf"
+	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	telegraf2 "github.com/traas-stack/holoinsight-agent/pkg/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/model"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"go.uber.org/zap"
 	"io"
 	"net/http"
@@ -57,7 +58,7 @@ func (s *SpringBoot) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (s *SpringBoot) SampleConfig() string {
+func (s *SpringBoot) GetDefaultPrefix() string {
 	return ""
 }
 
@@ -90,7 +91,7 @@ func (s *SpringBoot) concurrency() int {
 	return concurrency
 }
 
-func (s *SpringBoot) Gather(accumulator telegraf.Accumulator) error {
+func (s *SpringBoot) Collect(a api.Accumulator) error {
 	if s.state == nil {
 		s.state = &springBootState{
 			cache1: &sync.Map{},
@@ -131,7 +132,7 @@ func (s *SpringBoot) Gather(accumulator telegraf.Accumulator) error {
 
 	concurrency := s.concurrency()
 	semaphore := make(chan struct{}, concurrency)
-	var out = make(chan *telegraf2.Memory, len(actuatorMetricsResp.Names))
+	var out = make(chan *api.MemoryAccumulator, len(actuatorMetricsResp.Names))
 	var wg sync.WaitGroup
 
 	for _, name0 := range actuatorMetricsResp.Names {
@@ -145,7 +146,7 @@ func (s *SpringBoot) Gather(accumulator telegraf.Accumulator) error {
 				<-semaphore
 			}()
 
-			m := &telegraf2.Memory{}
+			m := api.NewMemoryAccumulator()
 			if err := s.getMetricsFromUrl(metricUrl, name, m); err != nil {
 				logger.Errorz("[springboot] get metrics error", //
 					zap.String("url", metricUrl),
@@ -165,17 +166,16 @@ func (s *SpringBoot) Gather(accumulator telegraf.Accumulator) error {
 	close(out)
 	for memory := range out {
 		for _, metric := range memory.Metrics {
-			accumulator.AddMetric(metric)
+			a.AddMetric(metric)
 		}
 	}
 	return nil
 }
 
-func (s *SpringBoot) getMetricsFromUrl(metricUrl, springbootMetricName string, accumulator telegraf.Accumulator) error {
+func (s *SpringBoot) getMetricsFromUrl(metricUrl, springbootMetricName string, accumulator api.Accumulator) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	// TODO 不要跟入 redirect
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metricUrl, nil)
 	if err != nil {
 		return err
@@ -249,7 +249,13 @@ func (s *SpringBoot) getMetricsFromUrl(metricUrl, springbootMetricName string, a
 
 	tags := make(map[string]string)
 
-	accumulator.AddFields(telegrafMeasurementName, fields, tags, time.Now())
+	for fk, fv := range fields {
+		accumulator.AddMetric(&model.Metric{
+			Name:  telegrafMeasurementName + "_" + fk,
+			Tags:  tags,
+			Value: cast.ToFloat64(fv),
+		})
+	}
 
 	return nil
 }

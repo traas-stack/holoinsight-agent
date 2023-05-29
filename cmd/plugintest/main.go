@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/standard"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/output/console"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"os"
@@ -24,7 +24,7 @@ func main() {
 	}
 	task.Config.Content = util.ToJsonBytes(task.Config.ContentObj)
 
-	pipeline, err := telegraf.ParsePipeline(task)
+	pipeline, err := standard.ParsePipeline(task)
 	if err != nil {
 		panic(err)
 	}

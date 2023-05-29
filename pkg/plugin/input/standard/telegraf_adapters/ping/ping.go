@@ -1,4 +1,4 @@
-package telegraf_ping
+package ping
 
 import (
 	"encoding/json"
@@ -7,13 +7,13 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs/ping"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 )
 
 func init() {
-	providers.Register("telegraf_ping", func(task *collecttask.CollectTask) (interface{}, error) {
+	providers.Register("telegraf_ping", func(task *collecttask.CollectTask) (api.Input, error) {
 		return parseInputPlugin(task)
 	})
 }

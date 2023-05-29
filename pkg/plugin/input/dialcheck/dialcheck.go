@@ -72,7 +72,7 @@ func (i *Input) ExecuteRequest(bytes []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return json.Marshal(ma.Memory)
+	return json.Marshal(ma.Metrics)
 }
 
 func (i *Input) ProcessResponse(_ interface{}, respBytes []byte, err error, accumulator api.Accumulator) error {
@@ -96,7 +96,7 @@ func (i *Input) Collect(a api.Accumulator) error {
 	}
 	wg.Wait()
 	for _, ma := range subAccumulators {
-		for _, metric := range ma.Memory {
+		for _, metric := range ma.Metrics {
 			a.AddMetric(metric)
 		}
 

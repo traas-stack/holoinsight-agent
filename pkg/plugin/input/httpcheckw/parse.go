@@ -8,8 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/httpcheck"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"net/http"
 	"regexp"
 	"strings"
@@ -44,7 +45,7 @@ func init() {
 	providers.Register("httpcheck", Parse)
 }
 
-func Parse(task *collecttask.CollectTask) (interface{}, error) {
+func Parse(task *collecttask.CollectTask) (api.Input, error) {
 	config := &Config{}
 	err := json.Unmarshal(task.Config.Content, config)
 	if err != nil {

@@ -428,12 +428,10 @@ func (p *Pipeline) collectOneMetric(traceId string, ams *alibabacloud.AliyunMetr
 
 func (p *Pipeline) getTimer() *util.AlignTsTimer {
 	internalMs := time.Minute.Milliseconds()
-	if er := p.conf.ExecuteRule; er != nil {
-		switch er.Type {
-		case "fixedRate":
-			if interval, err := util.ParseDuration(er.FixedRate); err == nil && interval > 0 {
-				internalMs = interval.Milliseconds()
-			}
+	switch p.conf.ExecuteRule.Type {
+	case "fixedRate":
+		if interval, err := util.ParseDuration(p.conf.ExecuteRule.FixedRate); err == nil && interval > 0 {
+			internalMs = interval.Milliseconds()
 		}
 	}
 

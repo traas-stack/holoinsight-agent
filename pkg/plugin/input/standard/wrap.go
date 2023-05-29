@@ -2,11 +2,11 @@
  * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
  */
 
-package telegraf
+package standard
 
 import (
-	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/influxdata/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"time"
 )
 
@@ -27,8 +27,8 @@ func (i *inputWrapper) Gather(accumulator telegraf.Accumulator) error {
 		return err
 	}
 
-	for i := range ma.Memory {
-		metric := ma.Memory[i]
+	for i := range ma.Metrics {
+		metric := ma.Metrics[i]
 		accumulator.AddFields(metric.Name, map[string]interface{}{
 			"": metric.Value,
 		}, metric.Tags, time.UnixMilli(metric.Timestamp))

@@ -8,7 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/telegraf/providers"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"strings"
 )
 
@@ -35,7 +36,7 @@ func init() {
 	providers.Register("SpringBootTask", Parse)
 }
 
-func Parse(task *collecttask.CollectTask) (interface{}, error) {
+func Parse(task *collecttask.CollectTask) (api.Input, error) {
 	conf := &SpringBootConf{}
 	err := json.Unmarshal(task.Config.Content, conf)
 	if err != nil {
