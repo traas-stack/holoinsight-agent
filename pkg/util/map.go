@@ -33,7 +33,7 @@ func SyncMapSize(m *sync.Map) int {
 
 // MergeStringMapTo merges one string map to another
 func MergeStringMapTo(a map[string]string, to map[string]string, override bool) map[string]string {
-	if override {
+	if !override {
 		for k, v := range a {
 			if _, exist := to[k]; !exist {
 				to[k] = v

@@ -7,6 +7,7 @@ package collecttask
 const (
 	TargetLocalhost = "localhost"
 	TargetPod       = "pod"
+	TargetNone      = "none"
 	TargetContainer = "container"
 
 	// ext
@@ -35,6 +36,8 @@ type (
 		// 站在reg的角度, 它就是给agent发 "一坨配置", 就是一堆二进制格式的数据
 		// 怎么去解释这些数据是业务上的事情, 产品层与agent需要约定好内容格式
 		Content []byte `json:"-"`
+		// ContentObj is for internal usage
+		ContentObj interface{} `json:"contentObj"`
 	}
 
 	// 采集目标

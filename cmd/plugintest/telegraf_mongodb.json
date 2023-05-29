@@ -1,0 +1,31 @@
+{
+  "key": "demo/1",
+  "config": {
+    "key": "demo",
+    "type": "telegraf_mongodb",
+    "contentObj": {
+      "executeRule": {
+        "type": "fixedRate",
+        "fixedRate": 5000,
+        "offset": 0
+      },
+      "refMetas": {
+        "a": {
+          "name": "a1"
+        }
+      },
+      "transform": {
+        "metricFormat": "yyy_%s"
+      },
+      "servers": "mongodb://127.0.0.1:27017/?connect=direct"
+    }
+  },
+  "target": {
+    "key": "1",
+    "type": "ip",
+    "meta": {
+      "a1": "b",
+      "ip": "127.0.0.1"
+    }
+  }
+}

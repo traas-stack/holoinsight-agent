@@ -69,7 +69,7 @@ func (m *Manager) Start() {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			logger.Configf("manager start error: %v\n%s", r, string(buf))
+			logger.Configz("manager start error", zap.String("stack", string(buf)), zap.Any("err", r))
 		}
 	}()
 	m.mutex.Lock()
@@ -212,10 +212,15 @@ func (m *Manager) createPipeline(task *collecttask.CollectTask, sqlTask *collect
 			if err != nil {
 				return nil, err
 			}
-
-			return telegraf.NewPipeline(sqlTask.ExecuteRule, task, in, &telegraf.Output{O: out}, nil, base.Transform{
-				MetricFormat: sqlTask.Output.Gateway.MetricName,
-			})
+			return telegraf.NewPipeline(task, &base.Conf{
+				Name:        task.Config.Key,
+				Type:        sqlTask.From.Type,
+				ExecuteRule: sqlTask.ExecuteRule,
+				RefMetas:    nil,
+				Transform: base.Transform{
+					MetricFormat: sqlTask.Output.Gateway.MetricName,
+				},
+			}, in, &telegraf.Output{O: out})
 		}
 		return nil, fmt.Errorf("unsupported in mode %s", appconfig.StdAgentConfig.Mode)
 	}
@@ -337,7 +342,7 @@ func (m *Manager) getBuiltInTasks() []*collecttask.CollectTask {
 
 	var tasks []*collecttask.CollectTask
 
-	minuteExecuteRule := &collectconfig.ExecuteRule{
+	minuteExecuteRule := collectconfig.ExecuteRule{
 		Type:      "fixedRate",
 		FixedRate: 60_000,
 	}

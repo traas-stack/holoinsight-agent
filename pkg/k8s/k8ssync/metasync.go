@@ -13,7 +13,6 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	regpb "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
-	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -98,14 +97,8 @@ func (rs *resourceSyncer) start(stopCh <-chan struct{}) {
 			}
 			if deleted {
 				req.Del = append(req.Del, resource)
-				if logger.DebugEnabled {
-					logger.Metaf("delta delete %s", util.ToJsonString(resource))
-				}
 			} else {
 				req.Add = append(req.Add, resource)
-				if logger.DebugEnabled {
-					logger.Metaf("delta add %s", util.ToJsonString(resource))
-				}
 			}
 		}
 
@@ -195,7 +188,7 @@ func (s *metaSyncer) runLoop() {
 			stop.Reset(defaultListWatchRestartInterval)
 		case <-stop.C:
 			close(stopCh)
-			logger.Metaf("[listwatch] stop and restart after 1 s")
+			logger.Metaz("[listwatch] stop and restart after 1 s")
 			start.Reset(time.Second)
 		}
 	}

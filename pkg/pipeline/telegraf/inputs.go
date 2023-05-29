@@ -14,6 +14,11 @@ import (
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/jvm"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/nvidia_smi"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/springboot"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_mongodb"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_mysql"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_nginx"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_ping"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/telegraf_redis"
 	"strings"
 )
 

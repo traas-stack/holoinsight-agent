@@ -1,0 +1,32 @@
+{
+  "key": "demo/1",
+  "config": {
+    "key": "demo",
+    "type": "telegraf_redis",
+    "contentObj": {
+      "executeRule": {
+        "type": "fixedRate",
+        "fixedRate": 5000,
+        "offset": 0
+      },
+      "refMetas": {
+        "a": {
+          "name": "a1"
+        }
+      },
+      "transform": {
+        "metricFormat": "yyy_%s"
+      },
+      "Port": 6379,
+      "Password": ""
+    }
+  },
+  "target": {
+    "key": "1",
+    "type": "ip",
+    "meta": {
+      "a1": "b",
+      "ip": "127.0.0.1"
+    }
+  }
+}

@@ -17,26 +17,25 @@ import (
 
 type (
 	alwaysLevel     struct{}
-	loggerComposite struct {
-		debug   *zap.Logger
-		debugS  *zap.SugaredLogger
-		info    *zap.Logger
-		infoS   *zap.SugaredLogger
-		warn    *zap.Logger
-		warnS   *zap.SugaredLogger
-		error   *zap.Logger
-		errorS  *zap.SugaredLogger
-		stat    *zap.Logger
-		config  *zap.Logger
-		configS *zap.SugaredLogger
-		meta    *zap.Logger
-		metaS   *zap.SugaredLogger
-		cri     *zap.Logger
+	LoggerComposite struct {
+		Debug  *zap.Logger
+		DebugS *zap.SugaredLogger
+		Info   *zap.Logger
+		InfoS  *zap.SugaredLogger
+		Warn   *zap.Logger
+		WarnS  *zap.SugaredLogger
+		Error  *zap.Logger
+		ErrorS *zap.SugaredLogger
+		Stat   *zap.Logger
+		Config *zap.Logger
+		Meta   *zap.Logger
+		MetaS  *zap.SugaredLogger
+		Cri    *zap.Logger
 	}
 )
 
 var (
-	zapLogger    = &loggerComposite{}
+	ZapLogger    = &LoggerComposite{}
 	DebugEnabled = false
 )
 
@@ -53,6 +52,7 @@ func init() {
 		LineEnding:       zapcore.DefaultLineEnding,
 		EncodeLevel:      zapcore.LowercaseLevelEncoder,
 		EncodeTime:       zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05.000"),
+		EncodeDuration:   zapcore.SecondsDurationEncoder,
 	}
 
 	newStdoutLogger := func() *zap.Logger {
@@ -63,23 +63,26 @@ func init() {
 		)
 	}
 
-	zapLogger.buildLoggers(func(name string) *zap.Logger {
+	ZapLogger.buildLoggers(func(name string) *zap.Logger {
 		return newStdoutLogger()
 	})
 }
 
 // buildLoggers automatically build loggers using reflect
-func (c *loggerComposite) buildLoggers(factory func(name string) *zap.Logger) {
+func (c *LoggerComposite) buildLoggers(factory func(name string) *zap.Logger) {
 	e := reflect.ValueOf(c).Elem()
 	etype := e.Type()
 	for i := 0; i < etype.NumField(); i++ {
 		field := etype.Field(i)
 		if !strings.HasSuffix(field.Name, "S") {
-			zlogger := factory(field.Name)
+			zlogger := factory(strings.ToLower(field.Name))
 			// c.xxx = zlogger
 			*(*unsafe.Pointer)(e.Field(i).Addr().UnsafePointer()) = unsafe.Pointer(zlogger)
-			s := e.FieldByName(field.Name + "S")
-			if s.IsValid() {
+			if s := e.FieldByName(strings.ToLower(field.Name[:1]) + field.Name[1:] + "S"); s.IsValid() {
+				// c.xxxS = zlogger.Sugar()
+				*(*unsafe.Pointer)(s.Addr().UnsafePointer()) = unsafe.Pointer(zlogger.Sugar())
+			}
+			if s := e.FieldByName(strings.ToUpper(field.Name[:1]) + field.Name[1:] + "S"); s.IsValid() {
 				// c.xxxS = zlogger.Sugar()
 				*(*unsafe.Pointer)(s.Addr().UnsafePointer()) = unsafe.Pointer(zlogger.Sugar())
 			}
@@ -141,80 +144,57 @@ func setupZapLogger0(dev bool) {
 	// Build loggers
 	// set xxx = newZapLogger('xxx.log') using reflect
 	// set xxxS = xxx.Sugar() using reflect
-	// When you need to add a new logger, just add it as the field of loggerComposite
-	zapLogger.buildLoggers(func(name string) *zap.Logger {
+	// When you need to add a new logger, just add it as the field of LoggerComposite
+	ZapLogger.buildLoggers(func(name string) *zap.Logger {
 		return newZapLogger(name + ".log")
 	})
 }
 
 func Debugz(msg string, fields ...zap.Field) {
 	if DebugEnabled {
-		zapLogger.debug.Info(msg, fields...)
+		ZapLogger.Debug.Info(msg, fields...)
 	}
 }
 func Infoz(msg string, fields ...zap.Field) {
-	zapLogger.info.Info(msg, fields...)
+	ZapLogger.Info.Info(msg, fields...)
 }
 func Warnz(msg string, fields ...zap.Field) {
-	zapLogger.warn.Info(msg, fields...)
+	ZapLogger.Warn.Info(msg, fields...)
 }
 func Errorz(msg string, fields ...zap.Field) {
-	zapLogger.error.Info(msg, fields...)
+	ZapLogger.Error.Info(msg, fields...)
 }
 func Configz(msg string, fields ...zap.Field) {
-	zapLogger.config.Info(msg, fields...)
-}
-
-func Debugw(msg string, keyAndValues ...interface{}) {
-	if DebugEnabled {
-		zapLogger.debugS.Infow(msg, keyAndValues...)
-	}
-}
-func Infow(msg string, keyAndValues ...interface{}) {
-	zapLogger.infoS.Infow(msg, keyAndValues...)
-}
-func Warnw(msg string, keyAndValues ...interface{}) {
-	zapLogger.warnS.Infow(msg, keyAndValues...)
-}
-func Errorw(msg string, keyAndValues ...interface{}) {
-	zapLogger.errorS.Infow(msg, keyAndValues...)
+	ZapLogger.Config.Info(msg, fields...)
 }
 
 func Debugf(msg string, args ...interface{}) {
 	if DebugEnabled {
-		zapLogger.debugS.Infof(msg, args...)
+		ZapLogger.DebugS.Infof(msg, args...)
 	}
 }
 func Infof(msg string, args ...interface{}) {
-	zapLogger.infoS.Infof(msg, args...)
+	ZapLogger.InfoS.Infof(msg, args...)
 }
 func Warnf(msg string, args ...interface{}) {
-	zapLogger.warnS.Infof(msg, args...)
+	ZapLogger.WarnS.Infof(msg, args...)
 }
 func Errorf(msg string, args ...interface{}) {
-	zapLogger.errorS.Infof(msg, args...)
+	ZapLogger.ErrorS.Infof(msg, args...)
 }
-func Configf(msg string, args ...interface{}) {
-	zapLogger.configS.Infof(msg, args...)
-}
-
 func Stat(msg string) {
-	zapLogger.stat.Info(msg)
-}
-
-func Metaf(msg string, args ...interface{}) {
-	zapLogger.metaS.Infof(msg, args...)
+	ZapLogger.Stat.Info(msg)
 }
 
 func Metaz(msg string, fields ...zap.Field) {
-	zapLogger.meta.Info(msg, fields...)
+	ZapLogger.Meta.Info(msg, fields...)
 }
 
 func IsDebugEnabled() bool {
 	return DebugEnabled
 }
 
-// Criz prints logs to cri.log
+// Criz prints logs to Cri.log
 func Criz(msg string, fields ...zap.Field) {
-	zapLogger.cri.Info(msg, fields...)
+	ZapLogger.Cri.Info(msg, fields...)
 }

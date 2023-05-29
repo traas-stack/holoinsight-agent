@@ -285,18 +285,18 @@ type (
 	ExecuteRule struct {
 		Type string `json:"type" yaml:"type"`
 		// 5s 5000单位毫秒
-		FixedRate interface{} `json:"fixedRate" yaml:"fixedRate"`
-		Offset    int         `json:"offset" yaml:"offset"`
+		FixedRate interface{} `json:"fixedRate,omitempty" yaml:"fixedRate"`
+		Offset    int         `json:"offset,omitempty" yaml:"offset"`
 	}
 	// SQL style task
 	SQLTask struct {
-		Select      *Select      `json:"select"`
-		From        *From        `json:"from"`
-		Where       *Where       `json:"where"`
-		GroupBy     *GroupBy     `json:"groupBy"`
-		Window      *Window      `json:"window"`
-		Output      *Output      `json:"output"`
-		ExecuteRule *ExecuteRule `json:"executeRule"`
+		Select      *Select     `json:"select"`
+		From        *From       `json:"from"`
+		Where       *Where      `json:"where"`
+		GroupBy     *GroupBy    `json:"groupBy"`
+		Window      *Window     `json:"window"`
+		Output      *Output     `json:"output"`
+		ExecuteRule ExecuteRule `json:"executeRule"`
 	}
 	MetricConfig struct {
 		Name       string `json:"name"`
