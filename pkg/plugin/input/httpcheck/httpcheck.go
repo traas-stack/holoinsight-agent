@@ -123,7 +123,9 @@ func (i *Input) executeHttpRequest(ctx context.Context) (*http.Response, error) 
 		req.Header.Set(k, v)
 	}
 
-	return http.DefaultClient.Do(req)
+	return (&http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+	}).Do(req)
 }
 
 func (i *Input) getTimeout() time.Duration {
