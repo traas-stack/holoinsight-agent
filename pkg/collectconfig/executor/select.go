@@ -10,7 +10,10 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
 )
 
-// select 并不通用
+const (
+	logSamplesMaxCount  = 100
+	logSamplesMaxLength = 64 * 1024
+)
 
 type (
 	DataNode interface {
@@ -25,6 +28,7 @@ type (
 	xSelect struct {
 		valueNames []string
 		values     []*xSelectOne
+		logSamples *xLogSamples
 	}
 	xSelectOne struct {
 		// TODO 这个地方应该要有类型 否则难搞...
@@ -38,6 +42,11 @@ type (
 		String string
 		Value  float64
 		Count  int32
+	}
+	xLogSamples struct {
+		Where     XWhere
+		MaxCount  int
+		MaxLength int
 	}
 )
 
@@ -104,8 +113,45 @@ func parseSelect(s *collectconfig.Select) (XSelect, error) {
 			where: where,
 		}
 	}
+	// Currently We only supports one metric in the server side.
+	// And its value name must be 'value'.
+	// There are some wrong configs with valueNames[0] != "value". So we fix it here.
+	if len(valueNames) == 1 {
+		valueNames[0] = "value"
+	}
+	var logSamples *xLogSamples
+	if s.LogSamples != nil {
+		if ls, err := parseLogSamples(s.LogSamples); err != nil {
+			return nil, err
+		} else {
+			logSamples = ls
+		}
+	}
+
 	return &xSelect{
 		valueNames: valueNames,
 		values:     values,
+		logSamples: logSamples,
+	}, nil
+}
+
+func parseLogSamples(c *collectconfig.LogSamples) (*xLogSamples, error) {
+	if c == nil {
+		return nil, nil
+	}
+	where, err := parseWhere(c.Where)
+	if err != nil {
+		return nil, err
+	}
+	if c.MaxCount > logSamplesMaxCount {
+		c.MaxCount = logSamplesMaxCount
+	}
+	if c.MaxLength > logSamplesMaxLength {
+		c.MaxLength = logSamplesMaxLength
+	}
+	return &xLogSamples{
+		Where:     where,
+		MaxCount:  c.MaxCount,
+		MaxLength: c.MaxLength,
 	}, nil
 }

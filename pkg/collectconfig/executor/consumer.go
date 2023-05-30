@@ -984,6 +984,14 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 			}
 		}
 	}
+
+	// handle log samples
+	if xs.logSamples != nil && xs.logSamples.Where != nil && len(point.LogSamples) < xs.logSamples.MaxCount {
+		if ok, err := xs.logSamples.Where.Test(ctx); ok && err == nil {
+			point.LogSamples = append(point.LogSamples, util.SubstringMax(ctx.GetLine(), xs.logSamples.MaxLength))
+		}
+	}
+
 	if processGroupEvent != nil {
 		processGroupEvent.Set("selectedValues", selectedValues)
 	}

@@ -34,7 +34,16 @@ type (
 		Elect *Elect `yaml:"elect"`
 	}
 	Select struct {
-		Values []*SelectOne `json:"values"`
+		Values     []*SelectOne `json:"values"`
+		LogSamples *LogSamples  `json:"logSamples"`
+	}
+	LogSamples struct {
+		// Where is the condition log samples must match
+		Where *Where `json:"where"`
+		// MaxCount max log sample count
+		MaxCount int `json:"maxCount"`
+		// MaxCount max string length of every log sample
+		MaxLength int `json:"maxLength"`
 	}
 	SelectOne struct {
 		// TODO

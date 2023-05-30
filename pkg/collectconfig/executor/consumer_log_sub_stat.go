@@ -184,12 +184,18 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) bool {
 				}
 			}
 			dd := &model.DetailData{
-				Timestamp:   expectedTs,
-				Tags:        tags,
-				Values:      values,
-				SingleValue: len(v.ValueNames) == 1,
+				Timestamp: expectedTs,
+				Tags:      tags,
+				Values:    values,
 			}
 			datum = append(datum, dd)
+
+			if len(v.LogSamples) > 0 {
+				dd.Values["logsamples"] = util.ToJsonString(map[string]interface{}{
+					"samples": v.LogSamples,
+				})
+			}
+
 		}
 
 	})
