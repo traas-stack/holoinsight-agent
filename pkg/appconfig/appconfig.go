@@ -126,7 +126,6 @@ type (
 	}
 	// DaemonagentConfig daemonagent config
 	DaemonagentConfig struct {
-		ClusterAgentEnabled bool `json:"clusterAgentEnabled" yaml:"clusterAgentEnabled"`
 	}
 )
 

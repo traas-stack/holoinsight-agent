@@ -315,12 +315,11 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 
 	App.AddStopComponent(pm, om, bsm)
 
-	if appconfig.StdAgentConfig.Daemonagent.ClusterAgentEnabled {
-		masterMaintainer := master.NewK8sNodeMasterMaintainer(ioc.Crii, ioc.K8sClientset)
-		masterMaintainer.Register(&clusteragent.MasterComponent{})
-		go masterMaintainer.Start()
-		App.AddStopComponent(masterMaintainer)
-	}
+	masterMaintainer := master.NewK8sNodeMasterMaintainer(ioc.Crii, ioc.K8sClientset)
+	masterMaintainer.Register(&clusteragent.MasterComponent{})
+	go masterMaintainer.Start()
+	App.AddStopComponent(masterMaintainer)
+
 	b.callCustomizers("daemonagent-setup-end", nil)
 
 	return nil

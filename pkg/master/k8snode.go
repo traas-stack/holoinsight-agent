@@ -181,7 +181,9 @@ func (m *K8sNodeMasterMaintainer) onChange0() {
 }
 
 func (m *K8sNodeMasterMaintainer) iAmMaster(masterPod *v1.Pod) bool {
-	return masterPod != nil && masterPod.Spec.NodeName == m.cri.LocalAgentMeta().NodeName()
+	meta := m.cri.LocalAgentMeta()
+	return masterPod != nil && masterPod.Spec.NodeName == meta.NodeName() && masterPod.Name == meta.PodName()
+
 }
 
 func (m *K8sNodeMasterMaintainer) onMasterEnter() {
