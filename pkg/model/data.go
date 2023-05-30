@@ -22,8 +22,7 @@ type (
 		// 明确是tags
 		Tags map[string]string
 		// TODO 似乎有一部分case values也是string 此时要和tags区分开
-		Values      map[string]interface{}
-		SingleValue bool
+		Values map[string]interface{}
 	}
 
 	// header

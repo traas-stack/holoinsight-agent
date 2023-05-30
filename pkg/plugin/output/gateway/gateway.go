@@ -13,6 +13,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
+	"sort"
 	"strings"
 	"time"
 
@@ -107,75 +108,75 @@ func (c *gatewayOutput) writeBatchAsync0(configKey, targetKey, metricName string
 
 var singleValueKeys = []string{"value"}
 
-// TODO 解释一下
+func getOrCreate(configKey, targetKey, metricName string, taskResultByValueName map[string]*pb.WriteMetricsRequestV4_TaskResult, dd *model.DetailData, valueName string) *pb.WriteMetricsRequestV4_TaskResult {
+	if r, ok := taskResultByValueName[valueName]; ok {
+		return r
+	}
+
+	var mergedMetricName string
+	if valueName == "value" {
+		mergedMetricName = metricName
+	} else if strings.Contains(metricName, "%s") {
+		mergedMetricName = strings.Replace(metricName, "%s", valueName, 1)
+	} else if strings.HasSuffix(metricName, ".") || strings.HasSuffix(metricName, "_") {
+		mergedMetricName = metricName + valueName
+	} else {
+		mergedMetricName = metricName + "_" + valueName
+	}
+
+	// Here we have to sort the tagKeys to make it order stable
+	// tagKeys and tagValues must match.
+	tagKeys := make([]string, 0, len(dd.Tags))
+	for k := range dd.Tags {
+		tagKeys = append(tagKeys, k)
+	}
+	sort.Strings(tagKeys)
+
+	r := &pb.WriteMetricsRequestV4_TaskResult{
+		Key:           configKey + "/" + targetKey,
+		RefCollectKey: configKey,
+		RefTargetKey:  targetKey,
+		Table: &pb.WriteMetricsRequestV4_Table{
+			Header: &pb.WriteMetricsRequestV4_Header{
+				MetricName: mergedMetricName,
+				TagKeys:    tagKeys,
+				ValueKeys:  singleValueKeys,
+			},
+		},
+	}
+	taskResultByValueName[valueName] = r
+	return r
+}
+
 func convertToTaskResult2(configKey, targetKey, metricName string, array []*model.DetailData) []*pb.WriteMetricsRequestV4_TaskResult {
-	var a []*pb.WriteMetricsRequestV4_TaskResult
+	// datum in array must have same tag keys
+
+	taskResultByValueName := make(map[string]*pb.WriteMetricsRequestV4_TaskResult)
+
 	for _, i := range array {
-		tagKeys := make([]string, 0, len(i.Tags))
 		tagValues := make([]string, 0, len(i.Tags))
-		for k, v := range i.Tags {
-			tagKeys = append(tagKeys, k)
-			tagValues = append(tagValues, v)
-		}
-		if i.SingleValue {
-			for _, v := range i.Values {
-				a = append(a, &pb.WriteMetricsRequestV4_TaskResult{
-					Key:           configKey + "/" + targetKey,
-					RefCollectKey: configKey,
-					RefTargetKey:  targetKey,
-					Table: &pb.WriteMetricsRequestV4_Table{
-						Header: &pb.WriteMetricsRequestV4_Header{
-							MetricName: metricName,
-							TagKeys:    tagKeys,
-							ValueKeys:  singleValueKeys,
-						},
-						Rows: []*pb.WriteMetricsRequestV4_Row{
-							{
-								Timestamp: i.Timestamp,
-								TagValues: tagValues,
-								ValueValues: []*pb.DataNode{
-									convertToDataNode(v),
-								},
-							},
-						},
-					},
-				})
-			}
-			continue
-		}
-		for vk, v := range i.Values {
-			name := vk
-			if metricName != "" {
-				if strings.Contains(metricName, "%s") {
-					name = strings.Replace(metricName, "%s", vk, 1)
-				} else if strings.HasSuffix(metricName, ".") || strings.HasSuffix(metricName, "_") {
-					name = metricName + vk
-				} else {
-					name = metricName + "_" + vk
+
+		for valueName, v := range i.Values {
+			taskResult := getOrCreate(configKey, targetKey, metricName, taskResultByValueName, i, valueName)
+			if len(tagValues) == 0 {
+				for _, tagKey := range taskResult.Table.Header.TagKeys {
+					tagValues = append(tagValues, i.Tags[tagKey])
 				}
 			}
-			a = append(a, &pb.WriteMetricsRequestV4_TaskResult{
-				Key:           configKey + "/" + targetKey,
-				RefCollectKey: configKey,
-				RefTargetKey:  targetKey,
-				Table: &pb.WriteMetricsRequestV4_Table{
-					Header: &pb.WriteMetricsRequestV4_Header{
-						MetricName: name,
-						TagKeys:    tagKeys,
-						ValueKeys:  singleValueKeys,
-					},
-					Rows: []*pb.WriteMetricsRequestV4_Row{
-						{
-							Timestamp: i.Timestamp,
-							TagValues: tagValues,
-							ValueValues: []*pb.DataNode{
-								convertToDataNode(v),
-							},
-						},
-					},
+
+			taskResult.Table.Rows = append(taskResult.Table.Rows, &pb.WriteMetricsRequestV4_Row{
+				Timestamp: i.Timestamp,
+				TagValues: tagValues,
+				ValueValues: []*pb.DataNode{
+					convertToDataNode(v),
 				},
 			})
 		}
+	}
+
+	a := make([]*pb.WriteMetricsRequestV4_TaskResult, 0, len(taskResultByValueName))
+	for _, r := range taskResultByValueName {
+		a = append(a, r)
 	}
 	return a
 }

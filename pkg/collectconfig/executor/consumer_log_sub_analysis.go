@@ -170,16 +170,12 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 
 		r := &loganalysis.Unknown{AnalyzedLogs: []*loganalysis.AnalyzedLog{t}}
 		metrics = append(metrics, &model.DetailData{
-			Timestamp:   expectedTs,
-			Tags:        map[string]string{"eventName": pattern},
-			Values:      map[string]interface{}{"analysis": util.ToJsonString(r)},
-			SingleValue: false,
-		})
-		metrics = append(metrics, &model.DetailData{
-			Timestamp:   expectedTs,
-			Tags:        map[string]string{"eventName": pattern},
-			Values:      map[string]interface{}{"value": t.Count},
-			SingleValue: true,
+			Timestamp: expectedTs,
+			Tags:      map[string]string{"eventName": pattern},
+			Values: map[string]interface{}{
+				"value":    t.Count,
+				"analysis": util.ToJsonString(r),
+			},
 		})
 	}
 
@@ -195,16 +191,8 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 				"analysis": util.ToJsonString(&loganalysis.Unknown{
 					AnalyzedLogs: analyzedLogs,
 				}),
-			},
-			SingleValue: false,
-		})
-		metrics = append(metrics, &model.DetailData{
-			Timestamp: expectedTs,
-			Tags:      map[string]string{"eventName": "__analysis"},
-			Values: map[string]interface{}{
 				"value": unknownPatternLogsCount,
 			},
-			SingleValue: true,
 		})
 	}
 
