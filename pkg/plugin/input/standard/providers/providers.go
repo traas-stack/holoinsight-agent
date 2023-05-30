@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"strings"
 	"sync"
 )
 
@@ -21,6 +22,8 @@ var (
 )
 
 func Register(configType string, p InputProvider) {
+	configType = StandardizeType(configType)
+
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -32,9 +35,19 @@ func Register(configType string, p InputProvider) {
 }
 
 func Get(configType string) (InputProvider, bool) {
+	configType = StandardizeType(configType)
+
 	mutex.RLock()
 	defer mutex.RUnlock()
 
 	p, ok := providers[configType]
 	return p, ok
+}
+
+func StandardizeType(t string) string {
+	index := strings.LastIndexByte(t, '.')
+	if index >= 0 {
+		t = t[index+1:]
+	}
+	return strings.ToLower(t)
 }

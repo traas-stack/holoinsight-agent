@@ -94,7 +94,7 @@ func (m *Manager) Start() {
 }
 
 func (m *Manager) processTask(task *collecttask.CollectTask, add bool, init bool) {
-	configType := standardizeType(task.Config.Type)
+	configType := providers.StandardizeType(task.Config.Type)
 	if _, ok := providers.Get(configType); ok {
 		m.processStandardTasks(task, add, init)
 		return
@@ -113,16 +113,8 @@ func (m *Manager) processTask(task *collecttask.CollectTask, add bool, init bool
 	default:
 		logger.Configz("unknown config type", //
 			zap.String("key", task.Key), //
-			zap.String("configType", task.Config.Type))
+			zap.String("configType", configType))
 	}
-}
-
-func standardizeType(t string) string {
-	index := strings.LastIndexByte(t, '.')
-	if index >= 0 {
-		t = t[index+1:]
-	}
-	return strings.ToLower(t)
 }
 
 func (m *Manager) processSqlTask(task *collecttask.CollectTask, add, init bool) {

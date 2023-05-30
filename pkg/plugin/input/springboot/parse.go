@@ -33,7 +33,7 @@ type (
 )
 
 func init() {
-	providers.Register("SpringBootTask", Parse)
+	providers.Register("springboottask", Parse)
 }
 
 func Parse(task *collecttask.CollectTask) (api.Input, error) {

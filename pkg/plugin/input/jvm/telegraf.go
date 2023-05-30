@@ -45,7 +45,7 @@ var (
 )
 
 func init() {
-	providers.Register("JvmTask", NewTelegrafJvmInput)
+	providers.Register("jvmtask", NewTelegrafJvmInput)
 }
 
 func NewTelegrafJvmInput(target *collecttask.CollectTask) (api.Input, error) {
