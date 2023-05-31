@@ -18,7 +18,7 @@ type (
 	ConsoleOutput struct{}
 )
 
-func (c *ConsoleOutput) WriteMetrics(metrics []*model.Metric, extension output.Extension) {
+func (c *ConsoleOutput) WriteMetricsV1(metrics []*model.Metric, extension output.Extension) {
 	for _, metric := range metrics {
 		logger.Infof("[output] [console] %s %+v %d %f", metric.Name, metric.Tags, metric.Timestamp, metric.Value)
 	}
@@ -39,7 +39,7 @@ func (c *ConsoleOutput) WriteBatchAsync(configKey, targetKey, metricName string,
 	return nil
 }
 
-func (c *ConsoleOutput) WriteBatchSync(configKey, targetKey, metricName string, array []*model.DetailData) error {
+func (c *ConsoleOutput) WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData) error {
 	return nil
 }
 

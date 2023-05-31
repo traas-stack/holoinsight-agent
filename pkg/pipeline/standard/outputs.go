@@ -20,5 +20,5 @@ func (o *Output) Write(metrics []*model.Metric) {
 	oe := output.Extension{
 		Tenant: o.Tenant,
 	}
-	o.O.WriteMetrics(metrics, oe)
+	o.O.WriteMetricsV1(metrics, oe)
 }

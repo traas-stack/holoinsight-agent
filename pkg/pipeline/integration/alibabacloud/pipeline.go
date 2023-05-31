@@ -120,29 +120,26 @@ func ParsePipeline(task *collecttask.CollectTask) (*Pipeline, error) {
 }
 
 func (p *Pipeline) flush(metrics []*model.Metric) {
+	if len(metrics) == 0 {
+		return
+	}
+
 	for _, metric := range metrics {
 		meta.AttachSystemCommonTagsTo(metric.Tags)
 	}
-	gw, err := gateway.Acquire()
-	if err == nil {
-		func() {
-			defer gateway.GatewaySingletonHolder.Release()
+	extensions := make(map[string]string, 2)
+	extensions["agentID"] = agentmeta.GetAgentId()
+	extensions["tenant"] = p.tenant
 
-			size := len(metrics)
-			if size > 0 {
-				extensions := make(map[string]string, 1)
-				extensions["agentID"] = agentmeta.GetAgentId()
-				extensions["tenant"] = p.tenant
-				_, err := gw.WriteMetricsV1Extension2(context.Background(), extensions, metrics)
-				if err != nil {
-					logger.Errorz("[pipeline] [alibabacloud] WriteMetricsV1 error", zap.String("tenant", p.tenant), zap.Int("metrics", size), zap.Error(err))
-				} else {
-					logger.Infoz("[pipeline] [alibabacloud] WriteMetricsV1 success", zap.String("tenant", p.tenant), zap.Int("metrics", size))
-				}
-			}
-		}()
+	err := gateway.GetWriteService().WriteV1(context.Background(), &gateway.WriteV1Request{
+		Batch:     metrics,
+		Extension: extensions,
+		NoMerge:   true,
+	})
+	if err != nil {
+		logger.Errorz("[pipeline] [alibabacloud] WriteMetricsV1 error", zap.String("tenant", p.tenant), zap.Int("metrics", len(metrics)), zap.Error(err))
 	} else {
-		logger.Errorz("[pipeline] [alibabacloud] acquire gateway error", zap.Error(err))
+		logger.Infoz("[pipeline] [alibabacloud] WriteMetricsV1 success", zap.String("tenant", p.tenant), zap.Int("metrics", len(metrics)))
 	}
 }
 

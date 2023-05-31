@@ -152,13 +152,15 @@ func (m *OOMManager) emitOOMMetrics(emitTime time.Time) {
 		})
 	}
 
-	if gtw, err := gateway.Acquire(); err == nil {
-		defer gateway.GatewaySingletonHolder.Release()
-
-		begin := time.Now()
-		_, err := gtw.WriteMetricsV1Extension2(context.Background(), nil, metrics)
-		cost := time.Now().Sub(begin)
-
-		logger.Infoz("[oom]", zap.Int("metrics", len(metrics)), zap.Duration("cost", cost), zap.Error(err))
+	// TODO Decoupling data production and consumption
+	begin := time.Now()
+	err := gateway.GetWriteService().WriteV1(context.Background(), &gateway.WriteV1Request{
+		Batch: metrics,
+	})
+	cost := time.Now().Sub(begin)
+	if err == nil {
+		logger.Infoz("[oom] report success", zap.Int("metrics", len(metrics)), zap.Duration("cost", cost))
+	} else {
+		logger.Errorz("[oom] report error", zap.Int("metrics", len(metrics)), zap.Duration("cost", cost), zap.Error(err))
 	}
 }

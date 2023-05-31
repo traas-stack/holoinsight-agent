@@ -227,7 +227,7 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 	}
 
 	go func() {
-		err := c.output.WriteBatchSync(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum)
+		err := c.output.WriteBatchV4(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum)
 		c.runInLock(func() {
 			c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
 				if err != nil {
@@ -386,7 +386,6 @@ func (c *Consumer) Start() {
 				zap.Error(err))
 			return
 		}
-		out.Start()
 		c.SetOutput(out)
 	}
 }
@@ -419,10 +418,6 @@ func (c *Consumer) Stop() {
 
 	if !c.updated {
 		c.maybeReleaseTimeline()
-	}
-
-	if c.output != nil {
-		c.output.Stop()
 	}
 }
 

@@ -52,12 +52,6 @@ func (s *storageAppender) Commit() error {
 		return nil
 	}
 
-	g, err := gateway.Acquire()
-	if err != nil {
-		return err
-	}
-	defer gateway.GatewaySingletonHolder.Release()
-
 	metrics := make([]*model.Metric, 0, len(s.buffer))
 	for _, e := range s.buffer {
 		name := ""
@@ -80,9 +74,10 @@ func (s *storageAppender) Commit() error {
 			logger.Debugz("[openmetrics] [storage] write metric", zap.Int64("t", e.t), zap.Any("labels", e.l), zap.Float64("v", e.v))
 		}
 	}
-	// TODO 禁止每个地方随意调用 gateway, 在 gateway 基础之上再封装一个写入层
-	resp, err := g.WriteMetricsV1Extension2(context.Background(), nil, metrics)
-	logger.Infoz("[openmetrics] [storage] write", zap.Int("size", len(metrics)), zap.Any("resp", resp), zap.Error(err))
+	err := gateway.GetWriteService().WriteV1(context.Background(), &gateway.WriteV1Request{
+		Batch: metrics,
+	})
+	logger.Infoz("[openmetrics] [storage] write", zap.Int("size", len(metrics)), zap.Error(err))
 	s.buffer = nil
 
 	return err

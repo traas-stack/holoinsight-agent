@@ -6,13 +6,13 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
+	"go.uber.org/zap"
 	"sort"
 	"strings"
 	"time"
@@ -34,34 +34,34 @@ type (
 	}
 )
 
-func (c *gatewayOutput) WriteMetrics(metrics []*model.Metric, oe output.Extension) {
-	gI, err := GatewaySingletonHolder.Acquire()
-	if err != nil {
-		return
-	}
-	defer GatewaySingletonHolder.Release()
+var (
+	outputStat      = stat.DefaultManager1S.Counter("output.gateway")
+	singleValueKeys = []string{"value"}
+)
 
-	g := gI.(*gateway.Service)
-	extension := map[string]string{
-		"tenant": oe.Tenant,
+func (c *gatewayOutput) WriteMetricsV1(metrics []*model.Metric, oe output.Extension) {
+	request := &WriteV1Request{
+		Batch:     metrics,
+		Extension: nil,
+		NoMerge:   false,
 	}
-	resp, err := g.WriteMetricsV1Extension2(context.Background(), extension, metrics)
-	if err != nil || resp.Header.Code != 0 {
-		logger.Errorf("WriteMetricsV1Extension2 %+v %+v", resp, err)
+
+	if oe.Tenant != "" {
+
+		request.Extension = map[string]string{
+			"tenant": oe.Tenant,
+		}
+		request.NoMerge = true
+	}
+
+	err := GetWriteService().WriteV1(context.Background(), request)
+	if err != nil {
+		logger.Errorz("[gateway] write error", zap.Error(err))
 	}
 }
 
 func newGatewayOutput(config output.Config) (output.Output, error) {
-	iiI, err := gatewayProcessorSingletonHolder.Acquire()
-	if err != nil {
-		return nil, err
-	}
-	ii := iiI.([]interface{})
-	processor := ii[0].(batch.Processor)
-	return &gatewayOutput{
-		processor: processor,
-		service:   ii[1].(*gateway.Service),
-	}, nil
+	return &gatewayOutput{}, nil
 }
 
 func (c *gatewayOutput) Start() {
@@ -69,47 +69,18 @@ func (c *gatewayOutput) Start() {
 }
 
 func (c *gatewayOutput) Stop() {
-	gatewayProcessorSingletonHolder.Release()
 }
 
 func (c *gatewayOutput) WriteBatchAsync(configKey, targetKey, metricName string, array []*model.DetailData) error {
-	go c.writeBatchAsync0(configKey, targetKey, metricName, array)
+	batch := convertToTaskResult2(configKey, targetKey, metricName, array)
+	go GetWriteService().WriteV4(context.Background(), &WriteV4Request{Batch: batch})
 	return nil
 }
 
-var outputStat = stat.DefaultManager1S.Counter("output.gateway")
-
-func (c *gatewayOutput) WriteBatchSync(configKey, targetKey, metricName string, array []*model.DetailData) error {
-	converted := convertToTaskResult2(configKey, targetKey, metricName, array)
-	task := &TaskV4{
-		Batch:    converted,
-		ResultCh: make(chan *Result, 1),
-	}
-
-	if !c.processor.TryPut(task) {
-		return errors.New("write queue full")
-	}
-	return (<-task.ResultCh).Err
+func (c *gatewayOutput) WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData) error {
+	batch := convertToTaskResult2(configKey, targetKey, metricName, array)
+	return GetWriteService().WriteV4(context.Background(), &WriteV4Request{Batch: batch})
 }
-
-func (c *gatewayOutput) writeBatchAsync0(configKey, targetKey, metricName string, array []*model.DetailData) error {
-	converted := convertToTaskResult2(configKey, targetKey, metricName, array)
-	outputStat.Add([]string{
-		configKey,
-	}, []int64{
-		int64(len(converted)),
-	})
-	task := &TaskV4{
-		Batch:    converted,
-		ResultCh: make(chan *Result, 1),
-	}
-	if !c.processor.TryPut(task) {
-		return errors.New("write queue full")
-	}
-	return nil
-}
-
-var singleValueKeys = []string{"value"}
 
 func getOrCreate(configKey, targetKey, metricName string, taskResultByValueName map[string]*pb.WriteMetricsRequestV4_TaskResult, dd *model.DetailData, valueName string) *pb.WriteMetricsRequestV4_TaskResult {
 	if r, ok := taskResultByValueName[valueName]; ok {
@@ -224,81 +195,4 @@ func convertToDataNode(v interface{}) *pb.DataNode {
 			Value: f64,
 		}
 	}
-}
-
-func convertToTaskResult(configKey, targetKey, metricName string, array []*model.DetailData) *pb.WriteMetricsRequestV4_TaskResult {
-
-	a0 := array[0]
-	tagKeys := make([]string, 0, len(a0.Tags))
-	valueKeys := make([]string, 0, len(a0.Values))
-
-	for k := range a0.Tags {
-		tagKeys = append(tagKeys, k)
-	}
-	for k := range a0.Values {
-		valueKeys = append(valueKeys, k)
-	}
-
-	tr := &pb.WriteMetricsRequestV4_TaskResult{
-		Key:           configKey + "/" + targetKey,
-		RefCollectKey: configKey,
-		RefTargetKey:  targetKey,
-		Table: &pb.WriteMetricsRequestV4_Table{
-			Header: &pb.WriteMetricsRequestV4_Header{
-				MetricName: metricName,
-				TagKeys:    tagKeys,
-				ValueKeys:  valueKeys,
-			},
-		},
-	}
-
-rowLoop:
-	for _, a := range array {
-		if len(a0.Tags) != len(a.Tags) {
-			continue
-		}
-		if len(a0.Values) != len(a.Values) {
-			continue
-		}
-
-		// TODO 这里的实现比较简单, 每个DetailData2自己就是一个 TaskResult, 其实是可以合并的
-		tagValues := make([]string, len(a0.Tags))
-		valueValues := make([]*pb.DataNode, len(a0.Values))
-
-		for i, key := range tagKeys {
-			v, ok := a.Tags[key]
-			if !ok {
-				continue rowLoop
-			}
-			tagValues[i] = v
-		}
-
-		for i, key := range valueKeys {
-			v, ok := a.Values[key]
-			if !ok {
-				continue rowLoop
-			}
-			switch x := v.(type) {
-			case string:
-				valueValues[i] = &pb.DataNode{
-					// TODO 消灭硬编码
-					Type:  2,
-					Bytes: []byte(x),
-				}
-			default:
-				valueValues[i] = &pb.DataNode{
-					Type:  0,
-					Value: cast.ToFloat64(x),
-				}
-			}
-		}
-
-		tr.Table.Rows = append(tr.Table.Rows, &pb.WriteMetricsRequestV4_Row{
-			Timestamp:   a.Timestamp,
-			TagValues:   tagValues,
-			ValueValues: valueValues,
-		})
-	}
-
-	return tr
 }

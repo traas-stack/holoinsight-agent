@@ -544,28 +544,19 @@ func (c *cadvisorSysCollector) extractNodeTags(cAdvisorPod *v1.Pod) map[string]s
 
 // TODO refactor
 func (c *cadvisorSysCollector) send(metrics []*model.Metric) error {
-	if g, err := gateway.Acquire(); err == nil {
-		if c.suffix != "" {
-			for _, metric := range metrics {
-				if !strings.HasSuffix(metric.Name, c.suffix) {
-					metric.Name += c.suffix
-				}
+	if c.suffix != "" {
+		for _, metric := range metrics {
+			if !strings.HasSuffix(metric.Name, c.suffix) {
+				metric.Name += c.suffix
 			}
 		}
-		c.state.metricsCount = len(metrics)
-
-		defer gateway.GatewaySingletonHolder.Release()
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		resp, err := g.WriteMetricsV1Extension2(ctx, nil, metrics)
-		if err != nil || resp.Header.Code != 0 {
-			logger.Errorz("[cadvisor] report error", zap.Any("resp", resp), zap.Error(err))
-		}
-		return err
-	} else {
-		logger.Errorz("[cadvisor] [output] get gateway error", zap.Error(err))
-		return err
 	}
+	c.state.metricsCount = len(metrics)
+
+	// TODO Decoupling data production and consumption
+	return gateway.GetWriteService().WriteV1(context.Background(), &gateway.WriteV1Request{
+		Batch: metrics,
+	})
 }
 
 func (c *cadvisorSysCollector) calcMetrics(metricTime time.Time, cAdvisorPod *v1.Pod, mi *cv1.MachineInfo, ctrs []cv1.ContainerInfo) []*model.Metric {
