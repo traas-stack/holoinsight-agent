@@ -70,7 +70,7 @@ var gatewayProcessorSingletonHolder = singleton.NewHolder(func() (interface{}, e
 
 	return []interface{}{processor, gw}, nil
 }, func(i interface{}) {
-	i.(batch.Processor).Shutdown()
+	i.([]interface{})[1].(batch.Processor).Shutdown()
 	GatewaySingletonHolder.Release()
 })
 
