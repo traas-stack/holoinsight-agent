@@ -6,7 +6,7 @@ package gateway
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
@@ -81,16 +81,15 @@ var outputStat = stat.DefaultManager1S.Counter("output.gateway")
 
 func (c *gatewayOutput) WriteBatchSync(configKey, targetKey, metricName string, array []*model.DetailData) error {
 	converted := convertToTaskResult2(configKey, targetKey, metricName, array)
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
-	defer cancel()
-	resp, err := c.service.WriteMetrics(ctx, converted)
-	if err != nil {
-		return err
+	task := &TaskV4{
+		Batch:    converted,
+		ResultCh: make(chan *Result, 1),
 	}
-	if resp.Header.Code != 0 {
-		return fmt.Errorf("server error: %+v", resp)
+
+	if !c.processor.TryPut(task) {
+		return errors.New("write queue full")
 	}
-	return nil
+	return (<-task.ResultCh).Err
 }
 
 func (c *gatewayOutput) writeBatchAsync0(configKey, targetKey, metricName string, array []*model.DetailData) error {
@@ -100,8 +99,12 @@ func (c *gatewayOutput) writeBatchAsync0(configKey, targetKey, metricName string
 	}, []int64{
 		int64(len(converted)),
 	})
-	for _, tr := range converted {
-		c.processor.Put(tr)
+	task := &TaskV4{
+		Batch:    converted,
+		ResultCh: make(chan *Result, 1),
+	}
+	if !c.processor.TryPut(task) {
+		return errors.New("write queue full")
 	}
 	return nil
 }
