@@ -146,6 +146,7 @@ func (p *Pipeline) Start() {
 func (p *Pipeline) Stop() {
 	close(p.stopCh)
 	<-p.stoppedCh
+	logger.Infoz("[pipeline] stop", zap.String("key", p.task.Key))
 }
 
 func (p *Pipeline) taskLoop() {
