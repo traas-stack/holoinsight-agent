@@ -5,6 +5,7 @@
 package stat
 
 import (
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,7 +25,6 @@ type (
 		adders         []*Adder
 		adderMap       map[string]*Adder
 		gaugeMap       map[string]Gauger
-		timer          *time.Timer
 		status         int32
 		period         time.Time
 		printer        Printer
@@ -124,17 +124,12 @@ func (m *Manager) IsStopped() bool {
 }
 
 func (m *Manager) run() {
-	{
-		now := time.Now()
-		m.period = time.Unix(now.Unix()/m.intervalSecond*m.intervalSecond, 0)
-		m.timer = time.NewTimer(m.period.Add(time.Duration(m.intervalSecond) * time.Second).Sub(now))
-	}
-
-	defer m.timer.Stop()
+	timer, _ := util.NewAlignedTimer(time.Duration(m.intervalSecond)*time.Second, 0, true, false)
+	defer timer.Stop()
 
 	for {
 		select {
-		case <-m.timer.C:
+		case <-timer.C:
 			if m.IsStopped() {
 				break
 			}
@@ -166,10 +161,7 @@ func (m *Manager) run() {
 
 			m.print(st)
 
-			nextPeriod := time.Unix(now.Unix()/m.intervalSecond*m.intervalSecond+m.intervalSecond, 0)
-			m.period = nextPeriod
-
-			m.timer.Reset(nextPeriod.Sub(now))
+			timer.Next()
 		}
 	}
 }
@@ -191,11 +183,6 @@ func (a *Adder) Bind(keys ...string) *Bind {
 }
 
 func (b *Bind) Add(values ...int64) {
-	//b.a.manager.eventCh <- event{
-	//	a:      b.a,
-	//	key:    b.joinedKey,
-	//	values: values,
-	//}
 	b.a.add(b.joinedKey, values)
 }
 
