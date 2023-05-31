@@ -7,6 +7,7 @@ package eventcollector
 import (
 	"context"
 	"encoding/json"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"time"
 
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
@@ -52,7 +53,7 @@ func (ec *EventCollector) Collect(key, msg string) {
 }
 
 func (ec *EventCollector) collectLoop(d time.Duration) {
-	util.GoWithRecover(func() {
+	recoverutils.GoWithRecover(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		ec.cancel = cancel
 

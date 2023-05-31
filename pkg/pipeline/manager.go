@@ -26,6 +26,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/standard/providers"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/zap"
 	"runtime"
 	"strings"
@@ -81,7 +82,7 @@ func (m *Manager) Start() {
 
 	tasks := m.getAllTasks()
 	for _, task := range tasks {
-		util.WithRecover(func() {
+		recoverutils.WithRecover(func() {
 			m.processTask(task, true, true)
 		})
 	}

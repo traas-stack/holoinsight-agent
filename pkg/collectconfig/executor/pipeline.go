@@ -11,6 +11,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/zap"
 	"runtime"
 	"sync"
@@ -161,7 +162,7 @@ func (p *LogPipeline) setupConsumer0(st *api.SubTask) (ret error) {
 func (p *LogPipeline) Update(f func(api.Pipeline)) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	util.WithRecover(func() {
+	recoverutils.WithRecover(func() {
 		f(p)
 	}, func(err interface{}) {
 		logger.Errorz("[pipeline] update panic", zap.String("key", p.st.CT.Key), zap.Any("panic", err))

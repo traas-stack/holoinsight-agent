@@ -2,9 +2,10 @@
  * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
  */
 
-package util
+package recoverutils
 
 import (
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"runtime"
 	"sync"
 )
@@ -19,7 +20,7 @@ func WithRecover(handler func(), recoverHandlers ...func(p interface{})) {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			//logger.Errorf("goroutine panic: %v\n%s", r, string(buf))
+			logger.Errorf("goroutine panic: %v\n%s", r, string(buf))
 
 			for _, f := range recoverHandlers {
 				if f != nil {

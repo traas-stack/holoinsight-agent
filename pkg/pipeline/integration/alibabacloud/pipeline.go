@@ -21,6 +21,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/integration/alibabacloud"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/ratelimit"
 	"go.uber.org/zap"
 	"strings"
@@ -451,7 +452,7 @@ func (p *Pipeline) taskLoop() {
 		case <-p.stop:
 			return
 		case <-timer.Chan():
-			util.WithRecover(p.syncOnce)
+			recoverutils.WithRecover(p.syncOnce)
 			timer.Next()
 		}
 	}

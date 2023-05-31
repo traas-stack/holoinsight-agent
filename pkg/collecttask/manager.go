@@ -11,6 +11,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/zap"
 	"net/http"
 	"strings"
@@ -161,7 +162,7 @@ func (m *Manager) GetAll() []*CollectTask {
 }
 
 func (m *Manager) syncOnce() {
-	util.WithRecover(m.syncOnce0)
+	recoverutils.WithRecover(m.syncOnce0)
 }
 
 func (m *Manager) syncOnce0() {

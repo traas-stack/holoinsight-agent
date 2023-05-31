@@ -5,10 +5,9 @@
 package stats
 
 import (
+	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"sync"
 	"time"
-
-	"github.com/traas-stack/holoinsight-agent/pkg/util"
 )
 
 type (
@@ -82,7 +81,7 @@ func NewStatsManager(reportDura time.Duration, r StatsExporter) *StatsManager {
 }
 
 func (tsm *TableStatsManager) statsLoop(reportDura time.Duration) {
-	util.GoWithRecover(func() {
+	recoverutils.GoWithRecover(func() {
 		tk := time.NewTicker(reportDura)
 		defer tk.Stop()
 

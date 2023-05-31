@@ -6,6 +6,7 @@ package server
 
 import (
 	"fmt"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"net/http"
 	"reflect"
 	"runtime"
@@ -13,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 	_ "net/http/pprof"
 )
@@ -64,7 +64,7 @@ func StartHTTPController() {
 
 	var f func()
 	f = func() {
-		util.GoWithRecover(func() {
+		recoverutils.GoWithRecover(func() {
 			addr := fmt.Sprintf("127.0.0.1:%d", bindPort)
 			logger.Infoz("[debug] start debug http server", zap.String("addr", addr))
 			err := http.ListenAndServe(addr, apiHandleFuncMux)

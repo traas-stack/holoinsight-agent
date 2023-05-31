@@ -27,6 +27,7 @@ import (
 	api2 "github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	telegraf2 "github.com/traas-stack/holoinsight-agent/pkg/telegraf"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/zap"
 	"time"
 )
@@ -168,7 +169,7 @@ func (p *Pipeline) taskLoop() {
 			metricTime := nextEmitTime.Truncate(p.interval).Add(-p.interval)
 			// metricTime := nextEmitTime.Truncate(p.interval)
 
-			util.WithRecover(func() { p.collectOnce(metricTime) })
+			recoverutils.WithRecover(func() { p.collectOnce(metricTime) })
 			nextEmitTime = timer.Next()
 		}
 	}
