@@ -53,7 +53,7 @@ func NewBatchProcessorWithKey(s int, c KeyConsumer, opts ...OptionFunc) KeyBatch
 		bufferSize:   s,
 		options:      &opt,
 		batchMaxSize: int64(opt.batchThreshold),
-		batchMaxWait: int64(opt.interval / time.Second),
+		batchMaxWait: int64(opt.interval / time.Millisecond),
 		timer:        time.NewTimer(opt.interval),
 
 		consumer: c,
@@ -123,7 +123,7 @@ func (b *batchProcessorWithKey) notify() {
 	}
 
 	flushAll := func() {
-		b.timer.Reset(time.Duration(atomic.LoadInt64(&b.batchMaxWait)) * time.Second)
+		b.timer.Reset(time.Duration(atomic.LoadInt64(&b.batchMaxWait)) * time.Millisecond)
 		for k, v := range batchWithKey {
 			flush(k, v)
 		}

@@ -81,7 +81,7 @@ func NewBatchProcessor(s int, c Consumer, opts ...OptionFunc) Processor {
 		timer:      time.NewTimer(opt.interval),
 
 		batchMaxSize: int64(opt.batchThreshold),
-		batchMaxWait: int64(opt.interval / time.Second),
+		batchMaxWait: int64(opt.interval / time.Millisecond),
 
 		consumer: c,
 	}
@@ -141,7 +141,7 @@ func (b *batchProcessor) AdjustBatchMaxWait(duration int) {
 }
 
 func (b *batchProcessor) flush(batch []interface{}) {
-	b.timer.Reset(time.Duration(atomic.LoadInt64(&b.batchMaxWait)) * time.Second)
+	b.timer.Reset(time.Duration(atomic.LoadInt64(&b.batchMaxWait)) * time.Millisecond)
 	if len(batch) == 0 {
 		return
 	}
