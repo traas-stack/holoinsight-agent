@@ -512,9 +512,8 @@ func (c *Consumer) consume(resp *logstream.ReadResponse, iw *inputWrapper) int64
 }
 
 func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadResponse, consumer func(*LogContext)) {
-	ctx := &LogContext{
-		tz: c.getTargetTimezone(),
-	}
+	tz := c.getTargetTimezone()
+	ctx := &LogContext{}
 	oneLine := &LogGroup{Lines: []string{""}}
 	var err error
 
@@ -578,6 +577,7 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 		ctx.path = iw.path
 		ctx.pathTags = iw.pathTags
 		c.stat.groups++
+		ctx.tz = tz
 		consumer(ctx)
 		ctx.clearData()
 	}
