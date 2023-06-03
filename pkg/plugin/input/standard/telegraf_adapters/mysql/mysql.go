@@ -26,7 +26,7 @@ type (
 )
 
 func init() {
-	providers.Register("telegraf_mysql", func(task *collecttask.CollectTask) (api.Input, error) {
+	providers.RegisterInputProvider("telegraf_mysql", func(task *collecttask.CollectTask) (api.Input, error) {
 		conf := &Conf{}
 		if err := json.Unmarshal(task.Config.Content, conf); err != nil {
 			return nil, err

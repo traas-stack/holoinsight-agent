@@ -5,6 +5,7 @@
 package executor
 
 import (
+	"encoding/gob"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/loganalysis"
@@ -20,10 +21,14 @@ type (
 		conf   *ParsedConf
 	}
 	logAnalysisSubConsumerState struct {
-		logAnalyzer   *loganalysis.Analyzer
-		knownPatterns map[string]*loganalysis.AnalyzedLog
+		LogAnalyzer   *loganalysis.Analyzer
+		KnownPatterns map[string]*loganalysis.AnalyzedLog
 	}
 )
+
+func init() {
+	gob.Register(&logAnalysisSubConsumerState{})
+}
 
 func newLogAnalysisSubConsumer(conf *collectconfig.LogAnalysisConf) (*logAnalysisSubConsumer, error) {
 	return &logAnalysisSubConsumer{
@@ -33,8 +38,8 @@ func newLogAnalysisSubConsumer(conf *collectconfig.LogAnalysisConf) (*logAnalysi
 
 func newLogAnalysisSubConsumerState(conf *ParsedConf) *logAnalysisSubConsumerState {
 	return &logAnalysisSubConsumerState{
-		logAnalyzer:   loganalysis.NewAnalyzer(conf.MaxLogLength, conf.MaxUnknownPatterns),
-		knownPatterns: make(map[string]*loganalysis.AnalyzedLog),
+		LogAnalyzer:   loganalysis.NewAnalyzer(conf.MaxLogLength, conf.MaxUnknownPatterns),
+		KnownPatterns: make(map[string]*loganalysis.AnalyzedLog),
 	}
 }
 
@@ -85,22 +90,22 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 	}
 
 	periodStatus := c.parent.getOrCreatePeriodStatusWithoutLock(alignTs)
-	periodStatus.stat.broken = periodStatus.stat.broken || c.parent.stat.broken
-	periodStatus.stat.noContinued = periodStatus.stat.noContinued || c.parent.stat.noContinued
-	periodStatus.stat.groups++
+	periodStatus.Stat.Broken = periodStatus.Stat.Broken || c.parent.stat.Broken
+	periodStatus.Stat.NoContinued = periodStatus.Stat.NoContinued || c.parent.stat.NoContinued
+	periodStatus.Stat.Groups++
 	ctx.periodStatus = periodStatus
 
 	// get data shard
 	shard := c.parent.timeline.GetOrCreateShard(alignTs)
 	if shard.Frozen {
-		c.parent.stat.filterDelay++
-		ctx.periodStatus.stat.filterDelay++
+		c.parent.stat.FilterDelay++
+		ctx.periodStatus.Stat.FilterDelay++
 		// has log delay there is no need to process it
 		return
 	}
 
-	c.parent.stat.processed++
-	ctx.periodStatus.stat.processed++
+	c.parent.stat.Processed++
+	ctx.periodStatus.Stat.Processed++
 
 	var state *logAnalysisSubConsumerState
 	if shard.Data == nil {
@@ -117,17 +122,17 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 			continue
 		}
 		if ok {
-			if t, ok := state.knownPatterns[pattern.Name]; ok {
+			if t, ok := state.KnownPatterns[pattern.Name]; ok {
 				t.Count++
 			} else {
 				t = &loganalysis.AnalyzedLog{Sample: ctx.GetLine(), Count: 1}
-				state.knownPatterns[pattern.Name] = t
+				state.KnownPatterns[pattern.Name] = t
 			}
 			return
 		}
 	}
 
-	state.logAnalyzer.Analyze(ctx.GetLine())
+	state.LogAnalyzer.Analyze(ctx.GetLine())
 }
 
 func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
@@ -152,8 +157,8 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 		return false
 	}
 
-	analyzedLogs := state.logAnalyzer.AnalyzedLogs()
-	state.logAnalyzer.Clear()
+	analyzedLogs := state.LogAnalyzer.AnalyzedLogs()
+	state.LogAnalyzer.Clear()
 
 	var metrics []*model.DetailData
 	unknownPatternLogsCount := 0
@@ -163,8 +168,8 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 
 	totalCount := unknownPatternLogsCount
 
-	knownPatterns := state.knownPatterns
-	state.knownPatterns = make(map[string]*loganalysis.AnalyzedLog)
+	knownPatterns := state.KnownPatterns
+	state.KnownPatterns = make(map[string]*loganalysis.AnalyzedLog)
 	for pattern, t := range knownPatterns {
 		totalCount += t.Count
 
@@ -196,7 +201,7 @@ func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 		})
 	}
 
-	c.parent.stat.emit += int32(len(metrics))
+	c.parent.stat.Emit += int32(len(metrics))
 	c.parent.AddBatchDetailDatus(expectedTs, metrics)
 
 	return len(metrics) > 0

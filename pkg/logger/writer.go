@@ -42,6 +42,7 @@ type (
 		forceRotateTime time.Time
 		stop            chan struct{}
 		timeHelper      timeHelper
+		rotateDisabled  bool
 	}
 	LogConfig struct {
 		// Filename is the file to write logs to.  Backup log files will be retained
@@ -182,6 +183,10 @@ func (w *RotateWriter) maybeRotate() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	if w.rotateDisabled {
+		return
+	}
+
 	if w.isStop() {
 		return
 	}
@@ -224,7 +229,9 @@ func (w *RotateWriter) Write(p []byte) (n int, err error) {
 func (w *RotateWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
+	if w.isStop() {
+		return nil
+	}
 	close(w.stop)
 
 	return w.closeFile()
@@ -482,6 +489,12 @@ func (w *RotateWriter) rotate0(useNowTime bool) error {
 	}
 
 	return nil
+}
+
+func (w *RotateWriter) disableRotate() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.rotateDisabled = true
 }
 
 func parseTimeHelper(timeLayout string) timeHelper {

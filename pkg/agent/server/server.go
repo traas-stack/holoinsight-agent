@@ -6,19 +6,62 @@ package server
 
 import (
 	"fmt"
-	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"net/http"
 	"reflect"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"go.uber.org/zap"
 	_ "net/http/pprof"
 )
 
-var bindPort = 9117
+const (
+	bindPort = 9117
+)
+
+type (
+	HttpServerComponent struct {
+		server *http.Server
+		mutex  sync.Mutex
+	}
+)
+
+func NewHttpServerComponent() *HttpServerComponent {
+	return &HttpServerComponent{}
+}
+
+func (h *HttpServerComponent) Start() {
+	go func() {
+		apiHandleFuncMux.HandleFunc("/", printHelp)
+
+		addr := fmt.Sprintf("127.0.0.1:%d", bindPort)
+		logger.Infoz("[http] start http server", zap.String("addr", addr))
+		h.server = &http.Server{Addr: addr, Handler: apiHandleFuncMux}
+		if err := h.server.ListenAndServe(); err != nil {
+			if err == http.ErrServerClosed {
+				logger.Errorz("[http] server closed", zap.String("addr", addr))
+			} else {
+				logger.Errorz("[http] listen and serve error", zap.String("addr", addr), zap.Error(err))
+			}
+			return
+		}
+
+	}()
+}
+
+func (h *HttpServerComponent) Stop() {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	server := h.server
+	if server != nil {
+		h.server = nil
+		server.Close()
+	}
+}
 
 func buildHelps() string {
 	apiHandleFuncStoreMu.RLock()
@@ -56,23 +99,4 @@ func buildHelps() string {
 
 func printHelp(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte(buildHelps()))
-}
-
-// 启动http服务
-func StartHTTPController() {
-	apiHandleFuncMux.HandleFunc("/", printHelp)
-
-	var f func()
-	f = func() {
-		recoverutils.GoWithRecover(func() {
-			addr := fmt.Sprintf("127.0.0.1:%d", bindPort)
-			logger.Infoz("[debug] start debug http server", zap.String("addr", addr))
-			err := http.ListenAndServe(addr, apiHandleFuncMux)
-			if err != nil {
-				logger.Errorz("listen and serve debug http server fail", zap.Error(err))
-				return
-			}
-		}, func(_ interface{}) { f() })
-	}
-	f()
 }

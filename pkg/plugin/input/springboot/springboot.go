@@ -34,9 +34,9 @@ type (
 		HttpClient *http.Client
 		// 并发度
 		Concurrency int
-		state       *springBootState
+		state       *internalState
 	}
-	springBootState struct {
+	internalState struct {
 		cache1 *sync.Map
 		cache2 *sync.Map
 	}
@@ -93,7 +93,7 @@ func (s *SpringBoot) concurrency() int {
 
 func (s *SpringBoot) Collect(a api.Accumulator) error {
 	if s.state == nil {
-		s.state = &springBootState{
+		s.state = &internalState{
 			cache1: &sync.Map{},
 			cache2: &sync.Map{},
 		}

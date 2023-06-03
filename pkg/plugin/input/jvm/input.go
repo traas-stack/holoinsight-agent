@@ -6,6 +6,7 @@ package jvm
 
 import (
 	"context"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"github.com/shirou/gopsutil/v3/process"
@@ -33,32 +34,46 @@ const (
 // TODO This file couples too many cri-related details and needs to be refactored later.
 
 type (
-	telegrafInput struct {
-		state *jvmState
+	jvmInput struct {
+		state *internalState
 		task  *collecttask.CollectTask
 	}
 	perfDataReader func(path string) (map[string]interface{}, error)
 )
+
+func init() {
+	gob.Register(&internalState{})
+}
+
+func (i *jvmInput) SaveState() (interface{}, error) {
+	return i.state, nil
+}
+
+func (i *jvmInput) LoadState(state interface{}) error {
+	i.state = state.(*internalState)
+	return nil
+}
 
 var (
 	multipleJavaProcessesErr = errors.New("[jvm] find multiple java processes")
 )
 
 func init() {
-	providers.Register("jvmtask", NewTelegrafJvmInput)
+	providers.RegisterInputProvider("jvmtask", func(task *collecttask.CollectTask) (api.Input, error) {
+		return &jvmInput{
+			task: task,
+			state: &internalState{
+				ByPid: make(map[string]*pidJvmState),
+			},
+		}, nil
+	})
 }
 
-func NewTelegrafJvmInput(target *collecttask.CollectTask) (api.Input, error) {
-	return &telegrafInput{
-		task: target,
-	}, nil
-}
-
-func (i *telegrafInput) GetDefaultPrefix() string {
+func (i *jvmInput) GetDefaultPrefix() string {
 	return ""
 }
 
-func (i *telegrafInput) getProcessInfo(pid int32) (*criutils.ProcessInfo, error) {
+func (i *jvmInput) getProcessInfo(pid int32) (*criutils.ProcessInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
 	defer cancel()
 
@@ -81,7 +96,7 @@ func (i *telegrafInput) getProcessInfo(pid int32) (*criutils.ProcessInfo, error)
 	return criutils.GetProcessInfo(ctx, ioc.Crii, biz, int(pid))
 }
 
-func (i *telegrafInput) getPerfDataPaths() (map[string]string, perfDataReader, error) {
+func (i *jvmInput) getPerfDataPaths() (map[string]string, perfDataReader, error) {
 	if !i.task.Target.IsTypePod() {
 		if pathMap, err := hsperfdata.AllPerfDataPaths(); err != nil {
 			return nil, nil, err
@@ -119,10 +134,10 @@ func (i *telegrafInput) getPerfDataPaths() (map[string]string, perfDataReader, e
 	return pathMap, readPerfData, nil
 }
 
-func (i *telegrafInput) Collect(a api.Accumulator) error {
+func (i *jvmInput) Collect(a api.Accumulator) error {
 	oldState := i.state
-	newState := &jvmState{
-		byPid: make(map[string]*pidJvmState),
+	newState := &internalState{
+		ByPid: make(map[string]*pidJvmState),
 	}
 	i.state = newState
 
@@ -137,7 +152,6 @@ func (i *telegrafInput) Collect(a api.Accumulator) error {
 	if len(pathMap) > 1 {
 		return multipleJavaProcessesErr
 	}
-
 	for pid, perfPath := range pathMap {
 		pid32, err := cast.ToInt32E(pid)
 		if err != nil {
@@ -161,11 +175,11 @@ func (i *telegrafInput) Collect(a api.Accumulator) error {
 		addJvmMetrics(perfData, rawMetrics)
 		addJvmMetricsFromProcess(javaProcess, rawMetrics, tags)
 
-		newState.byPid[pid] = &pidJvmState{rawMetrics: rawMetrics}
+		newState.ByPid[pid] = &pidJvmState{RawMetrics: rawMetrics}
 
 		var lastPidState *pidJvmState
 		if oldState != nil {
-			lastPidState = oldState.byPid[pid]
+			lastPidState = oldState.ByPid[pid]
 		}
 		finalMetrics := calcFinalMetrics(rawMetrics, lastPidState)
 

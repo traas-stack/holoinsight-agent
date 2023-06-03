@@ -34,7 +34,7 @@ type (
 )
 
 func init() {
-	providers.Register("dialcheck", Parse)
+	providers.RegisterInputProvider("dialcheck", Parse)
 	inputproxy.Register("dialcheck", func() api.InputExtNsEnter {
 		return &dialcheck.Input{}
 	})

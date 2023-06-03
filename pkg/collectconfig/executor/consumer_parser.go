@@ -7,7 +7,7 @@ package executor
 import (
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 	"runtime"

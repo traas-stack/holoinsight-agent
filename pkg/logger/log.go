@@ -37,6 +37,7 @@ type (
 var (
 	ZapLogger    = &LoggerComposite{}
 	DebugEnabled = false
+	writers      []*RotateWriter
 )
 
 // init initializes default loggers (to console)
@@ -98,11 +99,17 @@ func SetupZapLogger() {
 	if appconfig.IsDev() {
 		return
 	}
-	setupZapLogger0(false)
+	setupZapLogger0()
 	registerHttpHandler()
 }
 
-func setupZapLogger0(dev bool) {
+func DisableRotates() {
+	for _, writer := range writers {
+		writer.disableRotate()
+	}
+}
+
+func setupZapLogger0() {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:          "time",
 		LevelKey:         "level",
@@ -135,6 +142,7 @@ func setupZapLogger0(dev bool) {
 		if err != nil {
 			panic(err)
 		}
+		writers = append(writers, w)
 
 		return zap.New(
 			zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), zapcore.AddSync(w), alwaysLevel{}),

@@ -12,7 +12,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"time"
 )
 
@@ -126,9 +126,10 @@ func (e *DryRunExecutor) processLines(evt *event.Event, consumer *Consumer, fatp
 		Path:        fatpath.Path,
 	}
 	mockIw := &inputWrapper{
-		path:     fatpath.Path,
-		pathTags: fatpath.Tags,
-		fileId:   "mock",
+		inputStateObj: inputStateObj{
+			Path:     fatpath.Path,
+			PathTags: fatpath.Tags,
+		},
 	}
 	consumer.debugEvent = evt.AddChild("consume")
 	consumer.consume(mockResp, mockIw)

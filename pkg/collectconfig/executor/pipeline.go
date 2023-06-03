@@ -5,11 +5,13 @@
 package executor
 
 import (
+	"encoding/gob"
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/transfer"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/zap"
@@ -25,7 +27,10 @@ const (
 	// Logs generated at T1 may not be printed in the log file until T2.
 	// Our system tolerates a delay(T2 - T1) of up to 300.
 	// If the delay exceeds this value, it may cause these delayed data to be ignored.
-	logDelayTolerance = 300 * time.Millisecond
+	logDelayTolerance                         = 300 * time.Millisecond
+	inputWrapperStateFirst inputWrapperStatus = iota
+	inputWrapperStateSuccess
+	inputWrapperStateError
 )
 
 type (
@@ -49,26 +54,122 @@ type (
 		// TODO storage 不应该在这里
 		s *storage.Storage
 
-		started        bool
-		pullWalker     *util.AlignTsWalker
+		started bool
+		pipelineState
+	}
+	pipelineState struct {
+		pullTimer      *util.AlignedTimer
 		lastEmitWindow int64
 	}
-	inputWrapperState int8
+	inputWrapperStatus int8
 	// RunInLock makes a func running in the write lock of the pipeline
-	RunInLock func(func())
+	RunInLock        func(func())
+	pipelineStateObj struct {
+		Inputs         []inputStateObj
+		PullTimerState []byte
+		ConsumerState  *consumerStateObj
+		LastEmitWindow int64
+	}
 )
 
-const (
-	inputWrapperStateFirst inputWrapperState = iota
-	inputWrapperStateSuccess
-	inputWrapperStateError
-)
+func init() {
+	gob.Register(&pipelineStateObj{})
+}
+
+func (p *LogPipeline) StopAndSaveState(store transfer.StateStore) error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if p.isStopped() {
+		return nil
+	}
+
+	close(p.stop)
+
+	state := &pipelineStateObj{
+		LastEmitWindow: p.lastEmitWindow,
+	}
+	if pullTimerState, err := p.pullTimer.SaveState(); err != nil {
+		return err
+	} else {
+		state.PullTimerState = pullTimerState
+	}
+
+	if s, err := p.consumer.SaveState(); err != nil {
+		return err
+	} else {
+		state.ConsumerState = s
+	}
+
+	for _, i := range p.inputsManager.inputs {
+		if i.FileId != "" {
+			state.Inputs = append(state.Inputs, i.inputStateObj)
+		}
+	}
+
+	if b, err := util.GobEncode(state); err != nil {
+		return err
+	} else {
+		store.Put(p.st.CT.Key, b)
+	}
+
+	return nil
+}
+
+func (p *LogPipeline) LoadState(store transfer.StateStore) error {
+	i, err := store.Get(p.st.CT.Key)
+	if err != nil {
+		return err
+	}
+	state := &pipelineStateObj{}
+	if err := util.GobDecode(i.([]byte), state); err != nil {
+		return err
+	}
+
+	{
+		interval := p.pullInterval()
+		pullTimer, _ := util.NewAlignedTimer(interval, logDelayTolerance, false, false)
+		if err := pullTimer.LoadState(state.PullTimerState); err != nil {
+			return err
+		}
+	}
+
+	if err := p.consumer.LoadState(state.ConsumerState); err != nil {
+		return err
+	}
+
+	p.lastEmitWindow = state.LastEmitWindow
+
+	for _, s := range state.Inputs {
+		ls := p.inputsManager.lsm.Acquire(s.Path)
+		if err := ls.LoadReadState(&logstream.LoadReadState{
+			Cursor: s.Cursor,
+			FileId: s.FileId,
+			Offset: s.Offset,
+		}); err != nil {
+			logger.Infoz("[transfer] [pipeline] log input load state error", zap.String("key", p.Key()), zap.String("path", s.Path), zap.Error(err))
+			p.inputsManager.lsm.Release(s.Path, ls)
+		} else {
+			logger.Infoz("[transfer] [pipeline] log input load state success", zap.String("key", p.Key()), zap.String("path", s.Path))
+			_ = ls.AddListener(p.inputsManager.listener)
+			p.inputsManager.inputs[s.Path] = &inputWrapper{
+				ls:            ls,
+				inputStateObj: s,
+			}
+		}
+	}
+
+	return nil
+}
 
 func (iw *inputWrapper) read() (*logstream.ReadResponse, int64, error) {
-	return iw.ls.Read(iw.req)
+	return iw.ls.Read(&logstream.ReadRequest{Cursor: iw.Cursor})
 }
 
 func (l *listenerImpl) Changed(path string, ls logstream.LogStream, lcursor int64) {
+}
+
+func (p *LogPipeline) Key() string {
+	return p.st.CT.Key
 }
 
 func (p *LogPipeline) SetupConsumer(st *api.SubTask) error {
@@ -150,11 +251,12 @@ func (p *LogPipeline) setupConsumer0(st *api.SubTask) (ret error) {
 	}
 	p.consumer = c
 
-	p.inputsManager.update(st)
-
-	select {
-	case p.update <- struct{}{}:
-	default:
+	if p.started {
+		p.inputsManager.update(st)
+		select {
+		case p.update <- struct{}{}:
+		default:
+		}
 	}
 	return nil
 }
@@ -176,7 +278,7 @@ func (p *LogPipeline) View(f func(api.Pipeline)) {
 }
 
 func NewPipeline(st *api.SubTask, s *storage.Storage, lsm *logstream.Manager) (*LogPipeline, error) {
-	return &LogPipeline{
+	p := &LogPipeline{
 		mutex: &sync.RWMutex{},
 		st:    st,
 		s:     s,
@@ -188,10 +290,15 @@ func NewPipeline(st *api.SubTask, s *storage.Storage, lsm *logstream.Manager) (*
 			inputs:   make(map[string]*inputWrapper),
 		},
 		update: make(chan struct{}, 4),
-	}, nil
+	}
+
+	if err := p.setupConsumer0(st); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
-func (p *LogPipeline) isStop() bool {
+func (p *LogPipeline) isStopped() bool {
 	select {
 	case <-p.stop:
 		return true
@@ -202,23 +309,29 @@ func (p *LogPipeline) isStop() bool {
 
 // 对一个数据源消费一次, 如果该数据源还有更多数据, 就会返回true
 func (p *LogPipeline) consumeUntilEndForOneInput(iw *inputWrapper) bool {
-	// TODO resp.err 和 err 的关系
-	resp, _, err := iw.read()
+	resp, nextCursor, err := iw.read()
 
 	if err != nil {
-		logger.Errorz("[pipeline] [log] [input] error", zap.String("key", p.st.CT.Key), zap.Error(err))
+		if iw.Cursor != resp.NextCursor {
+			iw.Cursor = resp.NextCursor
+			iw.FileId = ""
+			iw.Offset = -1
+			logger.Errorz("[pipeline] [log] [input] error, will skip to latest cursor", zap.String("key", p.st.CT.Key), zap.Int64("nextCursor", nextCursor), zap.Error(err))
+		}
 		return false
 	}
 
-	iw.req.Cursor = resp.NextCursor
+	iw.Cursor = resp.NextCursor
+	iw.FileId = resp.FileId
+	iw.Offset = resp.EndOffset
 
 	if resp.Error == nil {
-		iw.state = inputWrapperStateSuccess
+		iw.State = inputWrapperStateSuccess
 	} else {
-		iw.state = inputWrapperStateError
+		iw.State = inputWrapperStateError
 	}
-	if iw.state != iw.lastState {
-		if iw.lastState == inputWrapperStateFirst {
+	if iw.State != iw.LastState {
+		if iw.LastState == inputWrapperStateFirst {
 			logger.Infoz("[pipeline] [log] [input] [event] first", //
 				zap.String("key", p.st.CT.Key),             //
 				zap.String("path", resp.Path),              //
@@ -234,36 +347,34 @@ func (p *LogPipeline) consumeUntilEndForOneInput(iw *inputWrapper) bool {
 				zap.Error(resp.Error))                      //
 		}
 	}
-	iw.lastState = iw.state
+	iw.LastState = iw.State
 
 	p.consumer.Consume(resp, iw, err)
 
 	return resp.HasMore
 }
 
-func (p *LogPipeline) Start() {
+func (p *LogPipeline) Start() error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
-	err := p.setupConsumer0(p.st)
-
-	p.started = true
-	if err != nil {
-		logger.Errorz("[pipeline] setup consumer error", zap.String("key", p.st.CT.Key), zap.Error(err))
-		return
-	}
-
+	p.inputsManager.update(p.st)
 	p.consumer.Start()
 	p.startInternalLoop()
-
+	p.started = true
 	logger.Infoz("[pipeline] start", zap.String("key", p.st.CT.Key))
+	return nil
 }
 
 func (p *LogPipeline) Stop() {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	if p.isStopped() {
+		return
+	}
 
 	close(p.stop)
+	// TODO wait until xxxLoop exited
 
 	p.inputsManager.stop()
 	p.consumer.Stop()
@@ -272,7 +383,7 @@ func (p *LogPipeline) Stop() {
 }
 
 func (p *LogPipeline) printStat() {
-	if p.isStop() {
+	if p.isStopped() {
 		return
 	}
 	p.consumer.printStat()
@@ -289,7 +400,7 @@ func (p *LogPipeline) checkInputLoop() {
 		case <-checkInputsTimer.C:
 			p.Update(func(pipeline api.Pipeline) {
 				// double check
-				if p.isStop() {
+				if p.isStopped() {
 					return
 				}
 				p.inputsManager.checkInputsChange()
@@ -298,33 +409,25 @@ func (p *LogPipeline) checkInputLoop() {
 	}
 }
 
-func (p *LogPipeline) printStatLoop() {
-	timer := util.NewAlignTsTimer(60*1000, 1000, 0, 0, false)
-	defer timer.Stop()
-
-	// trigger timer
-	timer.Next()
-	for {
-		select {
-		case <-p.stop:
-			return
-		case <-timer.Chan():
-			p.View(func(pipeline api.Pipeline) {
-				p.printStat()
-			})
-			timer.Next()
-		}
-	}
-}
-
 func (p *LogPipeline) pullLoop() {
 	// if interval is 5s
 	// then we pull logs at [0*5000+300 ms, 1*5000+5300 ms, 2*5000+300 ms, 3*5000+300 ms, ... ]
 	// 300ms is for log delay print.
-	pullTimer := util.NewAlignTsTimer(p.pullInterval().Milliseconds(), logDelayTolerance.Milliseconds(), 0, 0, false)
-	defer pullTimer.Stop()
 
-	pullTimer.Next()
+	interval := p.pullInterval()
+
+	pullTimer := p.pullTimer
+	if pullTimer == nil {
+		pullTimer, _ = util.NewAlignedTimer(interval, logDelayTolerance, false, false)
+		p.pullTimer = pullTimer
+	}
+	defer pullTimer.Stop()
+	lastPrintStatTime := pullTimer.NextEmitTime().Truncate(time.Minute).Add(logDelayTolerance)
+
+	// trigger pull right now
+	first := make(chan struct{}, 1)
+	first <- struct{}{}
+
 	for {
 		select {
 		case <-p.stop:
@@ -333,25 +436,44 @@ func (p *LogPipeline) pullLoop() {
 			// update configs, maybe recreate pull timer
 			logger.Infof("[pipeline] [log] [%s] update", p.st.CT.Key)
 
-			newPullDelayMs := p.pullInterval().Milliseconds()
-			if newPullDelayMs != pullTimer.Interval() {
+			newInterval := p.pullInterval()
+			if interval != newInterval {
+				pullTimer.Stop()
+
+				interval = p.pullInterval()
+				pullTimer, _ = util.NewAlignedTimer(interval, logDelayTolerance, false, false)
+				p.pullTimer = pullTimer
+
 				// data window changed
 				p.lastEmitWindow = 0
-				pullTimer.Update(newPullDelayMs, logDelayTolerance.Milliseconds(), 0, 0)
-				pullTimer.Next()
 			}
-		case <-pullTimer.Chan():
-			// 多数据源case, 需要遍历所有数据源
+		case <-first:
 			p.Update(func(pipeline api.Pipeline) {
-				// double check
-				if p.isStop() {
+				if p.isStopped() {
 					return
 				}
 
 				p.pullAndConsume()
 				p.maybeEmit()
 			})
-			pullTimer.Next()
+		case <-pullTimer.C:
+			p.Update(func(pipeline api.Pipeline) {
+				if p.isStopped() {
+					return
+				}
+
+				p.pullAndConsume()
+				p.maybeEmit()
+
+				// Print stat on the first execution of every minute
+				nextEmitTime := pullTimer.NextEmitTime()
+				if pullTimer.NextEmitTime().After(lastPrintStatTime) && lastPrintStatTime.Minute() != nextEmitTime.Minute() {
+					lastPrintStatTime = nextEmitTime
+					p.printStat()
+				}
+
+				pullTimer.Next()
+			})
 		}
 	}
 }
@@ -359,7 +481,6 @@ func (p *LogPipeline) pullLoop() {
 // pipeline 事件循环
 func (p *LogPipeline) startInternalLoop() {
 	go p.checkInputLoop()
-	go p.printStatLoop()
 	go p.pullLoop()
 }
 
@@ -375,7 +496,7 @@ func (p *LogPipeline) pullInterval() time.Duration {
 // pull logs, and then consume logs
 func (p *LogPipeline) pullAndConsume() {
 	if len(p.inputsManager.inputs) == 0 {
-		p.consumer.stat.miss = true
+		p.consumer.stat.Miss = true
 		return
 	}
 

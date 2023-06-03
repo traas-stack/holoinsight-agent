@@ -22,6 +22,11 @@ type (
 		// 如果遇到超长行就进入损坏状态
 		broken bool
 	}
+	LineBufferStateObj struct {
+		Buffer []byte
+		Add    []byte
+		Broken bool
+	}
 )
 
 func NewLineBuffer(maxSize int) *LineBuffer {
@@ -128,6 +133,18 @@ func (buf *LineBuffer) AvailableLines() int {
 
 func (buf *LineBuffer) Empty() bool {
 	return len(buf.buffer) == 0 && len(buf.add) == 0
+}
+func (buf *LineBuffer) SaveState() *LineBufferStateObj {
+	return &LineBufferStateObj{
+		Buffer: buf.buffer,
+		Add:    buf.add,
+		Broken: buf.broken,
+	}
+}
+func (buf *LineBuffer) LoadState(state *LineBufferStateObj) {
+	buf.add = state.Add
+	buf.buffer = state.Buffer
+	buf.broken = state.Broken
 }
 
 func countLine(bs []byte) int {

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/influxdata/telegraf"
 	"github.com/spf13/cast"
@@ -22,13 +23,14 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
 	api2 "github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	telegraf2 "github.com/traas-stack/holoinsight-agent/pkg/telegraf"
+	"github.com/traas-stack/holoinsight-agent/pkg/transfer"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/zap"
+	"sync"
 	"time"
 )
 
@@ -51,10 +53,10 @@ type (
 		transform base.Transform
 
 		state *internalState
+		mutex sync.RWMutex
 	}
 	internalState struct {
-		nextEmitTime time.Time
-		timer        *util.AlignedTimer
+		timer *util.AlignedTimer
 	}
 )
 
@@ -62,15 +64,25 @@ const (
 	defaultExecTimeout = 5 * time.Second
 )
 
-func (p *Pipeline) SetupConsumer(st *api.SubTask) error {
+func (p *Pipeline) Key() string {
+	return p.task.Key
+}
+
+func (p *Pipeline) SetupConsumer(st *api2.SubTask) error {
 	return nil
 }
 
-func (p *Pipeline) Update(f func(api.Pipeline)) {
+func (p *Pipeline) Update(f func(api2.Pipeline)) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	f(p)
 }
 
-func (p *Pipeline) View(f func(api.Pipeline)) {
+func (p *Pipeline) View(f func(api2.Pipeline)) {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+
 	f(p)
 }
 
@@ -111,7 +123,7 @@ func NewPipeline(task *collecttask.CollectTask, baseConf *base.Conf, input inter
 	interval := time.Duration(intervalMills) * time.Millisecond
 	offset := time.Duration(offsetMills) * time.Millisecond
 
-	timer, nextEmitTime := util.NewAlignedTimer(interval, offset, false, false)
+	timer, _ := util.NewAlignedTimer(interval, offset, false, false)
 
 	if baseConf.Transform.MetricPrefix == "" {
 		if ip, ok := input.(api2.Input); ok {
@@ -133,45 +145,62 @@ func NewPipeline(task *collecttask.CollectTask, baseConf *base.Conf, input inter
 		stopCh:          make(chan struct{}),
 		stoppedCh:       make(chan struct{}),
 		state: &internalState{
-			nextEmitTime: nextEmitTime,
-			timer:        timer,
+			timer: timer,
 		},
 		transform: baseConf.Transform,
 	}, nil
 }
-func (p *Pipeline) Start() {
+func (p *Pipeline) Start() error {
 	go p.taskLoop()
+	return nil
 }
 
 func (p *Pipeline) Stop() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	p.stop0()
+}
+
+func (p *Pipeline) stop0() {
+	if p.isStopped() {
+		return
+	}
 	close(p.stopCh)
-	<-p.stoppedCh
 	logger.Infoz("[pipeline] stop", zap.String("key", p.task.Key))
+}
+
+func (p *Pipeline) isStopped() bool {
+	select {
+	case <-p.stopCh:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Pipeline) taskLoop() {
 	// No need to defer stop timer
 
 	timer := p.state.timer
-	nextEmitTime := p.state.nextEmitTime
-
-	defer func() {
-		p.state.nextEmitTime = nextEmitTime
-		p.state.timer = timer
-		close(p.stoppedCh)
-	}()
 
 	for {
 		select {
 		case <-p.stopCh:
 			return
 		case <-timer.C:
-			// TODO need an option to determine which metric time to use
-			metricTime := nextEmitTime.Truncate(p.interval).Add(-p.interval)
-			// metricTime := nextEmitTime.Truncate(p.interval)
+			func() {
+				p.mutex.Lock()
+				defer p.mutex.Unlock()
+				if p.isStopped() {
+					return
+				}
 
-			recoverutils.WithRecover(func() { p.collectOnce(metricTime) })
-			nextEmitTime = timer.Next()
+				// TODO need an option to determine which metric time to use
+				metricTime := timer.NextEmitTime().Truncate(p.interval).Add(-p.interval)
+
+				recoverutils.WithRecover(func() { p.collectOnce(metricTime) })
+				timer.Next()
+			}()
 		}
 	}
 }
@@ -203,6 +232,7 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 	}
 
 	logger.Infoz("[pipeline] collect once done", //
+		zap.Time("ts", metricTime),             //
 		zap.String("key", p.task.Key),          //
 		zap.String("type", p.task.Config.Type), //
 		zap.Int("metrics", len(m.Metrics)),     //
@@ -211,7 +241,7 @@ func (p *Pipeline) collectOnce(metricTime time.Time) {
 		zap.Error(err))
 }
 
-func (p *Pipeline) UpdateFrom(old api.Pipeline) {
+func (p *Pipeline) UpdateFrom(old api2.Pipeline) {
 	old2, ok := old.(*Pipeline)
 	if !ok {
 		return
@@ -350,4 +380,52 @@ func (p *Pipeline) transformMetrics(metricTime time.Time, m *accumulator.Memory)
 			metric.Name = fmt.Sprintf(x, metric.Name)
 		}
 	}
+}
+
+func (p *Pipeline) StopAndSaveState(store transfer.StateStore) error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if p.isStopped() {
+		return errors.New("pipeline is stopped")
+	}
+
+	p.stop0()
+
+	prefix := "pipeline@" + p.task.Key
+
+	if si, ok := p.input.(transfer.StatefulInput); ok {
+		if b, err := si.SaveState(); err != nil {
+			return err
+		} else {
+			store.Put(prefix+"@input", b)
+		}
+	}
+
+	if timerState, err := p.state.timer.SaveState(); err != nil {
+		return err
+	} else {
+		store.Put(prefix+"@timer", timerState)
+	}
+
+	return nil
+}
+
+func (p *Pipeline) LoadState(store transfer.StateStore) error {
+	prefix := "pipeline@" + p.task.Key
+	if si, ok := p.input.(transfer.StatefulInput); ok {
+		if inputState, err := store.Get(prefix + "@input"); err != nil {
+			return err
+		} else if err := si.LoadState(inputState); err != nil {
+			return err
+		}
+	}
+
+	if timerState, err := store.Get(prefix + "@timer"); err != nil {
+		return err
+	} else if err := p.state.timer.LoadState(timerState.([]byte)); err != nil {
+		return err
+	}
+
+	return nil
 }

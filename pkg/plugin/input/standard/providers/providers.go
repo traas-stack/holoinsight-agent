@@ -13,36 +13,15 @@ import (
 )
 
 type (
-	InputProvider func(task *collecttask.CollectTask) (api.Input, error)
+	PipelineProvider func(task *collecttask.CollectTask) (api.Pipeline, error)
+	InputProvider    func(task *collecttask.CollectTask) (api.Input, error)
 )
 
 var (
-	providers = make(map[string]InputProvider)
-	mutex     sync.RWMutex
+	inputProviders    = make(map[string]InputProvider)
+	pipelineProviders = make(map[string]PipelineProvider)
+	mutex             sync.RWMutex
 )
-
-func Register(configType string, p InputProvider) {
-	configType = StandardizeType(configType)
-
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	if _, ok := providers[configType]; ok {
-		panic(fmt.Errorf("duplicated input provider: %s", configType))
-	}
-
-	providers[configType] = p
-}
-
-func Get(configType string) (InputProvider, bool) {
-	configType = StandardizeType(configType)
-
-	mutex.RLock()
-	defer mutex.RUnlock()
-
-	p, ok := providers[configType]
-	return p, ok
-}
 
 func StandardizeType(t string) string {
 	index := strings.LastIndexByte(t, '.')
@@ -50,4 +29,45 @@ func StandardizeType(t string) string {
 		t = t[index+1:]
 	}
 	return strings.ToLower(t)
+}
+
+func RegisterInputProvider(configType string, p InputProvider) {
+	configType = StandardizeType(configType)
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if _, ok := inputProviders[configType]; ok {
+		panic(fmt.Errorf("duplicated input provider: %s", configType))
+	}
+
+	inputProviders[configType] = p
+}
+
+func GetInputProvider(configType string) (InputProvider, bool) {
+	configType = StandardizeType(configType)
+
+	mutex.RLock()
+	defer mutex.RUnlock()
+
+	p, ok := inputProviders[configType]
+	return p, ok
+}
+
+func RegisterPipelineFactory(configType string, provider PipelineProvider) {
+	configType = StandardizeType(configType)
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	pipelineProviders[configType] = provider
+}
+
+func GetPipelineProvider(configType string) (PipelineProvider, bool) {
+	configType = StandardizeType(configType)
+
+	mutex.RLock()
+	defer mutex.RUnlock()
+
+	p, ok := pipelineProviders[configType]
+	return p, ok
 }

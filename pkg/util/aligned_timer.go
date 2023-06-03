@@ -4,7 +4,11 @@
 
 package util
 
-import "time"
+import (
+	"encoding/gob"
+	"errors"
+	"time"
+)
 
 type (
 	// AlignedTimer emit aligned time.Time. [align+offset, 2*align+offset, 3*align+offset, ...]
@@ -29,7 +33,17 @@ type (
 		// Please refer to the value returned by Next().
 		C <-chan time.Time
 	}
+	alignedTimerStateObj struct {
+		SkipExpiredWindow bool
+		Align             time.Duration
+		Offset            time.Duration
+		NextEmitTime      time.Time
+	}
 )
+
+func init() {
+	gob.Register(&alignedTimerStateObj{})
+}
 
 func NewAlignedTimer(align, offset time.Duration, skipExpiredWindow bool, skipFirstTimer bool) (*AlignedTimer, time.Time) {
 	var timer *time.Timer
@@ -82,4 +96,46 @@ func (t *AlignedTimer) Next() time.Time {
 // Stop tops the timer
 func (t *AlignedTimer) Stop() {
 	t.timer.Stop()
+}
+
+// NextEmitTime returns expected next emit time.
+// It may have: 'next emit time' < 'time.Now()'
+func (t *AlignedTimer) NextEmitTime() time.Time {
+	return t.nextEmitTime
+}
+
+// SaveState saves current timer state into []byte
+func (t *AlignedTimer) SaveState() ([]byte, error) {
+	state := &alignedTimerStateObj{
+		SkipExpiredWindow: t.skipExpiredWindow,
+		Align:             t.align,
+		Offset:            t.offset,
+		NextEmitTime:      t.nextEmitTime,
+	}
+	return GobEncode(state)
+}
+
+// LoadState loads timer state from []byte
+func (t *AlignedTimer) LoadState(b []byte) error {
+	state := &alignedTimerStateObj{}
+	if err := GobDecode(b, state); err != nil {
+		return err
+	}
+
+	if state.Align == t.align && state.Offset == t.offset && state.SkipExpiredWindow == t.skipExpiredWindow {
+		t.timer.Stop()
+
+		delay := state.NextEmitTime.Sub(time.Now())
+		if delay < 0 {
+			delay = 0
+		}
+		timer := time.NewTimer(delay)
+
+		t.nextEmitTime = state.NextEmitTime
+		t.timer = timer
+		t.C = timer.C
+		return nil
+	}
+
+	return errors.New("timer state changed")
 }

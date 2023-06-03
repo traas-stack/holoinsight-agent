@@ -5,6 +5,7 @@
 package executor
 
 import (
+	"encoding/gob"
 	json2 "encoding/json"
 	"errors"
 	"fmt"
@@ -56,7 +57,6 @@ type (
 		TimeParser           TimeParser
 		varsProcessor        *varsProcessor
 		BeforeParseWhere     XWhere
-		stat                 consumerStat
 		multilineAccumulator *multilineAccumulator
 
 		//lastAlignTs     int64
@@ -65,14 +65,7 @@ type (
 		// 用于Stop方法, 如果为true表示该Consumer是因为配置更新而被 stop, 会有另外一个 Consumer start 代替它的功能
 		updated bool
 
-		tsWalker   *util.AlignTsWalker
 		metricName string
-
-		// 实际遇到过的最大时间戳
-		maxDataTimestamp int64
-		// estimatedMaxDataTimestamp is an estimate of the actual log time.
-		// When there is no logs in file this period, this estimatedMaxDataTimestamp value will be treated as maxDataTimestamp as if there is really a log at this time.
-		estimatedMaxDataTimestamp int64
 
 		maxKeySize int
 		sub        SubConsumer
@@ -80,43 +73,54 @@ type (
 		debugEvent *event.Event
 		runInLock  func(f func())
 
+		consumerState
+	}
+	consumerState struct {
+		stat ConsumerStat
+		// 实际遇到过的最大时间戳
+		maxDataTimestamp int64
+		// estimatedMaxDataTimestamp is an estimate of the actual log time.
+		// When there is no logs in file this period, this estimatedMaxDataTimestamp value will be treated as maxDataTimestamp as if there is really a log at this time.
+		estimatedMaxDataTimestamp int64
 		// printStatCalledCounter records the number of calls to `printStat`
 		printStatCalledCounter int
 		firstIOSuccessTime     int64
 	}
 
-	consumerStat struct {
-		ioTotal int32
-		ioError int32
-		// success情况下的空拉次数
-		ioEmpty int32
-		// 涉及的流量
-		bytes int64
-		// 日志行数
-		lines int32
-		// 日志组数, 多行情况下 一组多行日志算为一个组
-		groups int32
-		broken bool
-		// 文件不存在
-		miss                   bool
-		noContinued            bool
-		processed              int32
-		filterBeforeParseWhere int32
-		filterLogParseError    int32
-		filterTimeParseError   int32
-		filterWhere            int32
-		filterGroup            int32
-		filterGroupMaxKeys     int32
-		filterIgnore           int32
-		filterMultiline        int32
-		filterDelay            int32
-		emit                   int32
-		emitSuccess            int32
-		emitError              int32
+	// ConsumerStat holds consumer running stats.
+	// All fields are public in order to be encoded by gob.
+	ConsumerStat struct {
+		IoTotal int32
+		IoError int32
+		// IO read empty count
+		IoEmpty int32
+		// IO read bytes
+		Bytes int64
+		// Read log lines
+		Lines int32
+		// Read log groups
+		Groups int32
+		Broken bool
+		// File is missing
+		Miss                   bool
+		NoContinued            bool
+		Processed              int32
+		FilterBeforeParseWhere int32
+		FilterLogParseError    int32
+		FilterTimeParseError   int32
+		FilterWhere            int32
+		FilterGroup            int32
+		FilterGroupMaxKeys     int32
+		FilterIgnore           int32
+		FilterMultiline        int32
+		FilterDelay            int32
+		Emit                   int32
+		EmitSuccess            int32
+		EmitError              int32
 		// error count when agg
-		aggWhereError int32
+		AggWhereError int32
 		// error count when select
-		selectError int32
+		SelectError int32
 	}
 
 	ParsedConf struct {
@@ -136,12 +140,32 @@ type (
 
 	// PeriodStatus holds stats for that time period
 	PeriodStatus struct {
-		stat                      consumerStat
+		Stat                      ConsumerStat
 		EmitSuccess               bool
 		EmitError                 int
-		estimatedMaxDataTimestamp int64
+		EstimatedMaxDataTimestamp int64
+	}
+	// consumerStateObj is Consumer state obj for gob.
+	consumerStateObj struct {
+		FirstIOSuccessTime        int64
+		MaxDataTimestamp          int64
+		EstimatedMaxDataTimestamp int64
+		Shards                    []*shardSateObj
+		ConsumerStat              ConsumerStat
+	}
+	// shardSateObj is storage.Shard state obj for gob.
+	shardSateObj struct {
+		TS     int64
+		Points map[string]*storage.Point
+		Data   interface{}
+		Data2  interface{}
 	}
 )
+
+func init() {
+	gob.Register(&consumerStateObj{})
+	gob.Register(&PeriodStatus{})
+}
 
 func (c *Consumer) reportUpEvent(expectedTs int64, ps *PeriodStatus) {
 	// ok means data in expectedTs time window is complete, the following conditions must be met:
@@ -149,7 +173,7 @@ func (c *Consumer) reportUpEvent(expectedTs int64, ps *PeriodStatus) {
 	// 2. log consumption is not lagging behind
 	// 3. the task is not started in the middle of the cycle
 	ok := ps.EmitSuccess &&
-		ps.estimatedMaxDataTimestamp >= expectedTs+c.Window.Interval.Milliseconds() &&
+		ps.EstimatedMaxDataTimestamp >= expectedTs+c.Window.Interval.Milliseconds() &&
 		c.firstIOSuccessTime < expectedTs
 
 	event := &pb2.ReportEventRequest_Event{
@@ -163,15 +187,15 @@ func (c *Consumer) reportUpEvent(expectedTs int64, ps *PeriodStatus) {
 			"up": 1,
 			"ok": util.BoolToInt64(ok), //
 
-			"in_groups":    int64(ps.stat.groups),
-			"in_processed": int64(ps.stat.processed),
+			"in_groups":    int64(ps.Stat.Groups),
+			"in_processed": int64(ps.Stat.Processed),
 
-			"f_where": int64(ps.stat.filterWhere),
-			"f_group": int64(ps.stat.filterGroup),
-			"f_gkeys": int64(ps.stat.filterGroupMaxKeys),
-			"f_delay": int64(ps.stat.filterDelay),
+			"f_where": int64(ps.Stat.FilterWhere),
+			"f_group": int64(ps.Stat.FilterGroup),
+			"f_gkeys": int64(ps.Stat.FilterGroupMaxKeys),
+			"f_delay": int64(ps.Stat.FilterDelay),
 
-			"p_select": int64(ps.stat.selectError),
+			"p_select": int64(ps.Stat.SelectError),
 		},
 		Strings: nil,
 	}
@@ -239,9 +263,9 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 			})
 
 			if err == nil {
-				c.stat.emitSuccess += int32(len(datum))
+				c.stat.EmitSuccess += int32(len(datum))
 			} else {
-				c.stat.emitError += int32(len(datum))
+				c.stat.EmitError += int32(len(datum))
 				c.reportLogs(expectedTs, fmt.Sprintf("emit error %+v", err))
 				logger.Errorz("[log] [consumer] emit error", zap.String("key", c.key), zap.Error(err))
 				logger.Debugz("[log] [consumer] emit error", zap.String("key", c.key), zap.Any("datum", datum), zap.Error(err))
@@ -251,9 +275,9 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 }
 
 func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err error) {
-	c.stat.ioTotal++
+	c.stat.IoTotal++
 	if err != nil {
-		c.stat.ioError++
+		c.stat.IoError++
 		logger.Errorz("[consumer] [log] digest",
 			zap.String("key", c.key),
 			zap.Any("resp", resp),
@@ -264,10 +288,10 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 	if fileNotExists {
 		// There is no need to stat ioError when file misses.
 		// This is helpful to reduce server log size.
-		c.stat.miss = true
+		c.stat.Miss = true
 		logger.Debugz("[consumer] [log] digest, file not exist", //
 			zap.String("key", c.key),    //
-			zap.String("path", iw.path), //
+			zap.String("path", iw.Path), //
 		)
 		return
 	}
@@ -278,15 +302,15 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 
 	// 说明end不完整
 	if resp.HasBroken {
-		c.stat.broken = true
+		c.stat.Broken = true
 	}
 	if !resp.Continued {
-		c.stat.noContinued = true
+		c.stat.NoContinued = true
 	}
-	c.stat.bytes += resp.Bytes()
-	c.stat.lines += int32(len(resp.Lines))
+	c.stat.Bytes += resp.Bytes()
+	c.stat.Lines += int32(len(resp.Lines))
 	if len(resp.Lines) == 0 {
-		c.stat.ioEmpty++
+		c.stat.IoEmpty++
 	}
 
 	maxTs := c.consume(resp, iw)
@@ -447,7 +471,6 @@ func (c *Consumer) Update(o *Consumer) {
 			s.DeleteTimeline(o.timeline.Key)
 		})
 	} else {
-		c.tsWalker = o.tsWalker
 		c.storage = o.storage
 		c.timeline = o.timeline
 		// TODO when file path changed, the firstIOSuccessTime need to be reset to zero
@@ -558,7 +581,7 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 				fullGroup, err = c.multilineAccumulator.add(ctx)
 				if err != nil {
 					logger.Debugz("[consumer] parse multiline error", zap.String("consumer", c.key), zap.Error(err))
-					c.stat.filterMultiline++
+					c.stat.FilterMultiline++
 					continue
 				}
 				if fullGroup == nil {
@@ -567,16 +590,16 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 			} else {
 				// 不需要配置多行 默认过滤掉一些常见的java error case
 				if line == "" || strings.HasPrefix(line, "\tat") || (strings.HasPrefix(line, "\t... ") && strings.HasSuffix(line, " more")) {
-					c.stat.filterIgnore++
+					c.stat.FilterIgnore++
 					continue
 				}
 				fullGroup = oneLine
 			}
 		}
 		ctx.log = fullGroup
-		ctx.path = iw.path
-		ctx.pathTags = iw.pathTags
-		c.stat.groups++
+		ctx.path = iw.Path
+		ctx.pathTags = iw.PathTags
+		c.stat.Groups++
 		ctx.tz = tz
 		consumer(ctx)
 		ctx.clearData()
@@ -620,7 +643,7 @@ func (c *Consumer) getCommonEventTags() map[string]string {
 	return tags
 }
 
-func (c *Consumer) createTaskInfoEvent(stat consumerStat) *pb2.ReportEventRequest_Event {
+func (c *Consumer) createTaskInfoEvent(stat ConsumerStat) *pb2.ReportEventRequest_Event {
 	parsedContent := make(map[string]interface{})
 	json2.Unmarshal(c.ct.Config.Content, &parsedContent)
 
@@ -633,7 +656,7 @@ func (c *Consumer) createTaskInfoEvent(stat consumerStat) *pb2.ReportEventReques
 	}
 
 	now := time.Now().UnixMilli()
-	if !stat.miss {
+	if !stat.Miss {
 		lag := (now - c.estimatedMaxDataTimestamp) / 1000
 		if lag > 30 {
 			json["in_lag"] = (now - c.estimatedMaxDataTimestamp) / 1000
@@ -655,40 +678,40 @@ func (c *Consumer) createTaskInfoEvent(stat consumerStat) *pb2.ReportEventReques
 	}
 }
 
-func (c *Consumer) createStatEvent(stat consumerStat) *pb2.ReportEventRequest_Event {
+func (c *Consumer) createStatEvent(stat ConsumerStat) *pb2.ReportEventRequest_Event {
 	event := &pb2.ReportEventRequest_Event{
 		BornTimestamp: time.Now().UnixMilli(),
 		EventType:     "STAT",
 		PayloadType:   "log_monitor_stat",
 		Tags:          c.getCommonEventTags(),
 		Numbers: map[string]int64{
-			"in_io_error": int64(stat.ioError),
+			"in_io_error": int64(stat.IoError),
 
-			"in_bytes":  stat.bytes,
-			"in_lines":  int64(stat.lines),
-			"in_groups": int64(stat.groups),
+			"in_bytes":  stat.Bytes,
+			"in_lines":  int64(stat.Lines),
+			"in_groups": int64(stat.Groups),
 
-			"in_miss": util.BoolToInt64(stat.miss),
+			"in_miss": util.BoolToInt64(stat.Miss),
 
-			"in_broken":    util.BoolToInt64(stat.broken),
-			"in_skip":      util.BoolToInt64(stat.noContinued),
-			"in_processed": int64(stat.processed),
+			"in_broken":    util.BoolToInt64(stat.Broken),
+			"in_skip":      util.BoolToInt64(stat.NoContinued),
+			"in_processed": int64(stat.Processed),
 
-			"f_logparse":  int64(stat.filterLogParseError),
-			"f_ignore":    int64(stat.filterIgnore),
-			"f_timeparse": int64(stat.filterTimeParseError),
-			"f_bwhere":    int64(stat.filterBeforeParseWhere),
-			"f_group":     int64(stat.filterGroup),
-			"f_gkeys":     int64(stat.filterGroupMaxKeys),
-			"f_where":     int64(stat.filterWhere),
-			"f_delay":     int64(stat.filterDelay),
-			"f_multiline": int64(stat.filterMultiline),
+			"f_logparse":  int64(stat.FilterLogParseError),
+			"f_ignore":    int64(stat.FilterIgnore),
+			"f_timeparse": int64(stat.FilterTimeParseError),
+			"f_bwhere":    int64(stat.FilterBeforeParseWhere),
+			"f_group":     int64(stat.FilterGroup),
+			"f_gkeys":     int64(stat.FilterGroupMaxKeys),
+			"f_where":     int64(stat.FilterWhere),
+			"f_delay":     int64(stat.FilterDelay),
+			"f_multiline": int64(stat.FilterMultiline),
 
-			"out_emit":  int64(stat.emit),
-			"out_error": int64(stat.emitError),
+			"out_emit":  int64(stat.Emit),
+			"out_error": int64(stat.EmitError),
 
-			"p_agg":    int64(stat.aggWhereError),
-			"p_select": int64(stat.selectError),
+			"p_agg":    int64(stat.AggWhereError),
+			"p_select": int64(stat.SelectError),
 		},
 		Strings: map[string]string{},
 	}
@@ -698,7 +721,7 @@ func (c *Consumer) createStatEvent(stat consumerStat) *pb2.ReportEventRequest_Ev
 
 func (c *Consumer) printStat() {
 	stat := c.stat
-	c.stat = consumerStat{}
+	c.stat = ConsumerStat{}
 
 	{
 		events := []*pb2.ReportEventRequest_Event{c.createStatEvent(stat)}
@@ -716,23 +739,23 @@ func (c *Consumer) printStat() {
 		zap.String("key", c.key), //
 		zap.String("configKey", c.ct.Config.Key+"/"+c.ct.Config.Version), //
 		zap.String("targetKey", c.ct.Target.Key+"/"+c.ct.Target.Version), //
-		zap.Int32("ioEmpty", stat.ioEmpty),                               //
-		zap.Int32("ioError", stat.ioError),                               //
-		zap.Int32("ioTotal", stat.ioTotal),                               //
-		zap.Int64("bytes", stat.bytes),
-		zap.Int32("lines", stat.lines),
-		zap.Int32("groups", stat.groups),
-		zap.Int32("emit", stat.emit),
-		zap.Bool("miss", stat.miss),
-		zap.Bool("broken", stat.broken),
-		zap.Bool("continued", !stat.noContinued),
-		zap.Int32("processed", stat.processed),
-		zap.Int32("fwhere", stat.filterWhere),
-		zap.Int32("fbwhere", stat.filterBeforeParseWhere),
-		zap.Int32("flogparse", stat.filterLogParseError),
-		zap.Int32("ftimeparse", stat.filterTimeParseError),
-		zap.Int32("fignore", stat.filterIgnore),
-		zap.Int32("filterDelay", stat.filterDelay),
+		zap.Int32("ioEmpty", stat.IoEmpty),                               //
+		zap.Int32("ioError", stat.IoError),                               //
+		zap.Int32("ioTotal", stat.IoTotal),                               //
+		zap.Int64("bytes", stat.Bytes),
+		zap.Int32("lines", stat.Lines),
+		zap.Int32("groups", stat.Groups),
+		zap.Int32("emit", stat.Emit),
+		zap.Bool("miss", stat.Miss),
+		zap.Bool("broken", stat.Broken),
+		zap.Bool("continued", !stat.NoContinued),
+		zap.Int32("processed", stat.Processed),
+		zap.Int32("fwhere", stat.FilterWhere),
+		zap.Int32("fbwhere", stat.FilterBeforeParseWhere),
+		zap.Int32("flogparse", stat.FilterLogParseError),
+		zap.Int32("ftimeparse", stat.FilterTimeParseError),
+		zap.Int32("fignore", stat.FilterIgnore),
+		zap.Int32("filterDelay", stat.FilterDelay),
 		zap.Time("maxDataTime", time.UnixMilli(c.maxDataTimestamp)),
 		zap.Time("estimatedMaxDataTime", time.UnixMilli(c.estimatedMaxDataTimestamp)),
 	)
@@ -777,7 +800,7 @@ func (c *Consumer) SetOutput(output output.Output) {
 
 func (c *Consumer) emit(expectedTs int64) {
 	c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
-		status.estimatedMaxDataTimestamp = c.estimatedMaxDataTimestamp
+		status.EstimatedMaxDataTimestamp = c.estimatedMaxDataTimestamp
 	})
 	c.sub.Emit(expectedTs)
 }
@@ -814,7 +837,7 @@ func (c *Consumer) executeBeforeParseWhere(ctx *LogContext) bool {
 			}
 			logger.Debugz("[consumer] filter before where", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()))
 		}
-		c.stat.filterBeforeParseWhere++
+		c.stat.FilterBeforeParseWhere++
 		return false
 	}
 	return true
@@ -826,7 +849,7 @@ func (c *Consumer) executeLogParse(ctx *LogContext) bool {
 	}
 	if err := c.LogParser.Parse(ctx); err != nil {
 		logger.Debugz("log parse error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.Error(err))
-		c.stat.filterLogParseError++
+		c.stat.FilterLogParseError++
 		return false
 	}
 
@@ -839,7 +862,7 @@ func (c *Consumer) executeVarsProcess(ctx *LogContext) bool {
 	}
 	if vars, err := c.varsProcessor.process(ctx); err != nil {
 		logger.Debugz("parse vars error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.Error(err))
-		c.stat.filterLogParseError++
+		c.stat.FilterLogParseError++
 		return false
 	} else {
 		ctx.vars = vars
@@ -859,7 +882,7 @@ func (c *Consumer) executeTimeParse(ctx *LogContext) (int64, bool) {
 		if ctx.event != nil {
 			ctx.event.Error("parse time error: %+v", err)
 		}
-		c.stat.filterTimeParseError++
+		c.stat.FilterTimeParseError++
 		return 0, false
 	}
 	return ts, true
@@ -895,8 +918,8 @@ func (c *Consumer) executeWhere(ctx *LogContext) bool {
 		} else {
 			logger.Debugz("[consumer] filter where", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()))
 		}
-		c.stat.filterWhere++
-		ctx.periodStatus.stat.filterWhere++
+		c.stat.FilterWhere++
+		ctx.periodStatus.Stat.FilterWhere++
 		return false
 	}
 
@@ -918,8 +941,8 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 					if processGroupEvent != nil {
 						processGroupEvent.Error("agg where error: %+v", err)
 					}
-					c.stat.aggWhereError++
-					ctx.periodStatus.stat.aggWhereError++
+					c.stat.AggWhereError++
+					ctx.periodStatus.Stat.AggWhereError++
 					logger.Debugz("[consumer] agg error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				} else {
 					logger.Debugz("[consumer] agg where false", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
@@ -940,8 +963,8 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 		case agg.AggHll:
 			str, err := so.elect.ElectString(ctx)
 			if err != nil {
-				c.stat.selectError++
-				ctx.periodStatus.stat.selectError++
+				c.stat.SelectError++
+				ctx.periodStatus.Stat.SelectError++
 				logger.Debugz("[consumer] select string error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				continue
 			}
@@ -956,8 +979,8 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 				if processGroupEvent != nil {
 					processGroupEvent.Error("field=[%s], elect number error %+v, skip", point.ValueNames[j], err)
 				}
-				c.stat.selectError++
-				ctx.periodStatus.stat.selectError++
+				c.stat.SelectError++
+				ctx.periodStatus.Stat.SelectError++
 				logger.Debugz("[consumer] select number error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				continue
 			}
@@ -1001,8 +1024,8 @@ func (c *Consumer) getOrCreateStoragePoint(alignTs int64, ctx *LogContext, shard
 	if point == nil {
 		if c.maxKeySize > 0 && shard.PointCount() >= c.maxKeySize {
 			logger.Debugz("[consumer] filter maxKeySize", zap.String("key", c.key), zap.Int("maxKeySize", c.maxKeySize))
-			c.stat.filterGroupMaxKeys++
-			ctx.periodStatus.stat.filterGroupMaxKeys++
+			c.stat.FilterGroupMaxKeys++
+			ctx.periodStatus.Stat.FilterGroupMaxKeys++
 			return nil
 		}
 		// 此处 groups 是对 line 的切分引用, 我们不能直接将 groups 保存下来, 否则原始 line 无法释放
@@ -1029,11 +1052,53 @@ func (c *Consumer) executeGroupBy(ctx *LogContext) ([]string, bool) {
 	groups, err := c.GroupBy.Execute(ctx)
 	if err != nil {
 		logger.Debugz("[consumer] group error", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()), zap.Error(err))
-		c.stat.filterGroup++
-		ctx.periodStatus.stat.filterGroup++
+		c.stat.FilterGroup++
+		ctx.periodStatus.Stat.FilterGroup++
 		return nil, false
 	}
 	return groups, true
+}
+
+func (c *Consumer) SaveState() (*consumerStateObj, error) {
+	state := &consumerStateObj{
+		FirstIOSuccessTime:        c.firstIOSuccessTime,
+		MaxDataTimestamp:          c.maxDataTimestamp,
+		EstimatedMaxDataTimestamp: c.estimatedMaxDataTimestamp,
+		ConsumerStat:              c.stat,
+	}
+
+	for _, shard := range c.timeline.InternalGetShard() {
+		if shard == nil || shard.Frozen {
+			continue
+		}
+		s := &shardSateObj{
+			TS:     shard.TS,
+			Points: shard.InternalGetAllPoints(),
+			Data:   shard.Data,
+			Data2:  shard.Data2,
+		}
+		state.Shards = append(state.Shards, s)
+	}
+
+	return state, nil
+}
+
+func (c *Consumer) LoadState(state *consumerStateObj) error {
+	c.firstIOSuccessTime = state.FirstIOSuccessTime
+	c.maxDataTimestamp = state.MaxDataTimestamp
+	c.estimatedMaxDataTimestamp = state.EstimatedMaxDataTimestamp
+	c.stat = state.ConsumerStat
+
+	for _, s := range state.Shards {
+		shard := c.timeline.GetOrCreateShard(s.TS)
+		shard.Data = s.Data
+		shard.Data2 = s.Data2
+		for key, point := range s.Points {
+			shard.SetPoint(key, point)
+		}
+	}
+
+	return nil
 }
 
 func removeZeroNumbers(event *pb2.ReportEventRequest_Event) {

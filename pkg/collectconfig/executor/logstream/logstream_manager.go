@@ -5,24 +5,44 @@
 package logstream
 
 import (
+	"encoding/gob"
+	"fmt"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/transfer"
+	"go.uber.org/zap"
 	"sync"
 	"time"
+)
+
+const (
+	stateKey = "LogStream.Manager"
 )
 
 type (
 	// Manager 用于确保相同路径的path只有一个 FileLogStream 实例
 	Manager struct {
 		mutex          sync.Mutex
-		cache          map[string]*cacheItem
 		maxLineSize    int
 		maxIOReadBytes int64
 		stop           chan struct{}
+		managerState
+	}
+	managerState struct {
+		cache map[string]*cacheItem
 	}
 	cacheItem struct {
 		ref int32
-		ls  LogStream
+		ls  *FileLogStream
+	}
+	// Manager state obj for gob
+	managerStateObj struct {
+		Cache map[string]*fileLogStreamStateObj
 	}
 )
+
+func init() {
+	gob.Register(&managerStateObj{})
+}
 
 func NewManager() *Manager {
 	return NewManager2(DefaultLogInputConfig.MaxLineSize, DefaultLogInputConfig.MaxIOReadBytes)
@@ -30,15 +50,85 @@ func NewManager() *Manager {
 
 func NewManager2(maxLineSize int, maxIOReadBytes int64) *Manager {
 	return &Manager{
-		cache:          make(map[string]*cacheItem),
+		managerState: managerState{
+			cache: make(map[string]*cacheItem),
+		},
 		maxLineSize:    maxLineSize,
 		maxIOReadBytes: maxIOReadBytes,
 		stop:           make(chan struct{}),
 	}
 }
 
+func (m *Manager) StopAndSaveState(store transfer.StateStore) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	close(m.stop)
+
+	// clean right now
+	m.cleanOnce()
+
+	state := &managerStateObj{
+		Cache: map[string]*fileLogStreamStateObj{},
+	}
+
+	for k, v := range m.cache {
+		if s, err := v.ls.SaveState(); err == nil {
+			// s == nil means nothing to save
+			if s != nil {
+				state.Cache[k] = s
+				logger.Infoz("[transfer] [logstream] stream save state success", zap.String("path", k))
+			}
+		} else {
+			logger.Errorz("[transfer] [logstream] stream save state error", zap.String("path", k), zap.Error(err))
+		}
+	}
+
+	store.Put(stateKey, state)
+
+	return nil
+}
+
+func (m *Manager) LoadState(store transfer.StateStore) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	stateI, err := store.Get(stateKey)
+	if err != nil {
+		return err
+	}
+
+	state := stateI.(*managerStateObj)
+
+	if x := len(m.cache); x != 0 {
+		return fmt.Errorf("LogStream.Manager already has cached LogStreams, size=%d", x)
+	}
+
+	for key, s := range state.Cache {
+		// We first load the LogStream. Now its ref is 1.
+		fls := m.acquire0(key).(*FileLogStream)
+		if err := fls.LoadState(s); err != nil {
+			m.release0(key, fls)
+			logger.Errorz("[transfer] [logstream] stream load state error", zap.String("key", key), zap.Error(err))
+		} else {
+			logger.Infoz("[transfer] [logstream] stream load state success", zap.String("key", key))
+		}
+	}
+
+	return nil
+}
+
 func (m *Manager) Start() {
 	go m.cleanLoop()
+}
+
+func (m *Manager) isStopped() bool {
+	select {
+	case <-m.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Manager) cleanLoop() {
@@ -50,15 +140,20 @@ func (m *Manager) cleanLoop() {
 		case <-m.stop:
 			return
 		case <-timer.C:
-			m.cleanOnce()
-			timer.Reset(time.Minute)
+			func() {
+				m.mutex.Lock()
+				defer m.mutex.Unlock()
+				if m.isStopped() {
+					return
+				}
+				m.cleanOnce()
+				timer.Reset(time.Minute)
+			}()
 		}
 	}
 }
 
 func (m *Manager) cleanOnce() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
 	for _, item := range m.cache {
 		item.ls.Clean()
 	}
@@ -68,6 +163,10 @@ func (m *Manager) Acquire(path string) LogStream {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	return m.acquire0(path)
+}
+
+func (m *Manager) acquire0(path string) LogStream {
 	i := m.cache[path]
 	if i != nil {
 		i.ref++
@@ -90,11 +189,37 @@ func (m *Manager) Acquire(path string) LogStream {
 
 func (m *Manager) Release(path string, ls LogStream) {
 	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	m.release0(path, ls)
+}
+
+func (m *Manager) release0(path string, ls LogStream) {
 	i := m.cache[path]
 	i.ref--
 	if i.ref == 0 {
 		delete(m.cache, path)
-		ls.Stop()
+		i.ls.Stop()
 	}
-	m.mutex.Unlock()
+}
+
+func (m *Manager) CleanInvalidRefAfterLoadState() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	for key, cache := range m.cache {
+		// If this LogStream is refed by any active LogPipeline, it must have ref > 1.
+		// Because we call acquire0 in the LoadState func, it will first load LogStream with ref = 1.
+		if cache.ref == 1 {
+			logger.Infoz("[transfer] remove invalid LogStream with ref = 1", zap.String("key", key))
+			delete(m.cache, key)
+			cache.ls.Stop()
+			continue
+		}
+
+		if len(cache.ls.listeners) != cache.ls.matchesSuccessCount {
+			// TODO fatal error
+			panic("len(cache.ls.listeners) != cache.ls.matchesSuccessCount")
+		}
+	}
 }

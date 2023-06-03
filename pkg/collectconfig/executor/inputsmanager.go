@@ -7,21 +7,25 @@ package executor
 import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"go.uber.org/zap"
 )
 
 type (
 	// inputWrapper wraps a logstream.ReadRequest
 	inputWrapper struct {
-		path     string
-		pathTags map[string]string
-		ls       logstream.LogStream
-		req      *logstream.ReadRequest
-		fileId   string
+		ls logstream.LogStream
+		inputStateObj
+	}
+	inputStateObj struct {
+		Path     string
+		PathTags map[string]string
+		Cursor   int64
 		// lastState and state are used to detect state change
-		lastState inputWrapperState
-		state     inputWrapperState
+		LastState inputWrapperStatus
+		State     inputWrapperStatus
+		FileId    string
+		Offset    int64
 	}
 	// inputsManager wraps inputs of a LogPipeline
 	inputsManager struct {
@@ -57,14 +61,14 @@ func (im *inputsManager) checkInputsChange() {
 				zap.String("path", path))
 			ls := im.lsm.Acquire(path)
 			newInputs[path] = &inputWrapper{
-				path:     path,
-				pathTags: fatPath.Tags,
-				ls:       ls,
-				req: &logstream.ReadRequest{
-					Cursor: ls.AddListener(im.listener),
+				ls: ls,
+				inputStateObj: inputStateObj{
+					Path:      path,
+					PathTags:  fatPath.Tags,
+					Cursor:    ls.AddListener(im.listener),
+					State:     inputWrapperStateFirst,
+					LastState: inputWrapperStateFirst,
 				},
-				state:     inputWrapperStateFirst,
-				lastState: inputWrapperStateFirst,
 			}
 		}
 	}
@@ -83,8 +87,8 @@ func (im *inputsManager) checkInputsChange() {
 }
 
 func (im *inputsManager) releaseStream(iw *inputWrapper) {
-	iw.ls.RemoveListener(im.listener, iw.req.Cursor)
-	im.lsm.Release(iw.path, iw.ls)
+	iw.ls.RemoveListener(im.listener, iw.Cursor)
+	im.lsm.Release(iw.Path, iw.ls)
 }
 
 func (im *inputsManager) stop() {

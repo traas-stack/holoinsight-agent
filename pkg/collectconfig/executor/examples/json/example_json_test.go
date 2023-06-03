@@ -7,7 +7,7 @@ package json
 import (
 	"bufio"
 	"bytes"
-	json2 "encoding/json"
+	"encoding/json"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
@@ -16,7 +16,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/output/all"
 	"os"
 	"testing"
@@ -38,7 +38,7 @@ func TestExecutor_simple(t *testing.T) {
 	defer f.Close()
 
 	sqlTask := &collectconfig.SQLTask{}
-	err = json2.NewDecoder(f).Decode(sqlTask)
+	err = json.NewDecoder(f).Decode(sqlTask)
 	if err != nil {
 		panic(err)
 	}
@@ -92,9 +92,9 @@ func generateLogs(sqltask *collectconfig.SQLTask) {
 		buf := &bytes.Buffer{}
 		for _, line := range lines {
 			m := make(map[string]interface{})
-			json2.Unmarshal([]byte(line), &m)
+			json.Unmarshal([]byte(line), &m)
 			m["time"] = time.Now().Format(sqltask.From.Log.Time.Layout)
-			bs, _ := json2.Marshal(m)
+			bs, _ := json.Marshal(m)
 			fmt.Fprintln(buf, string(bs))
 		}
 		fmt.Fprint(out1, buf.String())

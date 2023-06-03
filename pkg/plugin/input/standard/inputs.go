@@ -33,7 +33,7 @@ func trimType(t string) string {
 func ParseInput(task *collecttask.CollectTask) (interface{}, error) {
 	trimmedType := trimType(task.Config.Type)
 
-	if provider, ok := providers.Get(trimmedType); ok {
+	if provider, ok := providers.GetInputProvider(trimmedType); ok {
 		return provider(task)
 	}
 

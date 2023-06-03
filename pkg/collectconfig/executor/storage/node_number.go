@@ -5,6 +5,7 @@
 package storage
 
 import (
+	"encoding/gob"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
 	"math"
@@ -17,6 +18,11 @@ type (
 		Agg   agg.AggType
 	}
 )
+
+func init() {
+	gob.Register(&AggNumberDataNode{})
+	gob.Register(&HllDataNode{})
+}
 
 func (n *AggNumberDataNode) MergeHll(str string) {
 	panic("AggNumberDataNode doesn't support MergeHll")

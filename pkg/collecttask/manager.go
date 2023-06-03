@@ -55,6 +55,7 @@ type (
 		tasksCount         int
 		stopSignal         *util.StopSignal
 		manuallySyncOnceCh chan struct{}
+		staticTasks        []*CollectTask
 	}
 	BucketInfo struct {
 		key   string
@@ -152,12 +153,13 @@ func (m *Manager) GetAll() []*CollectTask {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	tasks := make([]*CollectTask, 0, m.tasksCount)
+	tasks := make([]*CollectTask, 0, m.tasksCount+len(m.staticTasks))
 	for _, b := range m.buckets {
 		for _, t := range b.tasks {
 			tasks = append(tasks, t)
 		}
 	}
+	tasks = append(tasks, m.staticTasks...)
 	return tasks
 }
 
@@ -366,6 +368,12 @@ func (m *Manager) MaybeSyncOnce() {
 	case m.manuallySyncOnceCh <- struct{}{}:
 	default:
 	}
+}
+
+func (m *Manager) AddStaticTasks(tasks ...*CollectTask) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.staticTasks = append(m.staticTasks, tasks...)
 }
 
 func getInterval(seconds int32, defaultDuration time.Duration) time.Duration {

@@ -13,11 +13,11 @@ import (
 )
 
 type (
-	jvmState struct {
-		byPid map[string]*pidJvmState
+	internalState struct {
+		ByPid map[string]*pidJvmState
 	}
 	pidJvmState struct {
-		rawMetrics map[string]interface{}
+		RawMetrics map[string]interface{}
 	}
 )
 
@@ -148,7 +148,7 @@ func calcFinalMetrics(rawMetrics map[string]interface{}, lastPidState *pidJvmSta
 
 	if lastPidState != nil {
 		for key := range accuMetrics {
-			if f64, err := cast.ToFloat64E(lastPidState.rawMetrics[key]); err == nil {
+			if f64, err := cast.ToFloat64E(lastPidState.RawMetrics[key]); err == nil {
 				v := math.Max(finalMetrics[key].(float64)-f64, 0)
 
 				if _, ok := timeMetrics[key]; ok {

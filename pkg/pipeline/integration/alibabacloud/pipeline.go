@@ -16,8 +16,8 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/meta"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/integration/alibabacloud"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
@@ -74,9 +74,14 @@ type (
 	}
 )
 
-func (p *Pipeline) Start() {
+func (p *Pipeline) Key() string {
+	return p.task.Key
+}
+
+func (p *Pipeline) Start() error {
 	logger.Infoz("[pipeline] [alibabacloud] task start", zap.Any("conf", util.ToJsonString(p.conf)))
 	go p.taskLoop()
+	return nil
 }
 
 func (p *Pipeline) Stop() {
@@ -424,31 +429,31 @@ func (p *Pipeline) collectOneMetric(traceId string, ams *alibabacloud.AliyunMetr
 	return metrics, nil
 }
 
-func (p *Pipeline) getTimer() *util.AlignTsTimer {
-	internalMs := time.Minute.Milliseconds()
+func (p *Pipeline) getTimer() *util.AlignedTimer {
+	interval := time.Minute
 	switch p.conf.ExecuteRule.Type {
 	case "fixedRate":
 		if interval, err := util.ParseDuration(p.conf.ExecuteRule.FixedRate); err == nil && interval > 0 {
-			internalMs = interval.Milliseconds()
+			interval = interval
 		}
 	}
 
-	if internalMs < time.Minute.Milliseconds() {
-		internalMs = time.Minute.Milliseconds()
+	if interval < time.Minute {
+		interval = time.Minute
 	}
-	return util.NewAlignTsTimer(internalMs, 1500, 500, 1500, false)
+	timer, _ := util.NewAlignedTimer(interval, 1500*time.Millisecond, true, false)
+	return timer
 }
 
 func (p *Pipeline) taskLoop() {
 	timer := p.getTimer()
 	defer timer.Stop()
-	timer.Next()
 
 	for {
 		select {
 		case <-p.stop:
 			return
-		case <-timer.Chan():
+		case <-timer.C:
 			recoverutils.WithRecover(p.syncOnce)
 			timer.Next()
 		}

@@ -130,38 +130,43 @@ func (m *Manager) run() {
 	for {
 		select {
 		case <-timer.C:
-			if m.IsStopped() {
-				break
-			}
+			func() {
+				m.mutex.Lock()
+				defer m.mutex.Unlock()
 
-			now := time.Now()
-
-			counterItems := make([]CounterItem, len(m.adders))
-			for i, a := range m.adders {
-				counterItems[i] = CounterItem{
-					Name: a.name,
-					Data: a.getAndClear(),
+				if m.IsStopped() {
+					return
 				}
-			}
 
-			gaugeItems := make([]GaugeItem, 0, len(m.gaugeMap))
-			for name, gauger := range m.gaugeMap {
-				gaugeItems = append(gaugeItems, GaugeItem{
-					Name:     name,
-					SubItems: gauger(),
-				})
-			}
+				now := time.Now()
 
-			st := StatEvent{
-				Period:       m.period,
-				Now:          now,
-				CounterItems: counterItems,
-				GaugeItems:   gaugeItems,
-			}
+				counterItems := make([]CounterItem, len(m.adders))
+				for i, a := range m.adders {
+					counterItems[i] = CounterItem{
+						Name: a.name,
+						Data: a.getAndClear(),
+					}
+				}
 
-			m.print(st)
+				gaugeItems := make([]GaugeItem, 0, len(m.gaugeMap))
+				for name, gauger := range m.gaugeMap {
+					gaugeItems = append(gaugeItems, GaugeItem{
+						Name:     name,
+						SubItems: gauger(),
+					})
+				}
 
-			timer.Next()
+				st := StatEvent{
+					Period:       m.period,
+					Now:          now,
+					CounterItems: counterItems,
+					GaugeItems:   gaugeItems,
+				}
+
+				m.print(st)
+
+				timer.Next()
+			}()
 		}
 	}
 }

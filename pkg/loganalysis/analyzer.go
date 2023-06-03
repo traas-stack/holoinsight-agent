@@ -11,17 +11,19 @@ const (
 )
 
 type (
+	// Analyzer
+	// This struct needs to be encoded by gob. So all fields are public.
 	Analyzer struct {
-		logs            []*AnalyzedLog
-		maxLogLength    int
-		maxPatternCount int
+		Logs            []*AnalyzedLog
+		MaxLogLength    int
+		MaxPatternCount int
 	}
 	AnalyzedLog struct {
-		Parts       []*LAPart     `json:"parts,omitempty"`
-		Sample      string        `json:"sample,omitempty"`
-		Count       int           `json:"count,omitempty"`
-		SourceWords []*SourceWord `json:"sourceWords,omitempty"`
-		sources     map[string]int
+		Parts       []*LAPart      `json:"parts,omitempty"`
+		Sample      string         `json:"sample,omitempty"`
+		Count       int            `json:"count,omitempty"`
+		SourceWords []*SourceWord  `json:"sourceWords,omitempty"`
+		Sources     map[string]int `json:"-"`
 	}
 	SourceWord struct {
 		Source string `json:"source"`
@@ -55,8 +57,8 @@ func NewAnalyzer(maxLogLength, maxPatternCount int) *Analyzer {
 		maxPatternCount = DefaultLogPatterns
 	}
 	return &Analyzer{
-		maxLogLength:    maxLogLength,
-		maxPatternCount: maxPatternCount,
+		MaxLogLength:    maxLogLength,
+		MaxPatternCount: maxPatternCount,
 	}
 }
 
@@ -68,19 +70,19 @@ func newErrorLog(parts []*LAPart, sample string) *AnalyzedLog {
 
 func (el *AnalyzedLog) mergeKeywords(parts []*LAPart) {
 	el.Count++
-	if el.sources == nil {
-		el.sources = make(map[string]int)
+	if el.Sources == nil {
+		el.Sources = make(map[string]int)
 	}
 
 	for _, p := range parts {
 		if p.Source {
-			if _, ok := el.sources[p.Content]; ok {
-				el.sources[p.Content]++
+			if _, ok := el.Sources[p.Content]; ok {
+				el.Sources[p.Content]++
 			} else {
-				if len(el.sources) > DefaultMaxSourceCount {
+				if len(el.Sources) > DefaultMaxSourceCount {
 					continue
 				} else {
-					el.sources[p.Content] = 1
+					el.Sources[p.Content] = 1
 				}
 			}
 		}
@@ -88,36 +90,36 @@ func (el *AnalyzedLog) mergeKeywords(parts []*LAPart) {
 }
 
 func (a *Analyzer) Analyze(log string) {
-	if len(log) > a.maxLogLength {
-		log = log[:a.maxLogLength]
+	if len(log) > a.MaxLogLength {
+		log = log[:a.MaxLogLength]
 	}
 	parts := dissembleParts(log)
-	for _, ea := range a.logs {
+	for _, ea := range a.Logs {
 		if isSimilar(parts, ea.Parts) {
 			ea.mergeKeywords(parts)
 			return
 		}
 	}
 
-	if len(a.logs) < a.maxPatternCount {
+	if len(a.Logs) < a.MaxPatternCount {
 		errorLog := newErrorLog(parts, log)
-		a.logs = append(a.logs, errorLog)
+		a.Logs = append(a.Logs, errorLog)
 	}
 }
 
 func (a *Analyzer) AnalyzedLogs() []*AnalyzedLog {
-	for _, log := range a.logs {
-		log.SourceWords = make([]*SourceWord, 0, len(log.sources))
-		for source, count := range log.sources {
+	for _, log := range a.Logs {
+		log.SourceWords = make([]*SourceWord, 0, len(log.Sources))
+		for source, count := range log.Sources {
 			log.SourceWords = append(log.SourceWords, &SourceWord{
 				Source: source,
 				Count:  count,
 			})
 		}
 	}
-	return a.logs
+	return a.Logs
 }
 
 func (a *Analyzer) Clear() {
-	a.logs = nil
+	a.Logs = nil
 }
