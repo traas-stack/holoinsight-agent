@@ -139,7 +139,7 @@ func (m *K8sNodeMasterMaintainer) onChange0() {
 			}
 			if newMasterPod == nil {
 				newMasterPod = pod
-			} else if pod.Spec.NodeName < newMasterPod.Spec.NodeName {
+			} else if pod.Spec.NodeName < newMasterPod.Spec.NodeName || pod.Spec.NodeName == newMasterPod.Spec.NodeName && pod.Name < newMasterPod.Name {
 				newMasterPod = pod
 			}
 		}

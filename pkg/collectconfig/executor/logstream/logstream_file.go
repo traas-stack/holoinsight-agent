@@ -11,6 +11,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/utils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"go.uber.org/zap"
+	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"sync"
@@ -457,7 +458,7 @@ func (f *FileLogStream) ensureOpened(seekEnd bool) error {
 		return nil
 	}
 
-	file, err := os.Open(f.config.Path)
+	file, err := os.OpenFile(f.config.Path, os.O_RDONLY|unix.O_NOATIME, 0)
 	if err != nil {
 		return err
 	}
