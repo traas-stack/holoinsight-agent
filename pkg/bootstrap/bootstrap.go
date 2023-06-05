@@ -57,6 +57,7 @@ type (
 		pm                  *pipeline.Manager
 		tm                  *manager.TransferManager
 		httpServerComponent *server.HttpServerComponent
+		am                  *agent.Manager
 	}
 )
 
@@ -222,6 +223,7 @@ func (b *AgentBootstrap) setupAgentManager() error {
 	am := agent.NewManager(ioc.RegistryService)
 	am = b.callCustomizers("agentManager", am).(*agent.Manager)
 	am.Start()
+	b.am = am
 	b.AddStopComponent(am)
 
 	b.callCustomizers("agentManager-setup-end", nil)
@@ -233,7 +235,7 @@ func (b *AgentBootstrap) waitStop() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	sig := <-c
 	signal.Stop(c)
-	logger.Infoz("[agent] receive stop signal", zap.String("signal", sig.String()), zap.Int("components", len(App.stopComponents)))
+	logger.Infoz("[agent] receive stop signal", zap.String("signal", sig.String()))
 }
 
 func (b *AgentBootstrap) callStopComponents() {
@@ -255,6 +257,9 @@ func (b *AgentBootstrap) callStopComponents() {
 }
 
 func (b *AgentBootstrap) onStop() error {
+	if b.tm != nil {
+		b.tm.StopSaveStateToFile()
+	}
 	begin0 := time.Now()
 	b.callStopComponents()
 	b.callCustomizers("stop", nil)
@@ -340,7 +345,7 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 	bsm := bistream.NewManager(ioc.RegistryService, bizbistream.GetBiStreamHandlerRegistry())
 
 	b.tm = manager.NewTransferManager(b.pm, b.lsm)
-	b.tm.AddStopComponents(b.httpServerComponent, ctm, bsm)
+	b.tm.AddStopComponents(b.httpServerComponent, ctm, bsm, b.am)
 	if err := b.tm.Transfer(); err != nil {
 		logger.Errorz("[transfer] error", zap.Error(err))
 	}

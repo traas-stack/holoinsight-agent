@@ -6,6 +6,8 @@ package manager
 
 import (
 	"context"
+	"encoding/gob"
+	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline"
@@ -23,6 +25,10 @@ import (
 	"time"
 )
 
+const (
+	stateFileFreshDuration = 2 * time.Minute
+)
+
 type (
 	// TransferManager is responsible for handling the logic of lossless restart/deployment.
 	TransferManager struct {
@@ -33,19 +39,26 @@ type (
 	StopComponent interface {
 		Stop()
 	}
+	stateStoreStateObj struct {
+		BornTime time.Time
+		State    []byte
+	}
 )
 
 var (
 	// transferSockFile is usually /usr/local/holoinsight/agent/data/transfer.sock
 	transferSockFile string
+	stateFile        string
 )
 
 func init() {
+	gob.Register(&stateStoreStateObj{})
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)
 	}
 	transferSockFile = filepath.Join(wd, "data", "transfer.sock")
+	stateFile = filepath.Join(wd, "data", "state")
 }
 
 func NewTransferManager(pm *pipeline.Manager, lsm *logstream.Manager) *TransferManager {
@@ -121,7 +134,7 @@ func (tm *TransferManager) callTransferDone(client transferpb.TransferSrviceClie
 	defer cancel()
 	resp, err := client.TransferDone(ctx, &transferpb.TransferDoneRequest{})
 	cost := time.Now().Sub(begin)
-	logger.Infoz("[transfer] [client] TransferDone", zap.Any("resp", resp), zap.Duration("cost", cost), zap.Error(err))
+	logger.Infoz("[transfer] [client] transfer done", zap.Any("resp", resp), zap.Duration("cost", cost), zap.Error(err))
 	return err
 }
 
@@ -130,13 +143,12 @@ func (tm *TransferManager) getRemoteState(client transferpb.TransferSrviceClient
 	resp, err := tm.callPauseAndSaveState(client)
 	cost := time.Now().Sub(begin)
 	if err != nil {
-		logger.Infoz("[transfer] [client] PauseAndSaveSave error", zap.Duration("cost", cost), zap.Error(err))
+		logger.Infoz("[transfer] [client] get remote state error", zap.Duration("cost", cost), zap.Error(err))
 		return nil, err
 	}
 
 	stateStore := transfer.NewMemoryStateStore()
 	if err := util.GobDecode(resp.State, &stateStore.State); err != nil {
-		logger.Errorz("[transfer] [client] PauseAndSaveSave decode error", zap.Duration("cost", cost), zap.Error(err))
 		return nil, err
 	}
 
@@ -186,20 +198,6 @@ func (tm *TransferManager) loadState(stateStore *transfer.MemoryStateStore) erro
 	return nil
 }
 
-func (tm *TransferManager) transfer(conn *grpc.ClientConn) error {
-	client := transferpb.NewTransferSrviceClient(conn)
-
-	// call TransferDone whatever
-	defer tm.callTransferDone(client)
-
-	stateStore, err := tm.getRemoteState(client)
-	if err != nil {
-		return err
-	}
-
-	return tm.loadState(stateStore)
-}
-
 // createConn create grp connection to old instance
 func (tm *TransferManager) createConn() (*grpc.ClientConn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -217,21 +215,69 @@ func (tm *TransferManager) createConn() (*grpc.ClientConn, error) {
 	}
 	return conn, nil
 }
-
-// Transfer transfers state from old instance to current instance
-func (tm *TransferManager) Transfer() error {
-	defer os.Remove(transferSockFile)
-
-	logger.Infoz("[transfer] [client] maybeTransfer begin")
-	begin := time.Now()
-
+func (tm *TransferManager) transferUsingGrpc() error {
+	// transfer using grpc
 	conn, err := tm.createConn()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	err = tm.transfer(conn)
+	client := transferpb.NewTransferSrviceClient(conn)
+
+	// call TransferDone whatever
+	defer tm.callTransferDone(client)
+
+	stateStore, err := tm.getRemoteState(client)
+	if err != nil {
+		return err
+	}
+
+	return tm.loadState(stateStore)
+}
+
+func (tm *TransferManager) transferUsingStateFile() error {
+	logger.Infoz("[transfer] try state file", zap.String("file", stateFile))
+	b, err := os.ReadFile(stateFile)
+	if err != nil {
+		logger.Infoz("[transfer] read state file error", zap.Error(err))
+		return err
+	}
+	logger.Infoz("[transfer] load state from state file", zap.Int("bytes", len(b)))
+	stateObj := &stateStoreStateObj{}
+	if err := util.GobDecode(b, stateObj); err != nil {
+		return err
+	}
+	logger.Infoz("[transfer] load state success", zap.Time("stateTime", stateObj.BornTime))
+	now := time.Now()
+	if stateObj.BornTime.Add(stateFileFreshDuration).Before(now) {
+		return fmt.Errorf("state file is stale, state time=[%s] now=[%s]", stateObj.BornTime.Format(time.RFC3339), now.Format(time.RFC3339))
+	}
+	stateStore := transfer.NewMemoryStateStore()
+	if err := util.GobDecode(stateObj.State, &stateStore.State); err != nil {
+		return err
+	}
+	return tm.loadState(stateStore)
+}
+
+// Transfer transfers state from old instance to current instance
+func (tm *TransferManager) Transfer() error {
+	defer func() {
+		os.Remove(transferSockFile)
+		os.Remove(stateFile)
+	}()
+
+	logger.Infoz("[transfer] [client] transfer begin")
+	begin := time.Now()
+
+	err := tm.transferUsingGrpc()
+
+	if err != nil {
+		err2 := tm.transferUsingStateFile()
+		if !os.IsNotExist(err2) {
+			err = err2
+		}
+	}
 
 	cost := time.Now().Sub(begin)
 	logger.Infoz("[transfer] [client] transfer done", zap.Duration("cost", cost), zap.Error(err))
@@ -276,4 +322,22 @@ func (tm *TransferManager) prepare() {
 		cost := time.Now().Sub(begin)
 		logger.Infoz("[transfer] [server] stop component", zap.Any("component", reflect.TypeOf(component)), zap.Duration("cost", cost))
 	}
+}
+
+func (tm *TransferManager) StopSaveStateToFile() error {
+	tm.prepare()
+	state, err := tm.StopAndSaveState()
+	if err != nil {
+		return err
+	}
+	stateObj := &stateStoreStateObj{
+		BornTime: time.Now(),
+		State:    state,
+	}
+	b, err := util.GobEncode(stateObj)
+	if err != nil {
+		return err
+	}
+	logger.Infoz("[transfer] [server] save state to file", zap.String("file", stateFile))
+	return os.WriteFile(stateFile, b, 0644)
 }
