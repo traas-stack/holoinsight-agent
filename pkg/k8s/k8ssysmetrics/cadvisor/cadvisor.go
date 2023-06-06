@@ -559,8 +559,14 @@ func (c *cadvisorSysCollector) makePodCGroupInfo(ctrs []cv1.ContainerInfo) map[s
 				continue
 			}
 
-			// container group: /kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod5c51e64f_4bde_4f55_bdc0_6067bad00435.slice/docker-2937209ace573c40e882b8781f9256d7e2c0a94071784613bc634a8ba72f885c.scope
+			// docker:
+			// container cgroup: /kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod5c51e64f_4bde_4f55_bdc0_6067bad00435.slice/docker-2937209ace573c40e882b8781f9256d7e2c0a94071784613bc634a8ba72f885c.scope
 			// pod cgroup: /kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod5c51e64f_4bde_4f55_bdc0_6067bad00435.slice
+
+			// containerd:
+			// container cgroup /kubepods/podedf083fd-f89d-4f11-8b86-8b24828a54a4/36b3874d38ac7d0636b9badccf265d0eeb5b9db8cae87350aca41a150e98a985
+			// pod cgroup /kubepods/podedf083fd-f89d-4f11-8b86-8b24828a54a4
+
 			parent := filepath.Dir(ctr.Name)
 			if _, ok := cadvisorPodInfoMap[parent]; !ok {
 				cadvisorPodInfoMap[parent] = &podCGroupInfo{
@@ -618,7 +624,6 @@ func (c *cadvisorSysCollector) calcMetrics(metricTime time.Time, cAdvisorPod *v1
 		if len(ctr.Stats) == 0 {
 			continue
 		}
-
 		var lastStat *containerStatCache
 
 		if x, ok := c.state.Cache1[ctr.Name]; ok {
