@@ -86,6 +86,7 @@ func (i *jvmInput) getProcessInfo(pid int32) (*criutils.ProcessInfo, error) {
 		pi.User, _ = p.Username()
 		pi.Name, _ = p.Name()
 		pi.CmdlineSlice, _ = p.CmdlineSlice()
+		pi.Tgid, _ = p.Tgid()
 		return pi, nil
 	}
 
@@ -148,10 +149,7 @@ func (i *jvmInput) Collect(a api.Accumulator) error {
 
 	logger.Debugz("[jvm] resolve perf data paths", zap.Any("target", i.task.Target), zap.Any("paths", pathMap))
 
-	// TODO how to known which one is the main java process?
-	if len(pathMap) > 1 {
-		return multipleJavaProcessesErr
-	}
+	hit := false
 	for pid, perfPath := range pathMap {
 		pid32, err := cast.ToInt32E(pid)
 		if err != nil {
@@ -160,15 +158,27 @@ func (i *jvmInput) Collect(a api.Accumulator) error {
 		}
 		javaProcess, err := i.getProcessInfo(pid32)
 		if err != nil {
-			logger.Debugz("[jvm] get process info error", zap.Any("target", i.task.Target), zap.String("pid", pid), zap.Error(err))
+			logger.Errorz("[jvm] get process info error", zap.Any("target", i.task.Target), zap.String("pid", pid), zap.Error(err))
+			continue
 		}
-
+		if javaProcess.Tgid != pid32 {
+			logger.Errorz("[jvm] skip thread pid", zap.Any("target", i.task.Target), zap.String("pid", pid), zap.Error(err))
+			continue
+		}
+		// When there has multi jvm processes, we only keeps one whose name is 'java'
+		if len(pathMap) > 1 && javaProcess.Name != "java" {
+			logger.Errorz("[jvm] ignore process", zap.Any("target", i.task.Target), zap.String("pid", pid), zap.Error(err))
+			continue
+		}
 		perfData, err := readFunc(perfPath)
 		if err != nil {
 			logger.Errorz("[jvm] read jvm perf data error", zap.Any("target", i.task.Target), zap.Int32("pid", pid32), zap.Error(err))
 			continue
 		}
-
+		if hit {
+			return multipleJavaProcessesErr
+		}
+		hit = true
 		rawMetrics := make(map[string]interface{})
 		tags := map[string]string{}
 

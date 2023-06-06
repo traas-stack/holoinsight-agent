@@ -9,5 +9,6 @@ type (
 		User         string   `json:"user"`
 		Name         string   `json:"name"`
 		CmdlineSlice []string `json:"cmdlineSlice"`
+		Tgid         int32    `json:"tgid"`
 	}
 )

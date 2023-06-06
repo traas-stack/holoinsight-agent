@@ -5,9 +5,9 @@
 package handlers
 
 import (
-	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"os"
 )
 
@@ -23,6 +23,7 @@ func processesHandler(action string, resp *model.Resp) error {
 	data["user"], _ = p.Username()
 	data["name"], _ = p.Name()
 	data["cmdlineSlice"], _ = p.CmdlineSlice()
+	data["tgid"], _ = p.Tgid()
 	resp.Success = true
 	return nil
 }
