@@ -33,7 +33,7 @@ func IsNvidiaEnabled() bool {
 }
 
 func init() {
-	providers.Register("gpu", func(task *collecttask.CollectTask) (api.Input, error) {
+	providers.RegisterInputProvider("gpu", func(task *collecttask.CollectTask) (api.Input, error) {
 		return &NvidiaInput{}, nil
 	})
 }

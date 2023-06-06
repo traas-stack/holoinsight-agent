@@ -33,7 +33,7 @@ type (
 	}
 	// 一条时间线在某一个时间点的所有值的集合
 	Shard struct {
-		ts     int64
+		TS     int64
 		no     int64
 		points map[string]*Point
 		// 如果为true说明该shard已经冻结, 比如已经emit过, 然后又收到旧数据,可以用于发现延迟日志
@@ -96,7 +96,7 @@ func (s *Storage) Clean(expireTime int64) {
 				t.dict = nil
 				for i := range t.shards {
 					s := t.shards[i]
-					if s != nil && s.ts < expireTime {
+					if s != nil && s.TS < expireTime {
 						t.shards[i] = nil
 						count++
 					}
@@ -161,6 +161,10 @@ func (t *Timeline) GetOrCreateShard(ts int64) *Shard {
 	return shard
 }
 
+func (t *Timeline) InternalGetShard() []*Shard {
+	return t.shards
+}
+
 func (t *Timeline) GetShard(ts int64) *Shard {
 	if t.shards == nil {
 		return nil
@@ -184,7 +188,7 @@ func (t *Timeline) CreateShard(ts int64) *Shard {
 	no := ts / t.interval
 	index := no % t.capacity
 	s := &Shard{
-		ts: ts,
+		TS: ts,
 		no: no,
 	}
 	t.shards[index] = s

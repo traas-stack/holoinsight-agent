@@ -5,6 +5,7 @@
 package logstream
 
 import (
+	"errors"
 	"time"
 )
 
@@ -13,6 +14,10 @@ type (
 		lines []string
 	}
 )
+
+func (m *MemLogStream) LoadReadState(request *ReadRequest) error {
+	return errors.New("unsupported")
+}
 
 func NewMemLogStream(lines []string) *MemLogStream {
 	return &MemLogStream{

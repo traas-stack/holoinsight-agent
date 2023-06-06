@@ -15,7 +15,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/output/console"
 	"os"
 	"testing"

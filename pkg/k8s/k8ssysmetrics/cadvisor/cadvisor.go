@@ -6,6 +6,7 @@ package cadvisor
 
 import (
 	"context"
+	"encoding/gob"
 	"fmt"
 	cadvisorclient "github.com/google/cadvisor/client"
 	cv1 "github.com/google/cadvisor/info/v1"
@@ -23,6 +24,7 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,7 +39,9 @@ type (
 		suffix   string
 		interval time.Duration
 		stopSig  *util.StopSignal
-		state    *internalState
+		mutex    sync.Mutex
+		state    internalState
+		timer    *util.AlignedTimer
 	}
 	podCGroupInfo struct {
 		namespace string
@@ -45,30 +49,67 @@ type (
 		// sum of usage of filesystem of children cgroup
 		diskUsage float64
 	}
-	containerStatCache struct {
-		stat    *cv1.ContainerStats
-		metrics []*model.Metric
-	}
 	internalState struct {
-		cache1       map[string]*containerStatCache
+		Cache1       map[string]*containerStatCache `json:"cache1,omitempty"`
 		cache2       map[string]*containerStatCache
 		queryCost    time.Duration
 		sendCost     time.Duration
 		metricsCount int
 	}
+	containerStatCache struct {
+		Stat    *cv1.ContainerStats `json:"stat,omitempty"`
+		Metrics []*model.Metric     `json:"metrics,omitempty"`
+	}
+	cadvisorSysCollectorStateObj struct {
+		Cache1     map[string]*containerStatCache `json:"cache1,omitempty"`
+		TimerBytes []byte                         `json:"timerBytes"`
+	}
 )
+
+func init() {
+	gob.Register(&cadvisorSysCollectorStateObj{})
+}
+
+func (c *cadvisorSysCollector) SaveState() (interface{}, error) {
+	timerBytes, err := c.timer.SaveState()
+	if err != nil {
+		return nil, err
+	}
+	return &cadvisorSysCollectorStateObj{
+		Cache1:     c.state.Cache1,
+		TimerBytes: timerBytes,
+	}, nil
+}
+
+func (c *cadvisorSysCollector) LoadState(i interface{}) error {
+	if i == nil {
+		return nil
+	}
+
+	state := i.(*cadvisorSysCollectorStateObj)
+
+	c.state.Cache1 = state.Cache1
+
+	if err := c.timer.LoadState(state.TimerBytes); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func (c *cadvisorSysCollector) Name() string {
 	return "cadvisor"
 }
 
 func NewPodSystemResourceCollector(cri cri.Interface, suffix string, interval time.Duration) common.SysCollector {
+	timer, _ := util.NewAlignedTimer(interval, time.Second, false, false)
+
 	return &cadvisorSysCollector{
 		cri:      cri,
 		suffix:   suffix,
 		interval: interval,
 		stopSig:  util.NewStopSignal(),
-		state:    &internalState{},
+		timer:    timer,
 	}
 }
 
@@ -83,15 +124,23 @@ func (c *cadvisorSysCollector) Start() {
 func (c *cadvisorSysCollector) taskLoop() {
 	defer c.stopSig.StopDone()
 
-	timer, emitTime := util.NewAlignedTimer(c.interval, time.Second, false, false)
+	timer := c.timer
 	defer timer.Stop()
 
 	for {
 		select {
 		case <-timer.C:
 			// executes at {interval+1s, 2*interval+1s, ...}
-			c.collectOnce(emitTime.Truncate(c.interval).Add(-c.interval))
-			emitTime = timer.Next()
+			func() {
+				c.mutex.Lock()
+				defer c.mutex.Unlock()
+				if c.stopSig.IsStopAsked() {
+					return
+				}
+				metricTime := timer.NextEmitTime().Truncate(c.interval).Add(-c.interval)
+				c.collectOnce(metricTime)
+				timer.Next()
+			}()
 		case <-c.stopSig.C:
 			return
 		}
@@ -102,7 +151,7 @@ func (c *cadvisorSysCollector) collectOnce(alignT time.Time) {
 	begin := time.Now()
 
 	defer func() {
-		c.state.cache1 = c.state.cache2
+		c.state.Cache1 = c.state.cache2
 		c.state.cache2 = nil
 	}()
 
@@ -112,8 +161,8 @@ func (c *cadvisorSysCollector) collectOnce(alignT time.Time) {
 		return
 	}
 
-	if c.state.cache1 == nil {
-		c.state.cache1 = make(map[string]*containerStatCache)
+	if c.state.Cache1 == nil {
+		c.state.Cache1 = make(map[string]*containerStatCache)
 	}
 	if c.state.cache2 == nil {
 		c.state.cache2 = make(map[string]*containerStatCache)
@@ -572,14 +621,14 @@ func (c *cadvisorSysCollector) calcMetrics(metricTime time.Time, cAdvisorPod *v1
 
 		var lastStat *containerStatCache
 
-		if x, ok := c.state.cache1[ctr.Name]; ok {
+		if x, ok := c.state.Cache1[ctr.Name]; ok {
 			lastStat = x
 		}
 
 		newStat := ctr.Stats[len(ctr.Stats)-1]
 
 		newStatCache := &containerStatCache{
-			stat: newStat,
+			Stat: newStat,
 		}
 		c.state.cache2[ctr.Name] = newStatCache
 
@@ -591,17 +640,17 @@ func (c *cadvisorSysCollector) calcMetrics(metricTime time.Time, cAdvisorPod *v1
 		// 'lastStat.stat.Timestamp == newStat.Timestamp' means that: It means that we call too frequently, exceeding the collection frequency of cadvisor.
 		// Or there is a problem inside cadvisor.
 		// At this time, we will this period with the data of the previous period.
-		if lastStat != nil && lastStat.stat.Timestamp == newStat.Timestamp {
-			for _, metric := range lastStat.metrics {
+		if lastStat != nil && lastStat.Stat.Timestamp == newStat.Timestamp {
+			for _, metric := range lastStat.Metrics {
 				x := *metric
 				x.Timestamp = alignTs
-				newStatCache.metrics = append(newStatCache.metrics, &x)
+				newStatCache.Metrics = append(newStatCache.Metrics, &x)
 			}
-			metrics = append(metrics, newStatCache.metrics...)
+			metrics = append(metrics, newStatCache.Metrics...)
 			continue
 		}
 
-		s1 := lastStat.stat
+		s1 := lastStat.Stat
 		s2 := newStat
 
 		deltaTime := s2.Timestamp.Sub(s1.Timestamp) / time.Nanosecond
@@ -611,55 +660,30 @@ func (c *cadvisorSysCollector) calcMetrics(metricTime time.Time, cAdvisorPod *v1
 
 		func() {
 			defer func() {
-				metrics = append(metrics, newStatCache.metrics...)
+				metrics = append(metrics, newStatCache.Metrics...)
 			}()
 
 			if ctr.Name == "/" {
 				// '/' is the node cgroup
-				newStatCache.metrics = c.collectNode(ctr, cAdvisorPod, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
+				newStatCache.Metrics = c.collectNode(ctr, cAdvisorPod, newStatCache.Metrics, mi, s1, s2, deltaTime, alignTs)
 			} else if cpi, ok := podCGroupInfo[ctr.Name]; ok {
 				// pod level cgroup
-				newStatCache.metrics = c.collectPodCGroup(ctr, cpi, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
+				newStatCache.Metrics = c.collectPodCGroup(ctr, cpi, newStatCache.Metrics, mi, s1, s2, deltaTime, alignTs)
 			} else if criCtr, ok := c.cri.GetContainerByCid(ctr.Id); ok && criCtr.Sandbox {
-				// sandbox: it holds network traffic metrics
-				newStatCache.metrics = c.collectPodSandbox(ctr, newStatCache.metrics, s1, s2, deltaTime, alignTs)
+				// sandbox: it holds network traffic Metrics
+				newStatCache.Metrics = c.collectPodSandbox(ctr, newStatCache.Metrics, s1, s2, deltaTime, alignTs)
 			} else if len(ctr.Subcontainers) == 0 {
 				// container cgroup
-				newStatCache.metrics = c.collectPodContainer(ctr, newStatCache.metrics, mi, s1, s2, deltaTime, alignTs)
+				newStatCache.Metrics = c.collectPodContainer(ctr, newStatCache.Metrics, mi, s1, s2, deltaTime, alignTs)
 			} else {
 				// unknown case
 			}
 		}()
 	}
 
-	// TODO Inaccurate
-	//for _, cpi := range podCGroupInfo {
-	//	if cpi.pod2 != nil {
-	//		tags := meta.ExtractPodCommonTags(cpi.pod2)
-	//		metrics = append(metrics, &model.Metric{
-	//			Name:      "k8s_pod_disk_usage",
-	//			Tags:      tags,
-	//			Timestamp: alignTs,
-	//			Value:     cpi.diskUsage,
-	//		})
-	//	}
-	//}
-
 	{
 		nodeTags := make(map[string]string)
 		nodeTags["ip"] = cAdvisorPod.Status.HostIP
-
-		//metrics = append(metrics, &model.Metric{
-		//	Name:      "k8s.node.cpu_total_cores",
-		//	Tags:      nodeTags,
-		//	Timestamp: alignTs,
-		//	Value:     float64(mi.NumCores),
-		//})
-		//metrics = append(metrics, &model.Metric{
-		//	Name:      "k8s.node.mem_total",
-		//	Tags:      nodeTags,
-		//	Timestamp: alignTs,
-		//	Value:     float64(mi.MemoryCapacity),
 		//})
 		metrics = append(metrics, &model.Metric{
 			Name:      "k8s_node_containers",

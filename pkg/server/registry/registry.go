@@ -358,8 +358,22 @@ func ping(ctx context.Context, conn *grpc.ClientConn) error {
 	return err
 }
 
-// Stop 停止实例, 只能被调用一次
+func (s *Service) isStopped() bool {
+	select {
+	case <-s.stop:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Service) Stop() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.isStopped() {
+		return
+	}
+
 	close(s.stop)
 	// delay close the underlying conn
 	time.AfterFunc(delayCloseDuration, func() {

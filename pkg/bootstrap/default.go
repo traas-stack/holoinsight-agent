@@ -43,11 +43,12 @@ func InitDockerEngine() (cri.ContainerEngine, error) {
 	return &engine.DockerContainerEngine{Client: docker}, nil
 }
 
-func InitCollectTaskManager(rs *registry.Service) (*collecttask.Manager, error) {
+func InitCollectTaskManager(rs *registry.Service, staticTasks []*collecttask.CollectTask) (*collecttask.Manager, error) {
 	ctm, err := collecttask.NewManager(rs, agentmeta.GetAgentId())
 	if err != nil {
 		return nil, err
 	}
+	ctm.AddStaticTasks(staticTasks...)
 	ctm.InitLoad()
 	ioc.CollectTaskManager = ctm
 	ctm.StartListen()

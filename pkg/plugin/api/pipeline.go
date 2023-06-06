@@ -11,7 +11,9 @@ import (
 
 type (
 	Pipeline interface {
-		Start()
+		// Key returns the unique identifier of the pipeline instance
+		Key() string
+		Start() error
 		Stop()
 		SetupConsumer(st *SubTask) error
 		Update(func(Pipeline))

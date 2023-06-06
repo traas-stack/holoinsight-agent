@@ -5,6 +5,7 @@
 package logstream
 
 import (
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/utils"
@@ -42,15 +43,15 @@ type (
 	}
 	// FileLogStream 将一个路径(不可变)映射为一个日志流
 	FileLogStream struct {
-		config LogInputConfig
-		mutex  sync.Mutex
-		file   *os.File
-		offset int64
-		// 缓存 cursor -> *ReadResponse
-		// 缓存释放时机1: 确认 cursor 已经被所有会读到它的消费者都读取了
-		// 缓存释放时机2: 过期 (这是一个保护措施, 按理它在代码里从来不会得到真正的执行)
+		config    LogInputConfig
+		mutex     sync.Mutex
+		listeners []Listener
+		fileLogStreamState
+	}
+	fileLogStreamState struct {
+		file            *os.File
+		offset          int64
 		cache           sync.Map
-		listeners       []Listener
 		cursor          int64
 		lineBuffer      *utils.LineBuffer
 		ignoreFirstLine bool
@@ -60,12 +61,65 @@ type (
 		//是否是第一次pull
 		firstPull bool
 		// only *inx
-		inode        uint64
-		pendingBytes int64
-		pendingReads int32
-		stop         chan struct{}
+		inode               uint64
+		pendingBytes        int64
+		pendingReads        int32
+		matchesSuccessCount int
+	}
+	fileLogStreamStateObj struct {
+		File            string
+		Offset          int64
+		Cache           map[int64]*ReadResponse
+		Cursor          int64
+		LineBuffer      *utils.LineBufferStateObj
+		IgnoreFirstLine bool
+		FileEndMode     fileEndMode
+		FileEndSize     int64
+		Continued       bool
+		FirstPull       bool
+		Inode           uint64
+		PendingBytes    int64
+		PendingReads    int32
 	}
 )
+
+func (f *FileLogStream) fileId() string {
+	return fmt.Sprintf("ino:%d", f.inode)
+}
+
+func (f *FileLogStream) LoadReadState(s *LoadReadState) error {
+	if s.Cursor > f.cursor {
+		return fmt.Errorf("invalid cursor now=[%d] requested=[%d]", f.cursor, s.Cursor)
+	}
+	if s.Cursor != f.cursor {
+		cached, ok := f.cache.Load(s.Cursor)
+		if !ok {
+			return fmt.Errorf("no cache for cursor now=[%d] requested=[%d]", f.cursor, s.Cursor)
+		}
+		resp := cached.(*ReadResponse)
+		if resp.FileId != s.FileId && resp.BeginOffset != s.Offset {
+			return fmt.Errorf("invalid cursor cache, cached=[%s/%s] requested=[%s/%d]", resp.FileId, resp.BeginOffset, s.FileId, s.Offset)
+		}
+	} else {
+		if !(f.inode == 0 && s.FileId == "") && f.fileId() != s.FileId {
+			return fmt.Errorf("inode mismatch now=[%s] requested=[%s]", f.fileId(), s.FileId)
+		}
+		if s.Offset > f.offset {
+			return errors.New("invalid offset")
+		}
+	}
+
+	f.cache.Range(func(key, value any) bool {
+		cursor := key.(int64)
+		if cursor >= s.Cursor {
+			value.(*ReadResponse).remainCount++
+		}
+		return true
+	})
+
+	f.matchesSuccessCount++
+	return nil
+}
 
 func NewFileLogStream(config LogInputConfig) *FileLogStream {
 	if config.MaxIOReadBytes < DefaultLogInputConfig.MaxIOReadBytes {
@@ -75,9 +129,10 @@ func NewFileLogStream(config LogInputConfig) *FileLogStream {
 		config.MaxLineSize = DefaultLogInputConfig.MaxLineSize
 	}
 	return &FileLogStream{
-		config:     config,
-		lineBuffer: utils.NewLineBuffer(config.MaxLineSize),
-		stop:       make(chan struct{}),
+		config: config,
+		fileLogStreamState: fileLogStreamState{
+			lineBuffer: utils.NewLineBuffer(config.MaxLineSize),
+		},
 	}
 }
 
@@ -85,6 +140,80 @@ func (f *FileLogStream) Start() {
 }
 
 func (f *FileLogStream) Stop() {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	f.closeFile()
+}
+
+func init() {
+	gob.Register(&fileLogStreamStateObj{})
+}
+
+func (f *FileLogStream) LoadState(state *fileLogStreamStateObj) error {
+	if err := f.ensureOpened(true); err != nil {
+		return err
+	}
+
+	if f.inode != state.Inode {
+		return fmt.Errorf("file changed oldInode=[%d] newInode=[%d]", state.Inode, f.inode)
+	}
+
+	if _, err := f.file.Seek(state.Offset, io.SeekStart); err != nil {
+		f.closeFile()
+		return err
+	}
+
+	f.offset = state.Offset
+	f.cursor = state.Cursor
+	f.lineBuffer.LoadState(state.LineBuffer)
+	f.ignoreFirstLine = state.IgnoreFirstLine
+	f.fileEndMode = state.FileEndMode
+	f.fileEndSize = state.FileEndSize
+	f.continued = state.Continued
+	f.firstPull = state.Continued
+	f.inode = state.Inode
+	f.pendingBytes = state.PendingBytes
+	f.pendingReads = state.PendingReads
+
+	for key, response := range state.Cache {
+		f.cache.Store(key, response)
+	}
+
+	return nil
+}
+
+func (f *FileLogStream) SaveState() (*fileLogStreamStateObj, error) {
+	if f.file == nil {
+		return nil, nil
+	}
+
+	if !f.lineBuffer.Empty() {
+		return nil, errors.New("line buffer is not empty")
+	}
+
+	cache := make(map[int64]*ReadResponse)
+	f.cache.Range(func(key, value any) bool {
+		cache[key.(int64)] = value.(*ReadResponse)
+		return true
+	})
+
+	state := &fileLogStreamStateObj{
+		File:            f.config.Path,
+		Offset:          f.offset,
+		Cache:           cache,
+		Cursor:          f.cursor,
+		LineBuffer:      f.lineBuffer.SaveState(),
+		IgnoreFirstLine: f.ignoreFirstLine,
+		FileEndMode:     f.fileEndMode,
+		FileEndSize:     f.fileEndSize,
+		Continued:       f.continued,
+		FirstPull:       f.firstPull,
+		Inode:           f.inode,
+		PendingBytes:    f.pendingBytes,
+		PendingReads:    f.pendingReads,
+	}
+
+	return state, nil
 }
 
 func (f *FileLogStream) getCache(cursor int64) *ReadResponse {
@@ -138,7 +267,7 @@ func (f *FileLogStream) Read(request *ReadRequest) (*ReadResponse, int64, error)
 	if reqCursor != f.cursor {
 		// 这说明 用户传入了一个 stale cursor
 		// 此时只能让用户跳转到最新的cursor上
-		return nil, f.cursor, fmt.Errorf("stale cursor r=[%d] f=[%d]", reqCursor, f.cursor)
+		return nil, f.cursor, fmt.Errorf("stale cursor request=[%d] current=[%d]", reqCursor, f.cursor)
 	}
 
 	resp := f.read()
@@ -458,7 +587,6 @@ func (f *FileLogStream) fire(cursor int64) {
 		l.Changed(f.config.Path, f, cursor)
 	}
 	// }()
-
 }
 
 func (f *FileLogStream) Stat() Stat {

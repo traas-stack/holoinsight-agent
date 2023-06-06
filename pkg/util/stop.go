@@ -4,8 +4,11 @@
 
 package util
 
+import "sync"
+
 type (
 	StopSignal struct {
+		mutex    sync.Mutex
 		C        chan struct{}
 		stoppedC chan struct{}
 	}
@@ -25,7 +28,12 @@ func (s *StopSignal) StopAndWait() {
 
 // Stop must only be call once
 func (s *StopSignal) Stop() {
-	close(s.C)
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if !s.IsStopAsked() {
+		close(s.C)
+	}
 }
 
 func (s *StopSignal) IsStopAsked() bool {

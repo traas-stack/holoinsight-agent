@@ -32,7 +32,7 @@ type (
 
 func parseTimeParser(timeConf *collectconfig.TimeConf) (TimeParser, error) {
 	if timeConf == nil {
-		return &processTimeParser{}, nil
+		return &autoParser{}, nil
 	}
 
 	switch timeConf.Type {

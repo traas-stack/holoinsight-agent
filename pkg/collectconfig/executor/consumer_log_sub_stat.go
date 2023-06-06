@@ -85,9 +85,9 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 	}
 
 	periodStatus := c.parent.getOrCreatePeriodStatusWithoutLock(alignTs)
-	periodStatus.stat.broken = periodStatus.stat.broken || c.parent.stat.broken
-	periodStatus.stat.noContinued = periodStatus.stat.noContinued || c.parent.stat.noContinued
-	periodStatus.stat.groups++
+	periodStatus.Stat.Broken = periodStatus.Stat.Broken || c.parent.stat.Broken
+	periodStatus.Stat.NoContinued = periodStatus.Stat.NoContinued || c.parent.stat.NoContinued
+	periodStatus.Stat.Groups++
 	ctx.periodStatus = periodStatus
 
 	if processGroupEvent != nil {
@@ -126,8 +126,8 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 	// get data shard
 	shard := c.parent.timeline.GetOrCreateShard(alignTs)
 	if shard.Frozen {
-		c.parent.stat.filterDelay++
-		ctx.periodStatus.stat.filterDelay++
+		c.parent.stat.FilterDelay++
+		ctx.periodStatus.Stat.FilterDelay++
 		// has log delay there is no need to process it
 		return
 	}
@@ -137,8 +137,8 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 		return
 	}
 
-	c.parent.stat.processed++
-	periodStatus.stat.processed++
+	c.parent.stat.Processed++
+	periodStatus.Stat.Processed++
 	c.parent.executeSelectAgg(processGroupEvent, ctx, point)
 }
 
@@ -157,6 +157,7 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) bool {
 				zap.Time("ts", time.UnixMilli(expectedTs))) //
 			return
 		}
+		shard.Frozen = true
 		points := shard.InternalGetAllPoints()
 		for _, v := range points {
 			tags := make(map[string]string, len(v.Keys))
@@ -200,7 +201,7 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) bool {
 
 	})
 
-	c.parent.stat.emit += int32(len(datum))
+	c.parent.stat.Emit += int32(len(datum))
 	c.parent.AddBatchDetailDatus(expectedTs, datum)
 
 	return len(datum) > 0

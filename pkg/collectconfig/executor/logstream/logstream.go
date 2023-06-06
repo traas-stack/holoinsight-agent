@@ -22,6 +22,10 @@ type (
 		RemoveListener(Listener, int64)
 		Stat() Stat
 		Clean()
+		// LoadReadState should be called during loading state when new agent start.
+		// Every LogPipeline holds several 'Cursor' of LogStream s.
+		// Called this method to check if these cursors are still valid after loading state.
+		LoadReadState(readState *LoadReadState) error
 	}
 	Stat struct {
 		LatestCursor int64
@@ -33,6 +37,11 @@ type (
 	}
 	ReadRequest struct {
 		Cursor int64
+	}
+	LoadReadState struct {
+		Cursor int64
+		FileId string
+		Offset int64
 	}
 	ReadResponse struct {
 		// current read cursor

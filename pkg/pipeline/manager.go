@@ -15,11 +15,12 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/storage"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	_ "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics/cadvisor"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/alibabacloud"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/integration/base"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline/standard"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input"
 	_ "github.com/traas-stack/holoinsight-agent/pkg/plugin/input/all"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/input/nvidia_smi"
@@ -50,18 +51,40 @@ type (
 	}
 )
 
-// TODO 进一步抽象 不要直接依赖k8s
-func NewManager(ctm collecttask.IManager) *Manager {
+func NewManager(ctm collecttask.IManager, lsm *logstream.Manager) *Manager {
 	m := &Manager{
 		ctm:       ctm,
 		pipelines: make(map[string]api.Pipeline),
 		s:         storage.NewStorage(),
-		lsm:       logstream.NewManager(),
+		lsm:       lsm,
 	}
 	m.listener = &listenerImpl{
 		m: m,
 	}
 	return m
+}
+
+func (m *Manager) Update(f func(map[string]api.Pipeline)) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	f(m.pipelines)
+}
+
+func (m *Manager) LoadAll() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	m.loadAll()
+}
+
+func (m *Manager) loadAll() {
+	tasks := m.getAllTasks()
+	for _, task := range tasks {
+		recoverutils.WithRecover(func() {
+			m.processTask(task, true, true)
+		})
+	}
 }
 
 func (m *Manager) Start() {
@@ -78,13 +101,8 @@ func (m *Manager) Start() {
 
 	logger.Infoz("[pm] start")
 
-	// 初始化加载所有配置
-
-	tasks := m.getAllTasks()
-	for _, task := range tasks {
-		recoverutils.WithRecover(func() {
-			m.processTask(task, true, true)
-		})
+	if len(m.pipelines) == 0 {
+		m.loadAll()
 	}
 
 	for _, pipeline := range m.pipelines {
@@ -96,7 +114,11 @@ func (m *Manager) Start() {
 
 func (m *Manager) processTask(task *collecttask.CollectTask, add bool, init bool) {
 	configType := providers.StandardizeType(task.Config.Type)
-	if _, ok := providers.Get(configType); ok {
+	if pp, ok := providers.GetPipelineProvider(configType); ok {
+		m.processPipelineFactoryTasks(pp, task, add, init)
+		return
+	}
+	if _, ok := providers.GetInputProvider(configType); ok {
 		m.processStandardTasks(task, add, init)
 		return
 	}
@@ -112,7 +134,7 @@ func (m *Manager) processTask(task *collecttask.CollectTask, add bool, init bool
 	case "":
 		m.processSqlTask(task, add, init)
 	default:
-		logger.Configz("unknown config type", //
+		logger.Configz("unsupported config type", //
 			zap.String("key", task.Key), //
 			zap.String("configType", configType))
 	}
@@ -152,15 +174,15 @@ func (m *Manager) processSqlTask(task *collecttask.CollectTask, add, init bool) 
 					zap.String("key", task.Key), //
 					zap.Error(err))              //
 			} else {
-				if err := p.SetupConsumer(subTask); err != nil {
-					logger.Configz("[pm] fail to add consumer", //
-						zap.String("key", task.Key), //
-						zap.Error(err))              //
-					return
-				}
-				m.pipelines[task.Key] = p
 				if !init {
-					p.Start()
+					if err := p.Start(); err != nil {
+						delete(m.pipelines, task.Key)
+						logger.Configz("[pm] start pipeline error", zap.String("key", task.Key), zap.Error(err))
+					} else {
+						m.pipelines[task.Key] = p
+					}
+				} else {
+					m.pipelines[task.Key] = p
 				}
 			}
 		}
@@ -405,4 +427,36 @@ func (m *Manager) getBuiltInTasks() []*collecttask.CollectTask {
 	}
 
 	return tasks
+}
+
+func (m *Manager) processPipelineFactoryTasks(pp providers.PipelineProvider, task *collecttask.CollectTask, add bool, init bool) {
+	if add {
+		// TODO How to update config while pipeline is running
+		if old, ok := m.pipelines[task.Key]; ok {
+			old.Stop()
+			delete(m.pipelines, task.Key)
+		}
+
+		{
+			// new add
+			p, err := pp(task)
+			if err != nil {
+				logger.Errorz("[pm] create pipeline error", //
+					zap.String("key", task.Key), //
+					zap.Error(err))
+				return
+			}
+			m.pipelines[task.Key] = p
+			if !init {
+				p.Start()
+			}
+		}
+	} else {
+		if p, ok := m.pipelines[task.Key]; ok {
+			p.Stop()
+			delete(m.pipelines, task.Key)
+		} else {
+			logger.Errorz("[pm] no task %s", zap.String("key", task.Key))
+		}
+	}
 }

@@ -16,7 +16,7 @@ import (
 )
 
 func init() {
-	providers.Register("mysqltask", parse)
+	providers.RegisterInputProvider("mysqltask", parse)
 }
 
 func parse(task *collecttask.CollectTask) (api.Input, error) {

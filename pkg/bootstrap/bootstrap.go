@@ -12,6 +12,8 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	bizbistream "github.com/traas-stack/holoinsight-agent/pkg/bistream"
 	"github.com/traas-stack/holoinsight-agent/pkg/clusteragent"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/impl"
@@ -26,6 +28,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/bistream"
 	pb2 "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
+	"github.com/traas-stack/holoinsight-agent/pkg/transfer/manager"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"go.uber.org/zap"
@@ -45,16 +48,24 @@ type (
 	}
 
 	AgentBootstrap struct {
-		StopHooks      []Runnable
-		Hooks          []Runnable
-		Customizers    map[string][]Customizer
-		stopComponents []StopComponent
+		StopHooks           []Runnable
+		Hooks               []Runnable
+		Customizers         map[string][]Customizer
+		StaticTasks         []*collecttask.CollectTask
+		stopComponents      []StopComponent
+		lsm                 *logstream.Manager
+		pm                  *pipeline.Manager
+		tm                  *manager.TransferManager
+		httpServerComponent *server.HttpServerComponent
+		am                  *agent.Manager
 	}
 )
 
-var App = AgentBootstrap{
-	Customizers: make(map[string][]Customizer),
-}
+var (
+	App = AgentBootstrap{
+		Customizers: make(map[string][]Customizer),
+	}
+)
 
 func (b *AgentBootstrap) AddCustomizer(name string, customizer Customizer) {
 	b.Customizers[name] = append(b.Customizers[name], customizer)
@@ -90,6 +101,10 @@ func (b *AgentBootstrap) Bootstrap() error {
 
 	if os.Getenv("DEBUG") == "true" {
 		logger.DebugEnabled = true
+	}
+
+	if appconfig.StdAgentConfig.Mode == core.AgentModeDaemonset {
+		manager.MaybePrepareTransfer()
 	}
 
 	// setup logger
@@ -131,11 +146,16 @@ func (b *AgentBootstrap) Bootstrap() error {
 		return err
 	}
 
+	b.httpServerComponent = server.NewHttpServerComponent()
+	b.AddStopComponent(b.httpServerComponent)
+
 	switch appconfig.StdAgentConfig.Mode {
 	case core.AgentModeDaemonset:
 		if err := b.setupDaemonAgent(); err != nil {
 			return err
 		}
+
+		go b.tm.ListenTransfer()
 
 	case core.AgentModeClusteragent:
 		if err := b.setupClusterAgent(); err != nil {
@@ -153,7 +173,7 @@ func (b *AgentBootstrap) Bootstrap() error {
 	}
 
 	logger.Infoz("[bootstrap] bootstrap success", zap.Int("pid", os.Getpid()), zap.Duration("cost", time.Now().Sub(begin)))
-	go server.StartHTTPController()
+	b.httpServerComponent.Start()
 
 	b.waitStop()
 	return b.onStop()
@@ -203,6 +223,7 @@ func (b *AgentBootstrap) setupAgentManager() error {
 	am := agent.NewManager(ioc.RegistryService)
 	am = b.callCustomizers("agentManager", am).(*agent.Manager)
 	am.Start()
+	b.am = am
 	b.AddStopComponent(am)
 
 	b.callCustomizers("agentManager-setup-end", nil)
@@ -214,7 +235,7 @@ func (b *AgentBootstrap) waitStop() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	sig := <-c
 	signal.Stop(c)
-	logger.Infoz("[agent] receive stop signal", zap.String("signal", sig.String()), zap.Int("components", len(App.stopComponents)))
+	logger.Infoz("[agent] receive stop signal", zap.String("signal", sig.String()))
 }
 
 func (b *AgentBootstrap) callStopComponents() {
@@ -236,6 +257,9 @@ func (b *AgentBootstrap) callStopComponents() {
 }
 
 func (b *AgentBootstrap) onStop() error {
+	if b.tm != nil {
+		b.tm.StopSaveStateToFile()
+	}
 	begin0 := time.Now()
 	b.callStopComponents()
 	b.callCustomizers("stop", nil)
@@ -262,7 +286,7 @@ func (b *AgentBootstrap) setupClusterAgent() error {
 
 func (b *AgentBootstrap) setupCentralAgent() error {
 	b.callCustomizers("centralagent-setup-begin", nil)
-	ctm, err := InitCollectTaskManager(ioc.RegistryService)
+	ctm, err := InitCollectTaskManager(ioc.RegistryService, nil)
 	if err != nil {
 		return err
 	}
@@ -270,9 +294,10 @@ func (b *AgentBootstrap) setupCentralAgent() error {
 	om := openmetric.NewManager(ctm)
 	om.Start()
 
-	pm := pipeline.NewManager(ctm)
+	lsm := logstream.NewManager()
+	b.lsm = lsm
+	pm := pipeline.NewManager(ctm, lsm)
 	pm.Start()
-
 	App.AddStopComponent(om, pm)
 	b.callCustomizers("centralagent-setup-end", nil)
 	return nil
@@ -290,27 +315,46 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 		return err
 	}
 
-	// minute system metrics
+	// system metrics
 	{
-		if c, err := k8ssysmetrics.NewPodSystemResourceCollector("", time.Minute); err == nil {
-			logger.Infof("[bootstrap] [k8s] use %s system metrics collector", c.Name())
-			c.Start()
-			App.AddStopComponent(c)
-		}
+		collector := k8ssysmetrics.GetNewPodSystemResourceCollector()
+		b.StaticTasks = append(b.StaticTasks, &collecttask.CollectTask{
+			Key: "syscollector",
+			Config: &collecttask.CollectConfig{
+				Key:  "syscollector",
+				Type: "syscollector_" + collector,
+			},
+			Target: &collecttask.CollectTarget{
+				Type: collecttask.TargetNone,
+			},
+		})
+		logger.Infof("[bootstrap] [k8s] use %s system metrics collector", collector)
 	}
 
-	ctm, err := InitCollectTaskManager(ioc.RegistryService)
+	ctm, err := InitCollectTaskManager(ioc.RegistryService, b.StaticTasks)
 	if err != nil {
 		return err
 	}
 
-	pm := pipeline.NewManager(ctm)
+	lsm := logstream.NewManager()
+	b.lsm = lsm
+	pm := pipeline.NewManager(ctm, lsm)
+	b.pm = pm
+	pm.LoadAll()
+
+	bsm := bistream.NewManager(ioc.RegistryService, bizbistream.GetBiStreamHandlerRegistry())
+
+	b.tm = manager.NewTransferManager(b.pm, b.lsm)
+	b.tm.AddStopComponents(b.httpServerComponent, ctm, bsm, b.am)
+	if err := b.tm.Transfer(); err != nil {
+		logger.Errorz("[transfer] error", zap.Error(err))
+	}
+
 	pm.Start()
 
 	om := openmetric.NewManager(ctm)
 	om.Start()
 
-	bsm := bistream.NewManager(ioc.RegistryService, bizbistream.GetBiStreamHandlerRegistry())
 	bsm.Start()
 
 	App.AddStopComponent(pm, om, bsm)
@@ -328,12 +372,14 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 func (b *AgentBootstrap) setupSidecarAgent() error {
 	b.callCustomizers("sidecaragent-setup-begin", nil)
 
-	ctm, err := InitCollectTaskManager(ioc.RegistryService)
+	ctm, err := InitCollectTaskManager(ioc.RegistryService, nil)
 	if err != nil {
 		return err
 	}
 
-	pm := pipeline.NewManager(ctm)
+	lsm := logstream.NewManager()
+	b.lsm = lsm
+	pm := pipeline.NewManager(ctm, lsm)
 	pm.Start()
 
 	bsm := bistream.NewManager(ioc.RegistryService, bizbistream.GetBiStreamHandlerRegistry())

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package io.holoinsight.agent.transfer;
+
+option go_package = "github.com/traas-stack/holoinsight-agent/pkg/transfer/pb";
+
+message PingRequest {}
+message PingResponse {}
+
+message StopAndSaveSaveRequest {}
+message StopAndSaveSaveResponse {
+  bytes state = 1;
+}
+
+message TransferDoneRequest {}
+message TransferDoneResponse {}
+
+service TransferSrvice {
+  rpc prepare(PingRequest)returns(PingResponse){}
+  rpc ping(PingRequest)returns(PingResponse){}
+  rpc stop_and_save_state(StopAndSaveSaveRequest) returns(StopAndSaveSaveResponse){}
+  rpc transfer_done(TransferDoneRequest) returns(TransferDoneResponse){}
+}

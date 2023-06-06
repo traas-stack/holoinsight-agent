@@ -24,7 +24,7 @@ type (
 )
 
 func init() {
-	providers.Register("telegraf_redis", func(task *collecttask.CollectTask) (api.Input, error) {
+	providers.RegisterInputProvider("telegraf_redis", func(task *collecttask.CollectTask) (api.Input, error) {
 		return ParseInputPlugin(task)
 	})
 }

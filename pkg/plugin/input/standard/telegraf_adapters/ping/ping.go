@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	providers.Register("telegraf_ping", func(task *collecttask.CollectTask) (api.Input, error) {
+	providers.RegisterInputProvider("telegraf_ping", func(task *collecttask.CollectTask) (api.Input, error) {
 		return parseInputPlugin(task)
 	})
 }

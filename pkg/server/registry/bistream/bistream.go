@@ -8,14 +8,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
-	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
 	"io"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -36,10 +37,11 @@ type (
 	Manager struct {
 		rs       *registry.Service
 		hr       *registry.HandlerRegistry
-		stop     chan struct{}
+		stopCh   chan struct{}
 		listener *reconnectListener
 		eventCh  chan interface{}
 		si       *streamInstance
+		mutex    sync.Mutex
 	}
 	streamInstance struct {
 		version int64
@@ -56,7 +58,7 @@ func NewManager(rs *registry.Service, hr *registry.HandlerRegistry) *Manager {
 	m := &Manager{
 		rs:       rs,
 		hr:       hr,
-		stop:     make(chan struct{}),
+		stopCh:   make(chan struct{}),
 		listener: &reconnectListener{},
 		eventCh:  make(chan interface{}, 16),
 	}
@@ -70,17 +72,31 @@ func (m *Manager) Start() {
 	m.rs.ListenReconnect(m.listener)
 }
 
+func (m *Manager) isStopped() bool {
+	select {
+	case <-m.stopCh:
+		return true
+	default:
+		return true
+	}
+}
+
 func (m *Manager) Stop() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.isStopped() {
+		return
+	}
+
 	logger.Infoz("[bistreammanager] stop")
 	m.rs.RemoveReconnect(m.listener)
-	close(m.stop)
+	close(m.stopCh)
 	logger.Infoz("[bistreammanager] stopped")
 }
 
 func (m *Manager) onReconnect() {
-	// reg将要重新建连了
 	select {
-	case <-m.stop:
+	case <-m.stopCh:
 		return
 	default:
 		m.eventCh <- reconnectEvent(0)
@@ -122,7 +138,7 @@ func (m *Manager) loop() {
 					time.AfterFunc(time.Second, old.stop)
 				}
 			}
-		case <-m.stop:
+		case <-m.stopCh:
 			return
 		}
 	}

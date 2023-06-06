@@ -42,7 +42,7 @@ type (
 )
 
 func init() {
-	providers.Register("httpcheck", Parse)
+	providers.RegisterInputProvider("httpcheck", Parse)
 }
 
 func Parse(task *collecttask.CollectTask) (api.Input, error) {
