@@ -13,6 +13,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
@@ -34,18 +35,17 @@ type (
 	Manager struct {
 		rs                *registry.Service
 		stop              chan struct{}
-		stopped           chan struct{}
 		reportInfoDisable bool
 		// 是否曾经注册成功过
 		registerSucceed bool
+		mutex           sync.Mutex
 	}
 )
 
 func NewManager(rs *registry.Service) *Manager {
 	return &Manager{
-		rs:      rs,
-		stop:    make(chan struct{}, 1),
-		stopped: make(chan struct{}),
+		rs:   rs,
+		stop: make(chan struct{}, 1),
 	}
 }
 
@@ -53,6 +53,21 @@ func (m *Manager) Start() {
 	// 连立即注册一次, 无论失败还是成功
 	m.registerAgent(firstRpcTimeout)
 	go m.loop()
+}
+
+func (m *Manager) runInLock(f func()) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	f()
+}
+
+func (m *Manager) isStopped() bool {
+	select {
+	case <-m.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Manager) loop() {
@@ -69,32 +84,39 @@ func (m *Manager) loop() {
 	for {
 		select {
 		case <-heartbeatTimer.C:
-			count++
-			// 如果不曾注册成功, 那就总是 register
-			// TODO register 适当退避
-			if !m.registerSucceed || count >= registerInterval {
-				count = 0
-				m.registerAgent(rpcTimeout)
-			} else {
-				m.sendHeartbeat()
-			}
-			heartbeatTimer.Reset(heartbeatInterval)
-		//case <-reportRunInfoTimer.C:
-		//	m.reportRunInfo()
+			m.runInLock(func() {
+				if m.isStopped() {
+					return
+				}
+				count++
+				// 如果不曾注册成功, 那就总是 register
+				// TODO register 适当退避
+				if !m.registerSucceed || count >= registerInterval {
+					count = 0
+					m.registerAgent(rpcTimeout)
+				} else {
+					m.sendHeartbeat()
+				}
+				heartbeatTimer.Reset(heartbeatInterval)
+			})
 		case <-refreshControlConfigTimer.C:
-			m.refreshAgentControlConfigs()
+			m.runInLock(func() {
+				if m.isStopped() {
+					return
+				}
+				m.refreshAgentControlConfigs()
+			})
 		case <-m.stop:
-			m.stopped <- struct{}{}
 			return
 		}
 	}
 }
 
 func (m *Manager) Stop() {
-	m.stop <- struct{}{}
-	close(m.stop)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
-	<-m.stopped
+	close(m.stop)
 }
 
 func (m *Manager) registerAgent(timeout time.Duration) {
