@@ -336,6 +336,11 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 		}
 	}
 
+	nowMs := util.CurrentMS()
+	if c.estimatedMaxDataTimestamp > nowMs {
+		c.estimatedMaxDataTimestamp = nowMs
+	}
+
 	if logger.DebugEnabled {
 		logger.Debugz("[consumer] [log] digest", //
 			zap.String("key", c.key),                    //
