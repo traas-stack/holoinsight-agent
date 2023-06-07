@@ -113,10 +113,18 @@ func (i *jvmInput) getPerfDataPaths() (map[string]string, perfDataReader, error)
 
 	var paths []string
 	var readPerfData perfDataReader
+	pathsParsed := false
 	if c.Runtime == cri.Runc {
-		paths, err = filepath.Glob(filepath.Join(c.MergedDir, perfDataFilePattern))
-		readPerfData = defaultReadPerfDataImpl
-	} else {
+		if hostPattern, err2 := cri.TransferToHostPathForContainer(c, perfDataFilePattern, false); err == nil {
+			pathsParsed = true
+			paths, err = filepath.Glob(hostPattern)
+			readPerfData = defaultReadPerfDataImpl
+		} else {
+			err = err2
+		}
+	}
+	// try another method
+	if !pathsParsed {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
 		defer cancel()
 		paths, err = criutils.Glob(ctx, ioc.Crii, c, perfDataFilePattern)
