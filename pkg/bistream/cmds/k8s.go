@@ -63,7 +63,8 @@ func runInContainer(resp interface{}, callHelper func(ctx context.Context) (cri.
 
 	er, err := callHelper(ctx)
 	if err != nil {
-		return err
+		logger.Errorz("call helper error", zap.Error(err))
+		return fmt.Errorf("call helper error")
 	}
 
 	type tempResp struct {
@@ -77,7 +78,8 @@ func runInContainer(resp interface{}, callHelper func(ctx context.Context) (cri.
 		return err
 	}
 	if !temp.Success {
-		return fmt.Errorf("inspect error %s", temp.Message)
+		logger.Errorz("call helper error", zap.String("msg", temp.Message))
+		return fmt.Errorf("call helper error")
 	}
 	return nil
 }
