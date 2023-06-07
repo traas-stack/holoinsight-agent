@@ -127,7 +127,7 @@ func (m *Manager) registerAgent(timeout time.Duration) {
 	var k8sinfo *pb.AgentK8SInfo
 	if appconfig.IsK8sMode() {
 		k8sinfo = &pb.AgentK8SInfo{
-			HostIp:    os.Getenv("HOST_IP"),
+			HostIp:    os.Getenv("NODE_IP"),
 			Namespace: os.Getenv("POD_NAMESPACE"),
 			Pod:       os.Getenv("POD_NAME"),
 		}
