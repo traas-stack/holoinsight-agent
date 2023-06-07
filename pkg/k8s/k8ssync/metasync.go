@@ -252,10 +252,8 @@ func (s *metaSyncer) syncToReg(req interface{}) (int, string, time.Duration, err
 func (s *metaSyncer) convertNodeToResource(node *v1.Node) *Resource {
 	ip := k8sutils.GetNodeIP(node)
 	return &Resource{
-		Name:      node.Name,
-		Namespace: "",
-		// 物理机
-		App:         "_node",
+		Name:        node.Name,
+		Namespace:   "",
 		Labels:      node.Labels,
 		Annotations: node.Annotations,
 		Ip:          ip,
