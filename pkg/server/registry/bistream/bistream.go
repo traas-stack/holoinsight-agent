@@ -187,6 +187,8 @@ func (si *streamInstance) start() {
 			}
 		}
 		err := si.serveOnce()
+		// as a backoff
+		time.Sleep(time.Second)
 		if err != nil {
 			logger.Errorz("[bistream] stream closed", zap.Error(err))
 		} else {
