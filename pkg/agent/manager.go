@@ -154,9 +154,12 @@ func (m *Manager) registerAgent(timeout time.Duration) {
 	})
 	if err != nil {
 		logger.Errorz("[am] register error", zap.Stringer("resp", resp), zap.Error(err))
+		m.registerSucceed = false
 	} else {
 		if resp.Header != nil && resp.Header.Code == 0 {
 			m.registerSucceed = true
+		} else {
+			m.registerSucceed = false
 		}
 		logger.Infoz("[am] register", zap.Stringer("resp", resp))
 	}
@@ -168,6 +171,7 @@ func (m *Manager) sendHeartbeat() {
 
 	resp, err := m.rs.SendHeartBeat(ctx, agentmeta.GetAgentId())
 	if err != nil {
+		m.registerSucceed = false
 		logger.Errorz("[am] heartbeat error", zap.Stringer("resp", resp), zap.Error(err))
 	} else {
 		logger.Infoz("[am] heartbeat", zap.Stringer("resp", resp))
