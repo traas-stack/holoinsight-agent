@@ -118,7 +118,9 @@ func (tm *TransferManager) TransferDone() {
 	logger.Infoz("[transfer] [server] TransferDone, agent will exit with code=7 in 1s")
 
 	time.AfterFunc(1*time.Second, func() {
-		os.Exit(7)
+		// 0 will be treated as SUCCESS by k8s
+		// Used with 'restartPolicy: OnFailure' or 'supervisord'
+		os.Exit(0)
 	})
 }
 
