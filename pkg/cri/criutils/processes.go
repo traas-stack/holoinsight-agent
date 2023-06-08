@@ -7,6 +7,7 @@ package criutils
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
@@ -28,5 +29,8 @@ func GetProcessInfo(ctx context.Context, i cri.Interface, c *cri.Container, pid 
 		Data *ProcessInfo `json:"data"`
 	}{}
 	err = json.Unmarshal([]byte(stdout), &processesResp)
-	return processesResp.Data, err
+	if processesResp.Success {
+		return processesResp.Data, err
+	}
+	return nil, errors.New(processesResp.Message)
 }
