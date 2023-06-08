@@ -23,6 +23,9 @@ var (
 
 // TransferToHostPathForContainer transfer container path into host path
 func TransferToHostPathForContainer(c *Container, ctrPath string, respectSymbol bool) (string, error) {
+	if !filepath.IsAbs(ctrPath) {
+		return "", errors.New("container path must be a abs path")
+	}
 	if c.Runtime == Runc && c.MergedDir == "" && c.State.Pid > 0 {
 		if ctrPath == "/" {
 			return "", errors.New("container path '/' is disallowed")

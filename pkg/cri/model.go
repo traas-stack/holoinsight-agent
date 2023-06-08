@@ -161,6 +161,14 @@ func (c *Container) ShortContainerID() string {
 	return ShortContainerId(c.Id)
 }
 
+// GetTz returns the time zone used by this container
+func (c *Container) GetTz() string {
+	if c.EnvTz != "" {
+		return c.EnvTz
+	}
+	return c.EtcLocaltime
+}
+
 func NoPodError(ns, pod string) error {
 	return fmt.Errorf("no pod ns=[%s] pod=[%s]", ns, pod)
 }
