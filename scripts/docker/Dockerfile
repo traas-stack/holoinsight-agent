@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
   mv /workspace/build/`go env GOOS`-`go env GOARCH`/bin/agent /agent && \
   mv /workspace/build/`go env GOOS`-`go env GOARCH`/bin/helper /helper
 
-FROM holoinsight/agent-base:1.0.0
+FROM holoinsight/agent-base:1.0.1
 
 COPY scripts/docker/sc /usr/local/bin/
 COPY scripts/docker/ensure_supervisord.sh /usr/local/bin/
