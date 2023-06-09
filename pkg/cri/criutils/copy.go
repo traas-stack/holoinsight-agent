@@ -30,6 +30,15 @@ func ReadContainerFile(ctx context.Context, i cri.Interface, c *cri.Container, p
 	return os.ReadFile(tempPath)
 }
 
+// ReadContainerFileUsingExecCat reads container file using docker exec 'cat ...'
+func ReadContainerFileUsingExecCat(ctx context.Context, i cri.Interface, c *cri.Container, path string) ([]byte, error) {
+	r, err := i.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"cat", path}})
+	if err != nil {
+		return nil, err
+	}
+	return r.Stdout.Bytes(), nil
+}
+
 // CopyFromContainerToTempFile copies file from container to local tep file.
 // It is the caller's responsibility to remove the file when it is no longer needed. See os.CreateTemp.
 func CopyFromContainerToTempFile(ctx context.Context, i cri.Interface, c *cri.Container, path string) (string, func() error, error) {
@@ -40,6 +49,7 @@ func CopyFromContainerToTempFile(ctx context.Context, i cri.Interface, c *cri.Co
 	f.Close()
 
 	if err = i.CopyFromContainer(ctx, c, path, f.Name()); err != nil {
+		os.Remove(f.Name())
 		return "", nil, err
 	}
 	return f.Name(), func() error {

@@ -511,10 +511,8 @@ func (c *Consumer) getTargetTimezone() *time.Location {
 	}
 	t := c.ct.Target
 	if t.IsTypePod() {
-		if biz, err := criutils.GetMainBizContainerE(crii, t.GetNamespace(), t.GetPodName()); err == nil && biz.GetTz() != "" {
-			if tz, err := time.LoadLocation(biz.GetTz()); err == nil {
-				return tz
-			}
+		if biz, err := criutils.GetMainBizContainerE(crii, t.GetNamespace(), t.GetPodName()); err == nil {
+			return biz.GetTz()
 		}
 	}
 	return nil
@@ -669,7 +667,7 @@ func (c *Consumer) createTaskInfoEvent(stat ConsumerStat) *pb2.ReportEventReques
 	}
 
 	if biz := c.getBizContainer(); biz != nil {
-		json["t_tz"] = biz.GetTz()
+		json["t_tz"] = biz.GetTzName()
 	} else {
 		json["t_tz"] = util.GetLocalTimezone()
 	}

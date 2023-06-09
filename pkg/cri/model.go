@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	v1 "k8s.io/api/core/v1"
+	"time"
 )
 
 const (
@@ -71,11 +72,7 @@ type (
 		// 该 container 所属的 pod 的 sandbox cid
 		SandboxID string
 
-		// 系统级别时区 /etc/localtime
-		EtcLocaltime string
-
-		// 有一些用户在ENV上设置了TZ变量
-		EnvTz string
+		Tz TzInfo
 
 		// 该容器是否已经被我们hack过
 		Hacked bool
@@ -110,6 +107,17 @@ type (
 		ExitCode int
 		Stdout   *bytes.Buffer
 		Stderr   *bytes.Buffer
+	}
+	TzInfo struct {
+		Name   string
+		TzObj  *time.Location `json:"-"`
+		Zone   string
+		Offset int
+
+		// EtcLocaltime is timezone name read from /etc/localtime
+		EtcLocaltime string
+		// EnvTz is timezone name read from Env 'TZ'
+		EnvTz string
 	}
 )
 
@@ -162,11 +170,12 @@ func (c *Container) ShortContainerID() string {
 }
 
 // GetTz returns the time zone used by this container
-func (c *Container) GetTz() string {
-	if c.EnvTz != "" {
-		return c.EnvTz
-	}
-	return c.EtcLocaltime
+func (c *Container) GetTz() *time.Location {
+	return c.Tz.TzObj
+}
+
+func (c *Container) GetTzName() string {
+	return c.Tz.Name
 }
 
 func NoPodError(ns, pod string) error {

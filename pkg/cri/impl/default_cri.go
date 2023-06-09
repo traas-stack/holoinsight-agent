@@ -6,12 +6,12 @@ package impl
 
 import (
 	"context"
-	"fmt"
 	"github.com/pkg/errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/cricore"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
+	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
@@ -26,10 +26,13 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	_ "time/tzdata"
 )
 
 const (
-	defaultOpTimeout = 5 * time.Second
+	defaultOpTimeout    = 5 * time.Second
+	etcLocalTime        = "/etc/localtime"
+	unknownIANATimezone = "UNKNOWN"
 )
 
 type (
@@ -195,80 +198,150 @@ func (e *defaultCri) listContainers() ([]*cri.EngineSimpleContainer, error) {
 	return e.engine.ListAllContainers(ctx)
 }
 
-func (e *defaultCri) getEtcTimezone(c *cri.Container) (string, error) {
-	tz, err := e.getEtcTimezone0(c)
-	if tz == "" {
-		// If /etc/localtime is missing, the default "UTC" timezone is used.
-		tz = "UTC"
+// setupTimezone setups timezone info of container
+func (e *defaultCri) setupTimezone(c *cri.Container) {
+	if c.Tz.EnvTz != "" {
+		if tzObj, err := time.LoadLocation(c.Tz.EnvTz); err == nil {
+			c.Tz.TzObj = tzObj
+			c.Tz.Name = c.Tz.EnvTz
+		}
 	}
-	return tz, err
+
+	tzName, tzObj, err := e.getEtcTimezone0(c)
+	if err != nil {
+		logger.Errorz("[local] parse /etc/localtime error", zap.String("cid", c.Id), zap.Error(err))
+	}
+
+	c.Tz.EtcLocaltime = tzName
+	if c.Tz.TzObj == nil && err == nil {
+		c.Tz.TzObj = tzObj
+		c.Tz.Name = c.Tz.EtcLocaltime
+	}
+
+	if c.Tz.TzObj == nil {
+		c.Tz.Name = "UTC"
+		c.Tz.TzObj = time.UTC
+	}
+
+	c.Tz.Zone, c.Tz.Offset = time.Now().In(c.Tz.TzObj).Zone()
 }
 
-func (e *defaultCri) getEtcTimezone0(c *cri.Container) (string, error) {
+func (e *defaultCri) getEtcTimezone0(c *cri.Container) (string, *time.Location, error) {
 	// ref: https://man7.org/linux/man-pages/man5/localtime.5.html
 
-	// /etc/localtime 控制着系统级别的时区, 如果不存在则默认为UTC, 如果存在则必须是 /usr/share/zoneinfo/ 下的一个符号链接!
-	// 每个进程的TZ环境变量则可以强制覆盖本进程的时区
-
+	// /etc/localtime must be a link to file under /usr/share/zoneinfo/.
 	if c.Runtime == cri.Runc {
-		hostPath, err := cri.TransferToHostPathForContainer(c, "/etc/localtime", false)
+		hostPath, err := cri.TransferToHostPathForContainer(c, etcLocalTime, false)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		st, err := os.Lstat(hostPath)
-
 		if err != nil {
 			// If /etc/localtime is missing, the default "UTC" timezone is used.
 			if os.IsNotExist(err) {
-				return "UTC", nil
+				return "UTC", time.UTC, nil
 			}
+			return "", nil, err
+		}
 
-			// 按照规范 应该是一个 link 但实践下来发现有一些 regular file
-			return "", err
-		}
 		if st.Mode()&os.ModeSymlink != os.ModeSymlink {
-			return "", fmt.Errorf("/etc/localtime must be a symbol link, hostPath=%s", hostPath)
+			logger.Metaz("[local] /etc/localtime is a regular file", zap.String("cid", c.Id), zap.String("ns", c.Pod.Namespace), zap.String("pod", c.Pod.Name))
+			// According to the specification, /etc/localtime should be a symbol link, but it may be a regular file in practice.
+			// At this point we have to use its contents to parse the timezone.
+			ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
+			defer cancel()
+			b, err := criutils.ReadContainerFileUsingExecCat(ctx, ioc.Crii, c, etcLocalTime)
+			if err != nil {
+				return "", nil, err
+			}
+			return parseTzData(b)
 		}
+
 		link, err := os.Readlink(hostPath)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 
-		// 实测如到的结果可能是 "../usr/share/zoneinfo/UTC" 于是这里做特殊处理
-		if strings.HasPrefix(link, "..") {
-			link = link[2:]
-		}
-
-		// /usr/share/zoneinfo/Asia/Shanghai
-		if s := parseTimezoneNameFromLink(link); s != "" {
-			return s, nil
-		}
-		// 这里只能读出内容 然后
-		// time.LoadLocationFromTZData()
-		return "", errors.New("unknown link: " + link)
+		return e.parseTimezoneFromLink(c, link)
 	}
 
-	// TODO add a helper method to parse timezone in container ?
 	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
 	defer cancel()
-	r, err := e.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"readlink", "/etc/localtime"}})
+	if r, err := e.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"readlink", etcLocalTime}}); err == nil {
+		link := strings.TrimSpace(r.Stdout.String())
+		return e.parseTimezoneFromLink(c, link)
+	}
+
+	b, err := criutils.ReadContainerFileUsingExecCat(ctx, ioc.Crii, c, etcLocalTime)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	// if /etc/localtime is a regular file or not exist, exitcode == 1
-	// ends with \n
-	link := strings.TrimSpace(r.Stdout.String())
-	if s := parseTimezoneNameFromLink(link); s != "" {
-		return s, nil
-	}
-	return "", errors.New("unknown link: " + link)
+	return parseTzData(b)
 }
 
-func parseTimezoneNameFromLink(link string) string {
-	if strings.HasPrefix(link, "/usr/share/zoneinfo/") {
-		return link[len("/usr/share/zoneinfo/"):]
+func (e *defaultCri) parseTimezoneFromLink(c *cri.Container, link string) (string, *time.Location, error) {
+	// The link may be like  "../usr/share/zoneinfo/UTC"
+	if strings.HasPrefix(link, "..") {
+		link = link[2:]
 	}
-	return ""
+
+	if !strings.HasPrefix(link, "/usr/share/zoneinfo/") {
+		return "", nil, errors.New("unknown /etc/localtime: " + link)
+	}
+	name := link[len("/usr/share/zoneinfo/"):]
+
+	_, tzObj, err := loadLocation(name)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if tzObj2, err := e.readTimezoneObjFromLink(c, link); err != nil {
+		logger.Metaz("[local] fail to read and parse container timezone file", zap.String("cid", c.Id), zap.String("link", link), zap.Error(err))
+	} else {
+		now := time.Now()
+		name1, offset1 := now.In(tzObj).Zone()
+		name2, offset2 := now.In(tzObj2).Zone()
+		if name1 != name2 || offset1 != offset2 {
+			logger.Metaz("[local] timezone mismatch",
+				zap.String("cid", c.Id),
+				zap.String("ns", c.Pod.Namespace),
+				zap.String("pod", c.Pod.Name),
+				zap.String("/etc/localtime", link),
+				zap.String("name1", name1),
+				zap.Int("offset1", offset1),
+				zap.String("name2", name2),
+				zap.Int("offset2", offset2))
+
+			// tzObj2 is more accurate
+			name = unknownIANATimezone
+			tzObj = tzObj2
+		}
+	}
+
+	return name, tzObj, nil
+}
+
+// readTimezoneObjFromLink read timezone obj from linke
+func (e *defaultCri) readTimezoneObjFromLink(c *cri.Container, link string) (*time.Location, error) {
+	// When the user mounts /usr/share/zoneinfo/Asia/Shanghai of the physical machine to /etc/localtime of the container, the real result may be:
+	// 1. /etc/localtime in the container is still a symbol link, pointing to /usr/share/zoneinfo/UTC
+	// 2. The content of /usr/share/zoneinfo/UTC in the container becomes the content of Asia/Shanghai.
+	// The reason for this phenomenon is that the **k8s mount action will follow symbol link**.
+
+	// In order to get correct results, we must read the timezone file once.
+	// In fact, /usr/share/zoneinfo/UTC is covered by mount, but it cannot be seen from the mounts information (because there are some symbol links in the middle).
+	// Therefore, the read request must be initiated from inside the container.
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
+	defer cancel()
+
+	if b, err := criutils.ReadContainerFileUsingExecCat(ctx, ioc.Crii, c, link); err != nil {
+		return nil, err
+	} else if _, tzObj, err := parseTzData(b); err != nil {
+		return nil, err
+	} else {
+		return tzObj, nil
+	}
 }
 
 func (e *defaultCri) isSidecar(c *cri.Container) bool {
@@ -317,7 +390,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 		criContainer.Hostname = criPod.Pod.Spec.Hostname
 	}
 
-	criContainer.EnvTz = criContainer.Env["TZ"]
+	criContainer.Tz.EnvTz = criContainer.Env["TZ"]
 
 	if dc.IsSandbox {
 		criContainer.Sandbox = true
@@ -359,14 +432,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 		var err error
 
-		criContainer.EtcLocaltime, err = e.getEtcTimezone(criContainer)
-		if err != nil {
-			logger.Metaz("[local] fail to parse /etc/localtime",
-				zap.String("ns", criPod.Namespace), //
-				zap.String("pod", criPod.Name),     //
-				zap.String("cid", criContainer.ShortContainerID()),
-				zap.Error(err))
-		}
+		e.setupTimezone(criContainer)
 
 		if criContainer.Hostname == "" {
 			criContainer.Hostname, err = e.getHostname(criContainer)
@@ -586,4 +652,23 @@ func (e *defaultCri) syncOnce() {
 
 func isContainerChanged(oldContainer *cri.EngineDetailContainer, newContainer *cri.EngineDetailContainer) bool {
 	return oldContainer.State.Pid != newContainer.State.Pid
+}
+
+// parseTzData parse timezone info from []byte read from /usr/share/zoneinfo/Xxx/Xxxx
+func parseTzData(b []byte) (string, *time.Location, error) {
+	// must import _ "time/tzdata"
+	tz, err := time.LoadLocationFromTZData("", b)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// In fact, it doesn't matter whether it can solve an IANA Time Zone, the important thing is to solve *Time.Location,
+	// because it is actually involved in time parsing. So here we return UNKNOWN as its name.
+	return unknownIANATimezone, tz, nil
+}
+
+// loadLocation load *Time.location
+func loadLocation(name string) (string, *time.Location, error) {
+	tzObj, err := time.LoadLocation(name)
+	return name, tzObj, err
 }

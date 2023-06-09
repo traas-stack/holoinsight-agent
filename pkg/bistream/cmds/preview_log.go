@@ -45,7 +45,7 @@ func previewFile0(reqBytes []byte, resp *pb.PreviewFileResponse) error {
 		_ = proto.Unmarshal(reqBytes, req2)
 		req2.Path = hostPath
 
-		resp.Timezone = container.GetTz()
+		resp.Timezone = container.GetTzName()
 		return trimErrorPathInfo(previewlog.PreviewFile(req2, resp), hostPath, req.Path)
 	}
 
