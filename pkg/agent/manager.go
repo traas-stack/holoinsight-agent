@@ -115,7 +115,9 @@ func (m *Manager) loop() {
 func (m *Manager) Stop() {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-
+	if m.isStopped() {
+		return
+	}
 	close(m.stop)
 }
 
