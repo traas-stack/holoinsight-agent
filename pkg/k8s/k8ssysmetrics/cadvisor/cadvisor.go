@@ -246,13 +246,13 @@ func (c *cadvisorSysCollector) collectPodSandbox(ctr *cv1.ContainerInfo, metrics
 			Name:      "k8s_pod_tcp_established",
 			Tags:      tags,
 			Timestamp: metricTime,
-			Value:     float64(s2.Network.Tcp.Established),
+			Value:     float64(s2.Network.Tcp.Established + s2.Network.Tcp6.Established),
 		})
 		metrics = append(metrics, &model.Metric{
 			Name:      "k8s_pod_tcp_listen",
 			Tags:      tags,
 			Timestamp: metricTime,
-			Value:     float64(s2.Network.Tcp.Listen),
+			Value:     float64(s2.Network.Tcp.Listen + s2.Network.Tcp6.Listen),
 		})
 	}
 
@@ -428,13 +428,13 @@ func (c *cadvisorSysCollector) collectNode(ctr *cv1.ContainerInfo, cAdvisorPod *
 			Name:      "k8s_node_tcp_established",
 			Tags:      tags,
 			Timestamp: metricTime,
-			Value:     float64(s2.Network.Tcp.Established),
+			Value:     float64(s2.Network.Tcp.Established + s2.Network.Tcp6.Established),
 		})
 		metrics = append(metrics, &model.Metric{
 			Name:      "k8s_node_tcp_listen",
 			Tags:      tags,
 			Timestamp: metricTime,
-			Value:     float64(s2.Network.Tcp.Listen),
+			Value:     float64(s2.Network.Tcp.Listen + s2.Network.Tcp6.Listen),
 		})
 	}
 
