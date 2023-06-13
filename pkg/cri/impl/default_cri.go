@@ -32,6 +32,7 @@ import (
 const (
 	defaultOpTimeout    = 5 * time.Second
 	etcLocalTime        = "/etc/localtime"
+	zoneinfoDir         = "/usr/share/zoneinfo/"
 	unknownIANATimezone = "UNKNOWN"
 )
 
@@ -201,6 +202,18 @@ func (e *defaultCri) listContainers() ([]*cri.EngineSimpleContainer, error) {
 // setupTimezone setups timezone info of container
 func (e *defaultCri) setupTimezone(c *cri.Container) {
 	if c.Tz.EnvTz != "" {
+		// https://man7.org/linux/man-pages/man3/tzset.3.html
+
+		// :Asia/Shanghai
+		if strings.HasPrefix(c.Tz.EnvTz, ":") {
+			c.Tz.EnvTz = c.Tz.EnvTz[1:]
+		}
+
+		// /usr/share/zoneinfo/Asia/Shanghai
+		if strings.HasPrefix(c.Tz.EnvTz, zoneinfoDir) {
+			c.Tz.EnvTz = c.Tz.EnvTz[len(zoneinfoDir):]
+		}
+
 		if tzObj, err := time.LoadLocation(c.Tz.EnvTz); err == nil {
 			c.Tz.TzObj = tzObj
 			c.Tz.Name = c.Tz.EnvTz
@@ -285,10 +298,10 @@ func (e *defaultCri) parseTimezoneFromLink(c *cri.Container, link string) (strin
 		link = link[2:]
 	}
 
-	if !strings.HasPrefix(link, "/usr/share/zoneinfo/") {
+	if !strings.HasPrefix(link, zoneinfoDir) {
 		return "", nil, errors.New("unknown /etc/localtime: " + link)
 	}
-	name := link[len("/usr/share/zoneinfo/"):]
+	name := link[len(zoneinfoDir):]
 
 	_, tzObj, err := loadLocation(name)
 	if err != nil {
