@@ -302,6 +302,9 @@ func (e *defaultCri) parseTimezoneFromLink(c *cri.Container, link string) (strin
 		return "", nil, errors.New("unknown /etc/localtime: " + link)
 	}
 	name := link[len(zoneinfoDir):]
+	if name == "" {
+		return "", nil, errors.New("invalid /etc/localtime:" + link)
+	}
 
 	_, tzObj, err := loadLocation(name)
 	if err != nil {
