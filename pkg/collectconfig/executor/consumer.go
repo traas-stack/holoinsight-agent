@@ -236,6 +236,18 @@ func (c *Consumer) reportLogs(eventTs int64, logs ...string) {
 	ioc.RegistryService.ReportEventAsync(event)
 }
 
+func (c *Consumer) getTargetHostname() string {
+	crii := ioc.Crii
+	if crii == nil {
+		return util.GetHostname()
+	}
+	t := c.ct.Target
+	if t.IsTypePod() {
+		return t.GetHostname()
+	}
+	return util.GetHostname()
+}
+
 func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailData) {
 	if len(datum) == 0 {
 		c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
@@ -251,6 +263,12 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 	}
 
 	go func() {
+		if logger.DebugEnabled {
+			for _, data := range datum {
+				logger.Debugz("[log] [consumer] debug emit", zap.String("key", c.key), zap.Any("data", data))
+			}
+		}
+
 		err := c.output.WriteBatchV4(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum)
 		c.runInLock(func() {
 			c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
@@ -1009,7 +1027,11 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 	// handle log samples
 	if xs.logSamples != nil && xs.logSamples.Where != nil && len(point.LogSamples) < xs.logSamples.MaxCount {
 		if ok, err := xs.logSamples.Where.Test(ctx); ok && err == nil {
-			point.LogSamples = append(point.LogSamples, util.SubstringMax(ctx.GetLine(), xs.logSamples.MaxLength))
+			truncatedLines := make([]string, len(ctx.log.Lines))
+			for i, line := range ctx.log.Lines {
+				truncatedLines[i] = util.SubstringMax(line, xs.logSamples.MaxLength)
+			}
+			point.LogSamples = append(point.LogSamples, truncatedLines)
 		}
 	}
 

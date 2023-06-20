@@ -38,6 +38,8 @@ type (
 		LogSamples *LogSamples  `json:"logSamples"`
 	}
 	LogSamples struct {
+		Enabled bool `json:"enabled"`
+
 		// Where is the condition log samples must match
 		Where *Where `json:"where"`
 		// MaxCount max log sample count

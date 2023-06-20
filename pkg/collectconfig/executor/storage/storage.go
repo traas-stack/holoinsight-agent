@@ -52,7 +52,7 @@ type (
 		ValueNames []string
 		Values     []interface{}
 		// LogSamples is the log samples for this point.
-		LogSamples []string
+		LogSamples [][]string
 	}
 )
 

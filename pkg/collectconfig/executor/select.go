@@ -120,7 +120,7 @@ func parseSelect(s *collectconfig.Select) (XSelect, error) {
 		valueNames[0] = "value"
 	}
 	var logSamples *xLogSamples
-	if s.LogSamples != nil {
+	if s.LogSamples != nil && s.LogSamples.Enabled {
 		if ls, err := parseLogSamples(s.LogSamples); err != nil {
 			return nil, err
 		} else {

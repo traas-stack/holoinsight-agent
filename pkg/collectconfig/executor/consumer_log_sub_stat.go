@@ -192,9 +192,18 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) bool {
 			datum = append(datum, dd)
 
 			if len(v.LogSamples) > 0 {
-				dd.Values["logsamples"] = util.ToJsonString(map[string]interface{}{
-					"samples": v.LogSamples,
-				})
+				logSamplesConf := c.parent.task.Select.LogSamples
+				if logSamplesConf != nil && logSamplesConf.Enabled {
+					dd.Values["logsamples"] = util.ToJsonString(map[string]interface{}{
+						"maxCount": c.parent.task.Select.LogSamples.MaxCount,
+						"samples": []interface{}{
+							map[string]interface{}{
+								"hostname": tags[c.parent.getTargetHostname()],
+								"logs":     v.LogSamples,
+							},
+						},
+					})
+				}
 			}
 
 		}
