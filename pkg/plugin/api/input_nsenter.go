@@ -36,6 +36,9 @@ type (
 		// 处理响应
 		// 入参: 状态, 响应体, 错误, 结果收集器
 		ProcessResponse(interface{}, []byte, error, Accumulator) error
+
+		// GenerateErrorMetrics generates error metrics when fail to execute commands in container
+		GenerateErrorMetrics(a Accumulator)
 	}
 )
 

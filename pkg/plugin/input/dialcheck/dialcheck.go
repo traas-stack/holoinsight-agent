@@ -155,3 +155,23 @@ func (i *Input) collectOnePort(port int, a api.Accumulator) {
 		Value: float64(int(totalCost.Milliseconds()) / times),
 	})
 }
+
+func (i *Input) GenerateErrorMetrics(a api.Accumulator) {
+	for _, port := range i.Config.Ports {
+		portStr := cast.ToString(port)
+		a.AddMetric(&model.Metric{
+			Name: "up",
+			Tags: map[string]string{
+				"port": portStr,
+			},
+			Value: 0,
+		})
+		a.AddMetric(&model.Metric{
+			Name: "down",
+			Tags: map[string]string{
+				"port": portStr,
+			},
+			Value: 1,
+		})
+	}
+}

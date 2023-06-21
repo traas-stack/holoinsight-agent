@@ -214,3 +214,16 @@ func (i *Input) checkHttpResponse(resp *http.Response, begin time.Time, err erro
 
 	return nil
 }
+
+func (i *Input) GenerateErrorMetrics(a api.Accumulator) {
+	a.AddMetric(&model.Metric{
+		Name:  "up",
+		Tags:  make(map[string]string),
+		Value: 0,
+	})
+	a.AddMetric(&model.Metric{
+		Name:  "down",
+		Tags:  make(map[string]string),
+		Value: 1,
+	})
+}

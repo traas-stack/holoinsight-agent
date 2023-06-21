@@ -309,7 +309,11 @@ func (p *Pipeline) collectOnce0(m *accumulator.Memory) error {
 		// But then we encountered rund, and nsenter's solution didn't work for it. At this point we can only use the standard docker.
 		// Currently, some methods are still named with the 'nsenter' keyword, which will remove these couplings in the future.
 		if ine, ok := p.input.(api2.InputExtNsEnter); ok && ine.NetworkMode() == api2.NetworkModePod {
-			return p.collectOnceWithExec(ine, m)
+			if err := p.collectOnceWithExec(ine, m); err != nil {
+				ine.GenerateErrorMetrics(m)
+				return err
+			}
+			return nil
 		} else {
 			return i.Collect(m)
 		}
