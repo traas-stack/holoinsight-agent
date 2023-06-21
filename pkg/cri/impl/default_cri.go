@@ -6,10 +6,11 @@ package impl
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"github.com/pkg/errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
-	"github.com/traas-stack/holoinsight-agent/pkg/cri/cricore"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
@@ -19,6 +20,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/throttle"
 	"go.uber.org/zap"
+	"io"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -30,7 +32,9 @@ import (
 )
 
 const (
-	defaultOpTimeout    = 5 * time.Second
+	defaultOpTimeout = 5 * time.Second
+	// Copy file maybe slow, so we use a bigger timout
+	cpOpTimeout         = 10 * time.Second
 	etcLocalTime        = "/etc/localtime"
 	zoneinfoDir         = "/usr/share/zoneinfo/"
 	unknownIANATimezone = "UNKNOWN"
@@ -40,9 +44,10 @@ type (
 	// Default cri impl
 	defaultCri struct {
 		*defaultMetaStore
-		syncThrottle func(func())
-		stopCh       chan struct{}
-		engine       cri.ContainerEngine
+		syncThrottle          func(func())
+		stopCh                chan struct{}
+		engine                cri.ContainerEngine
+		helperToolLocalMd5sum string
 	}
 )
 
@@ -67,6 +72,13 @@ func (e *defaultCri) Engine() cri.ContainerEngine {
 }
 
 func (e *defaultCri) Start() error {
+	if file, err := os.Open(core.HelperToolLocalPath); err == nil {
+		md5 := md5.New()
+		if _, err := io.Copy(md5, file); err == nil {
+			e.helperToolLocalMd5sum = hex.EncodeToString(md5.Sum(nil))
+		}
+	}
+
 	if err := e.defaultMetaStore.Start(); err != nil {
 		return err
 	}
@@ -105,28 +117,21 @@ func (e *defaultCri) CopyToContainer(ctx context.Context, c *cri.Container, srcP
 		return errContainerIsNil
 	}
 	begin := time.Now()
+	method := "unknown"
 	defer func() {
 		cost := time.Now().Sub(begin)
 		logger.Criz("[digest] copy to container",
 			zap.String("engine", e.engine.Type()),
 			zap.String("cid", c.ShortContainerID()),
 			zap.String("runtime", c.Runtime),
+			zap.String("method", method),
 			zap.String("src", srcPath),
 			zap.String("dst", dstPath),
 			zap.Duration("cost", cost),
 			zap.Error(err))
 	}()
-
-	switch c.Runtime {
-	case cri.Runc:
-		return cricore.CopyToContainerForRunC(ctx, c, srcPath, dstPath)
-	default:
-		if e.engine.Supports(cri.ContainerEngineFeatureCopy) {
-			return e.engine.CopyToContainer(ctx, c, srcPath, dstPath)
-		} else {
-			return criutils.CopyToContainerByMountAndExec(ctx, e, c, srcPath, dstPath)
-		}
-	}
+	method, err = criutils.CopyToContainer(ctx, e, c, srcPath, dstPath)
+	return
 }
 
 func (e *defaultCri) CopyFromContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
@@ -134,37 +139,36 @@ func (e *defaultCri) CopyFromContainer(ctx context.Context, c *cri.Container, sr
 		return errContainerIsNil
 	}
 	begin := time.Now()
+	method := "unknown"
 	defer func() {
 		logger.Criz("[digest] copy from container",
 			zap.String("engine", e.engine.Type()),
 			zap.String("cid", c.ShortContainerID()),
 			zap.String("runtime", c.Runtime),
+			zap.String("method", method),
 			zap.String("src", srcPath),
 			zap.String("dst", dstPath),
 			zap.Duration("cost", time.Now().Sub(begin)),
 			zap.Error(err))
 	}()
-
-	switch c.Runtime {
-	case cri.Runc:
-		return cricore.CopyFromContainerForRunC(ctx, c, srcPath, dstPath)
-	default:
-		if e.engine.Supports(cri.ContainerEngineFeatureCopy) {
-			return e.engine.CopyFromContainer(ctx, c, srcPath, dstPath)
-		} else {
-			return criutils.CopyFromContainerByMountAndExec(ctx, e, c, srcPath, dstPath)
-		}
-	}
+	method, err = criutils.CopyFromContainer(ctx, e, c, srcPath, dstPath)
+	return
 }
 
 func (e *defaultCri) Exec(ctx context.Context, c *cri.Container, req cri.ExecRequest) (r cri.ExecResult, err error) {
 	if c == nil {
-		return cri.ExecResult{ExitCode: -1}, errContainerIsNil
+		return cri.ExecResult{Cmd: strings.Join(req.Cmd, " "), ExitCode: -1}, errContainerIsNil
 	}
 	begin := time.Now()
 	defer func() {
 		cost := time.Now().Sub(begin)
-		stdout, stderr := r.SampleOutput()
+
+		var stdout, stderr string
+		if len(req.Cmd) > 0 && (req.Cmd[0] == "cat" || req.Cmd[0] == "tar") {
+			stdout, stderr = r.SampleOutputLength(128)
+		} else {
+			stdout, stderr = r.SampleOutput()
+		}
 
 		logger.Criz("[digest] exec",
 			zap.String("engine", e.engine.Type()),
@@ -443,8 +447,8 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 	criPod.All = append(criPod.All, criContainer)
 
-	if criContainer.IsRunning() && !criContainer.Hacked && criContainer.MainBiz {
-		criContainer.Hacked = true
+	if criContainer.IsRunning() && criContainer.Hacked == 0 && criContainer.MainBiz {
+		criContainer.Hacked = 1
 
 		var err error
 
@@ -463,29 +467,46 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 		// skip kube-system containers
 		if !strings.HasPrefix(criPod.Namespace, "kube-") {
-			ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), cpOpTimeout)
 			defer cancel()
-			err := e.CopyToContainer(ctx, criContainer, core.HelperToolLocalPath, core.HelperToolPath)
 
-			//if err == nil {
-			//	ctx2, cancel2 := context.WithTimeout(context.Background(), defaultOpTimeout)
-			//	defer cancel2()
-			//	_, err = e.Exec(ctx2, criContainer, cri.ExecRequest{Cmd: []string{core.HelperToolPath, "hello"}})
-			//}
-
-			if err == nil {
-				logger.Metaz("[local] hack success",
-					zap.String("cid", criContainer.ShortContainerID()),
-					zap.String("ns", criPod.Namespace),
-					zap.String("pod", criPod.Name),
-					zap.Error(err))
-			} else {
-				logger.Metaz("[local] hack error",
-					zap.String("cid", criContainer.ShortContainerID()),
-					zap.String("ns", criPod.Namespace),
-					zap.String("pod", criPod.Name),
-					zap.Error(err))
+			alreadyExists := false
+			if e.helperToolLocalMd5sum != "" {
+				if md5, err := criutils.Md5sum(ctx, e, criContainer, core.HelperToolPath); err == nil {
+					logger.Metaz("[local] helper exists",
+						zap.String("cid", criContainer.ShortContainerID()),
+						zap.String("md5", md5),
+					)
+					if md5 == e.helperToolLocalMd5sum {
+						logger.Metaz("[local] already hack",
+							zap.String("cid", criContainer.ShortContainerID()),
+							zap.String("ns", criPod.Namespace),
+							zap.String("pod", criPod.Name))
+						alreadyExists = true
+						criContainer.Hacked = 2
+					}
+				}
 			}
+
+			if !alreadyExists {
+				err = e.CopyToContainer(ctx, criContainer, core.HelperToolLocalPath, core.HelperToolPath)
+				if err == nil {
+					criContainer.Hacked = 2
+					logger.Metaz("[local] hack success",
+						zap.String("cid", criContainer.ShortContainerID()),
+						zap.String("ns", criPod.Namespace),
+						zap.String("pod", criPod.Name),
+						zap.Error(err))
+				} else {
+					logger.Metaz("[local] hack error",
+						zap.String("cid", criContainer.ShortContainerID()),
+						zap.String("ns", criPod.Namespace),
+						zap.String("pod", criPod.Name),
+						zap.Error(err))
+				}
+			}
+		} else {
+			criContainer.Hacked = 3
 		}
 	}
 

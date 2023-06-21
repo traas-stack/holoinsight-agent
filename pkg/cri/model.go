@@ -75,7 +75,7 @@ type (
 		Tz TzInfo
 
 		// 该容器是否已经被我们hack过
-		Hacked bool
+		Hacked int
 
 		// 是否为一个主容器
 		MainBiz bool
@@ -187,6 +187,10 @@ func (s *ContainerState) IsRunning() bool {
 }
 
 func (r *ExecResult) SampleOutput() (stdout string, stderr string) {
+	return r.SampleOutputLength(DefaultSampleOutputLength)
+}
+
+func (r *ExecResult) SampleOutputLength(length int) (stdout string, stderr string) {
 	if r.Stdout != nil {
 		stdout = util.SubstringMax(r.Stdout.String(), DefaultSampleOutputLength)
 	}

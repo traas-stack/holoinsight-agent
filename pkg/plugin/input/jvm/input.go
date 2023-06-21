@@ -221,7 +221,7 @@ func readPerfDataUsingDockerExec(c *cri.Container) perfDataReader {
 	return func(path string) (map[string]interface{}, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
 		defer cancel()
-		if tempPath, deleteFunc, err := criutils.CopyFromContainerToTempFile(ctx, ioc.Crii, c, path); err != nil {
+		if tempPath, deleteFunc, err := criutils.CopySmallFileFromContainerToTempFile(ctx, ioc.Crii, c, path); err != nil {
 			return nil, err
 		} else {
 			defer deleteFunc()
