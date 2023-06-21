@@ -211,7 +211,7 @@ func (e *ContainerdContainerEngine) Exec(ctx context.Context, c *cri.Container, 
 
 	ctx = wrapK8sCtx(ctx)
 
-	invalidResult := cri.ExecResult{ExitCode: -1}
+	invalidResult := cri.ExecResult{Cmd: strings.Join(req.Cmd, " "), ExitCode: -1}
 
 	container, err := e.Client.LoadContainer(ctx, c.Id)
 	if err != nil {
@@ -310,7 +310,7 @@ func (e *ContainerdContainerEngine) Exec(ctx context.Context, c *cri.Container, 
 	if err == nil && code != 0 {
 		err = fmt.Errorf("exitcode=[%d] stdout=[%s] stderr=[%s]", code, stdout.String(), stderr.String())
 	}
-	return cri.ExecResult{ExitCode: int(code), Stdout: stdout, Stderr: stderr}, err
+	return cri.ExecResult{Cmd: invalidResult.Cmd, ExitCode: int(code), Stdout: stdout, Stderr: stderr}, err
 
 }
 

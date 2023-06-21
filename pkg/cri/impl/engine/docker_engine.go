@@ -115,7 +115,7 @@ func (e *DockerContainerEngine) GetContainerDetail(ctx context.Context, cid stri
 }
 
 func (e *DockerContainerEngine) Exec(ctx context.Context, c *cri.Container, req cri.ExecRequest) (cri.ExecResult, error) {
-	invalidResult := cri.ExecResult{ExitCode: -1}
+	invalidResult := cri.ExecResult{Cmd: strings.Join(req.Cmd, " "), ExitCode: -1}
 	create, err := e.Client.ContainerExecCreate(ctx, c.Id, types.ExecConfig{
 		User:         req.User,
 		Privileged:   false,
@@ -172,7 +172,7 @@ func (e *DockerContainerEngine) Exec(ctx context.Context, c *cri.Container, req 
 	if err == nil && inspect.ExitCode != 0 {
 		err = fmt.Errorf("exitcode=[%d] stdout=[%s] stderr=[%s]", inspect.ExitCode, stdout.String(), stderr.String())
 	}
-	return cri.ExecResult{ExitCode: inspect.ExitCode, Stdout: stdout, Stderr: stderr}, err
+	return cri.ExecResult{Cmd: invalidResult.Cmd, ExitCode: inspect.ExitCode, Stdout: stdout, Stderr: stderr}, err
 }
 
 func (e *DockerContainerEngine) CopyToContainer(ctx context.Context, c *cri.Container, src, dst string) error {

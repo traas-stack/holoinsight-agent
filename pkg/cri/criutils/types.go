@@ -4,6 +4,8 @@
 
 package criutils
 
+import "errors"
+
 type (
 	ProcessInfo struct {
 		User         string   `json:"user"`
@@ -11,4 +13,8 @@ type (
 		CmdlineSlice []string `json:"cmdlineSlice"`
 		Tgid         int32    `json:"tgid"`
 	}
+)
+
+var (
+	ErrUnsupported = errors.New("unsupported")
 )

@@ -85,7 +85,7 @@ func ConvertStringSliceToHashSet(a []string) map[string]struct{} {
 }
 
 func SubstringMax(s string, n int) string {
-	if n < len(s) {
+	if n >= 0 && n <= len(s) {
 		return s[:n]
 	} else {
 		return s
