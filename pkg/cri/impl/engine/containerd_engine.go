@@ -106,11 +106,11 @@ func (e *ContainerdContainerEngine) ListAllContainers(ctx context.Context) ([]*c
 	}
 	items := make([]*cri.EngineSimpleContainer, len(containers))
 	for i := range containers {
-		container := containers[i]
+		copy := containers[i]
 		items[i] = &cri.EngineSimpleContainer{
-			ID:     container.ID,
-			Labels: container.Labels,
-			Source: container,
+			ID:     copy.ID,
+			Labels: copy.Labels,
+			Source: copy,
 		}
 	}
 	return items, nil

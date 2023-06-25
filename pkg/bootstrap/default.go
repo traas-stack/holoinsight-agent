@@ -19,6 +19,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/rest"
 )
 
@@ -72,7 +73,7 @@ func InitK8sClientsetInCluster() (*kubernetes.Clientset, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	config = metadata.ConfigFor(config)
 	clientset, err := kubernetes.NewForConfig(config)
 	if err == nil {
 		ioc.K8sClientset = clientset
