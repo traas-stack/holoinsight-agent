@@ -126,7 +126,7 @@ func CopyToContainerByMountAndExec(ctx context.Context, i cri.Interface, c *cri.
 		}
 
 		// workaround success
-		logger.Criz("[pouch] copy to container", //
+		logger.Criz("[digest] copy to container", //
 			zap.String("cid", c.Id),           //
 			zap.String("mount", mount.Source), //
 			zap.String("src", srcPath),        //
@@ -180,7 +180,7 @@ func CopyFromContainerByMountAndExec(ctx context.Context, i cri.Interface, c *cr
 		}
 
 		// workaround success
-		logger.Criz("[pouch] copy to container", //
+		logger.Criz("[digest] copy from container", //
 			zap.String("cid", c.Id),           //
 			zap.String("mount", mount.Source), //
 			zap.String("src", srcPath),        //
