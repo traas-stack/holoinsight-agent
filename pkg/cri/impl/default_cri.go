@@ -128,7 +128,7 @@ func (e *defaultCri) chunkCpLoop() {
 				defer cancel()
 
 				if e.checkHelperMd5(ctx, c) {
-					c.Hacked = 2
+					c.Hacked = cri.HackOk
 					return
 				}
 
@@ -138,10 +138,10 @@ func (e *defaultCri) chunkCpLoop() {
 
 				if err == nil {
 					logger.Metaz("[local] retry hack success", zap.String("cid", c.ShortContainerID()), zap.Duration("cost", cost))
-					c.Hacked = 2
+					c.Hacked = cri.HackOk
 				} else {
 					logger.Metaz("[local] retry hack error", zap.String("cid", c.ShortContainerID()), zap.Duration("cost", cost), zap.Error(err))
-					c.Hacked = 5
+					c.Hacked = cri.HackRetryError
 				}
 			}()
 
@@ -489,6 +489,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 		SandboxID:        dc.SandboxId,
 		Runtime:          dc.Runtime,
 		NetworkMode:      dc.NetworkMode,
+		Hacked:           cri.HackInit,
 	}
 
 	if criContainer.Hostname == "" {
@@ -532,8 +533,8 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 	criPod.All = append(criPod.All, criContainer)
 
-	if criContainer.IsRunning() && criContainer.Hacked == 0 && criContainer.MainBiz {
-		criContainer.Hacked = 1
+	if criContainer.IsRunning() && criContainer.Hacked == cri.HackInit && criContainer.MainBiz {
+		criContainer.Hacked = cri.HackIng
 
 		var err error
 
@@ -555,13 +556,13 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 			alreadyExists := false
 			if e.checkHelperMd5(ctx, criContainer) {
 				alreadyExists = true
-				criContainer.Hacked = 2
+				criContainer.Hacked = cri.HackOk
 			}
 
 			if !alreadyExists {
 				err = e.copyHelper(ctx, criContainer)
 				if err == nil {
-					criContainer.Hacked = 2
+					criContainer.Hacked = cri.HackOk
 					logger.Metaz("[local] hack success",
 						zap.String("cid", criContainer.ShortContainerID()),
 						zap.String("ns", criPod.Namespace),
@@ -604,7 +605,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 				}
 			}
 		} else {
-			criContainer.Hacked = 3
+			criContainer.Hacked = cri.HackSkipped
 		}
 	}
 

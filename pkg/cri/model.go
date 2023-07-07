@@ -18,6 +18,14 @@ const (
 	DefaultSampleOutputLength = 1024
 )
 
+const (
+	HackInit = iota
+	HackIng
+	HackOk
+	HackSkipped
+	HackRetryError
+)
+
 // TODO 我们推出一个规范 让用户按我们规范做 就认为它是主容器
 var (
 	ErrMultiBiz        = errors.New("multi biz containers")
