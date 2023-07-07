@@ -1025,8 +1025,14 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 	}
 
 	// handle log samples
-	if xs.logSamples != nil && xs.logSamples.Where != nil && len(point.LogSamples) < xs.logSamples.MaxCount {
-		if ok, err := xs.logSamples.Where.Test(ctx); ok && err == nil {
+	if xs.logSamples != nil && len(point.LogSamples) < xs.logSamples.MaxCount {
+		whereOk := false
+		if xs.logSamples.Where == nil {
+			whereOk = true
+		} else if ok, err := xs.logSamples.Where.Test(ctx); ok && err == nil {
+			whereOk = true
+		}
+		if whereOk {
 			truncatedLines := make([]string, len(ctx.log.Lines))
 			for i, line := range ctx.log.Lines {
 				truncatedLines[i] = util.SubstringMax(line, xs.logSamples.MaxLength)
