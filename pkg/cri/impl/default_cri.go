@@ -17,6 +17,7 @@ import (
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	pb2 "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/throttle"
 	"go.uber.org/zap"
@@ -27,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	_ "time/tzdata"
 )
@@ -35,9 +37,11 @@ const (
 	defaultOpTimeout = 5 * time.Second
 	// Copy file maybe slow, so we use a bigger timout
 	cpOpTimeout         = 10 * time.Second
+	buildTimeout        = 10 * time.Second
 	etcLocalTime        = "/etc/localtime"
 	zoneinfoDir         = "/usr/share/zoneinfo/"
 	unknownIANATimezone = "UNKNOWN"
+	maxExecBytes        = 1024 * 1024
 )
 
 type (
@@ -48,6 +52,8 @@ type (
 		stopCh                chan struct{}
 		engine                cri.ContainerEngine
 		helperToolLocalMd5sum string
+		mutex                 sync.Mutex
+		chunkCpCh             chan *cri.Container
 	}
 )
 
@@ -64,6 +70,7 @@ func NewDefaultCri(clientset *kubernetes.Clientset, engine cri.ContainerEngine) 
 		syncThrottle:     throttle.ThrottleFirst(time.Second),
 		stopCh:           make(chan struct{}),
 		engine:           engine,
+		chunkCpCh:        make(chan *cri.Container, 128),
 	}
 }
 
@@ -73,6 +80,7 @@ func (e *defaultCri) Engine() cri.ContainerEngine {
 
 func (e *defaultCri) Start() error {
 	if file, err := os.Open(core.HelperToolLocalPath); err == nil {
+		defer file.Close()
 		md5 := md5.New()
 		if _, err := io.Copy(md5, file); err == nil {
 			e.helperToolLocalMd5sum = hex.EncodeToString(md5.Sum(nil))
@@ -103,11 +111,53 @@ func (e *defaultCri) Start() error {
 	})
 
 	go e.syncLoop()
+	go e.chunkCpLoop()
 	e.registerHttpHandlers()
 	return nil
 }
 
+func (e *defaultCri) chunkCpLoop() {
+	for {
+		select {
+		case c := <-e.chunkCpCh:
+			if e.isStopped() {
+				return
+			}
+			func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+
+				if e.checkHelperMd5(ctx, c) {
+					c.Hacked = 2
+					return
+				}
+
+				begin := time.Now()
+				err := e.copyHelper(ctx, c)
+				cost := time.Since(begin)
+
+				if err == nil {
+					logger.Metaz("[local] retry hack success", zap.String("cid", c.ShortContainerID()), zap.Duration("cost", cost))
+					c.Hacked = 2
+				} else {
+					logger.Metaz("[local] retry hack error", zap.String("cid", c.ShortContainerID()), zap.Duration("cost", cost), zap.Error(err))
+					c.Hacked = 5
+				}
+			}()
+
+		case <-e.stopCh:
+			return
+		}
+	}
+}
+
 func (e *defaultCri) Stop() {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	if e.isStopped() {
+		return
+	}
+
 	close(e.stopCh)
 	e.defaultMetaStore.Stop()
 }
@@ -156,9 +206,11 @@ func (e *defaultCri) CopyFromContainer(ctx context.Context, c *cri.Container, sr
 }
 
 func (e *defaultCri) Exec(ctx context.Context, c *cri.Container, req cri.ExecRequest) (r cri.ExecResult, err error) {
+	invalidResult := cri.ExecResult{Cmd: strings.Join(req.Cmd, " "), ExitCode: -1}
 	if c == nil {
-		return cri.ExecResult{Cmd: strings.Join(req.Cmd, " "), ExitCode: -1}, errContainerIsNil
+		return invalidResult, errContainerIsNil
 	}
+
 	begin := time.Now()
 	defer func() {
 		cost := time.Now().Sub(begin)
@@ -182,6 +234,18 @@ func (e *defaultCri) Exec(ctx context.Context, c *cri.Container, req cri.ExecReq
 			zap.Error(err))
 	}()
 
+	execBytes := 0
+	for _, s := range req.Cmd {
+		execBytes += len(s)
+	}
+	for _, s := range req.Env {
+		execBytes += len(s)
+	}
+	// Executing large size requests is very dangerous, in my test environment it will cause subsequent exec requests to the same container to hang.
+	if execBytes >= maxExecBytes {
+		return invalidResult, errors.New("exec req too big")
+	}
+
 	if req.User == "" {
 		req.User = defaultExecUser
 	}
@@ -204,7 +268,7 @@ func (e *defaultCri) listContainers() ([]*cri.EngineSimpleContainer, error) {
 }
 
 // setupTimezone setups timezone info of container
-func (e *defaultCri) setupTimezone(c *cri.Container) {
+func (e *defaultCri) setupTimezone(ctx context.Context, c *cri.Container) {
 	if c.Tz.EnvTz != "" {
 		// https://man7.org/linux/man-pages/man3/tzset.3.html
 
@@ -224,7 +288,7 @@ func (e *defaultCri) setupTimezone(c *cri.Container) {
 		}
 	}
 
-	tzName, tzObj, err := e.getEtcTimezone0(c)
+	tzName, tzObj, err := e.getEtcTimezone0(ctx, c)
 	if err != nil {
 		logger.Errorz("[local] parse /etc/localtime error", zap.String("cid", c.Id), zap.Error(err))
 	}
@@ -243,7 +307,7 @@ func (e *defaultCri) setupTimezone(c *cri.Container) {
 	c.Tz.Zone, c.Tz.Offset = time.Now().In(c.Tz.TzObj).Zone()
 }
 
-func (e *defaultCri) getEtcTimezone0(c *cri.Container) (string, *time.Location, error) {
+func (e *defaultCri) getEtcTimezone0(ctx context.Context, c *cri.Container) (string, *time.Location, error) {
 	// ref: https://man7.org/linux/man-pages/man5/localtime.5.html
 
 	// /etc/localtime must be a link to file under /usr/share/zoneinfo/.
@@ -265,8 +329,6 @@ func (e *defaultCri) getEtcTimezone0(c *cri.Container) (string, *time.Location, 
 			logger.Metaz("[local] /etc/localtime is a regular file", zap.String("cid", c.Id), zap.String("ns", c.Pod.Namespace), zap.String("pod", c.Pod.Name))
 			// According to the specification, /etc/localtime should be a symbol link, but it may be a regular file in practice.
 			// At this point we have to use its contents to parse the timezone.
-			ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
-			defer cancel()
 			b, err := criutils.ReadContainerFileUsingExecCat(ctx, ioc.Crii, c, etcLocalTime)
 			if err != nil {
 				return "", nil, err
@@ -279,14 +341,12 @@ func (e *defaultCri) getEtcTimezone0(c *cri.Container) (string, *time.Location, 
 			return "", nil, err
 		}
 
-		return e.parseTimezoneFromLink(c, link)
+		return e.parseTimezoneFromLink(ctx, c, link)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
-	defer cancel()
 	if r, err := e.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"readlink", etcLocalTime}}); err == nil {
 		link := strings.TrimSpace(r.Stdout.String())
-		return e.parseTimezoneFromLink(c, link)
+		return e.parseTimezoneFromLink(ctx, c, link)
 	}
 
 	b, err := criutils.ReadContainerFileUsingExecCat(ctx, ioc.Crii, c, etcLocalTime)
@@ -296,7 +356,7 @@ func (e *defaultCri) getEtcTimezone0(c *cri.Container) (string, *time.Location, 
 	return parseTzData(b)
 }
 
-func (e *defaultCri) parseTimezoneFromLink(c *cri.Container, link string) (string, *time.Location, error) {
+func (e *defaultCri) parseTimezoneFromLink(ctx context.Context, c *cri.Container, link string) (string, *time.Location, error) {
 	// The link may be like  "../usr/share/zoneinfo/UTC"
 	if strings.HasPrefix(link, "..") {
 		link = link[2:]
@@ -315,7 +375,7 @@ func (e *defaultCri) parseTimezoneFromLink(c *cri.Container, link string) (strin
 		return "", nil, err
 	}
 
-	if tzObj2, err := e.readTimezoneObjFromLink(c, link); err != nil {
+	if tzObj2, err := e.readTimezoneObjFromLink(ctx, c, link); err != nil {
 		logger.Metaz("[local] fail to read and parse container timezone file", zap.String("cid", c.Id), zap.String("link", link), zap.Error(err))
 	} else {
 		now := time.Now()
@@ -342,7 +402,7 @@ func (e *defaultCri) parseTimezoneFromLink(c *cri.Container, link string) (strin
 }
 
 // readTimezoneObjFromLink read timezone obj from linke
-func (e *defaultCri) readTimezoneObjFromLink(c *cri.Container, link string) (*time.Location, error) {
+func (e *defaultCri) readTimezoneObjFromLink(ctx context.Context, c *cri.Container, link string) (*time.Location, error) {
 	// When the user mounts /usr/share/zoneinfo/Asia/Shanghai of the physical machine to /etc/localtime of the container, the real result may be:
 	// 1. /etc/localtime in the container is still a symbol link, pointing to /usr/share/zoneinfo/UTC
 	// 2. The content of /usr/share/zoneinfo/UTC in the container becomes the content of Asia/Shanghai.
@@ -351,9 +411,6 @@ func (e *defaultCri) readTimezoneObjFromLink(c *cri.Container, link string) (*ti
 	// In order to get correct results, we must read the timezone file once.
 	// In fact, /usr/share/zoneinfo/UTC is covered by mount, but it cannot be seen from the mounts information (because there are some symbol links in the middle).
 	// Therefore, the read request must be initiated from inside the container.
-
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
-	defer cancel()
 
 	if b, err := criutils.ReadContainerFileUsingExecCat(ctx, ioc.Crii, c, link); err != nil {
 		return nil, err
@@ -387,7 +444,35 @@ func (e *defaultCri) getHostname(container *cri.Container) (string, error) {
 	return strings.TrimSpace(result.Stdout.String()), nil
 }
 
+func (e *defaultCri) checkHelperMd5(ctx context.Context, c *cri.Container) bool {
+	if e.helperToolLocalMd5sum == "" {
+		return false
+	}
+	if md5, err := criutils.Md5sum(ctx, e, c, core.HelperToolPath); err == nil {
+		logger.Metaz("[local] helper exists",
+			zap.String("cid", c.ShortContainerID()),
+			zap.String("md5", md5),
+			zap.String("local-md5", e.helperToolLocalMd5sum),
+		)
+		if md5 == e.helperToolLocalMd5sum {
+			logger.Metaz("[local] already hack",
+				zap.String("cid", c.ShortContainerID()),
+				zap.String("ns", c.Pod.Namespace),
+				zap.String("pod", c.Pod.Name))
+			return true
+		}
+	}
+	return false
+}
+
+func (e *defaultCri) copyHelper(ctx context.Context, c *cri.Container) error {
+	return e.CopyToContainer(ctx, c, core.HelperToolLocalPath, core.HelperToolPath)
+}
+
 func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailContainer) *cri.Container {
+	ctx, cancel := context.WithTimeout(context.Background(), buildTimeout)
+	defer cancel()
+
 	k8sContainerName := k8slabels.GetContainerName(dc.Labels)
 	if k8sContainerName == "" && dc.IsSandbox {
 		k8sContainerName = "POD"
@@ -452,7 +537,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 		var err error
 
-		e.setupTimezone(criContainer)
+		e.setupTimezone(ctx, criContainer)
 
 		if criContainer.Hostname == "" {
 			criContainer.Hostname, err = e.getHostname(criContainer)
@@ -467,29 +552,14 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 		// skip kube-system containers
 		if !strings.HasPrefix(criPod.Namespace, "kube-") {
-			ctx, cancel := context.WithTimeout(context.Background(), cpOpTimeout)
-			defer cancel()
-
 			alreadyExists := false
-			if e.helperToolLocalMd5sum != "" {
-				if md5, err := criutils.Md5sum(ctx, e, criContainer, core.HelperToolPath); err == nil {
-					logger.Metaz("[local] helper exists",
-						zap.String("cid", criContainer.ShortContainerID()),
-						zap.String("md5", md5),
-					)
-					if md5 == e.helperToolLocalMd5sum {
-						logger.Metaz("[local] already hack",
-							zap.String("cid", criContainer.ShortContainerID()),
-							zap.String("ns", criPod.Namespace),
-							zap.String("pod", criPod.Name))
-						alreadyExists = true
-						criContainer.Hacked = 2
-					}
-				}
+			if e.checkHelperMd5(ctx, criContainer) {
+				alreadyExists = true
+				criContainer.Hacked = 2
 			}
 
 			if !alreadyExists {
-				err = e.CopyToContainer(ctx, criContainer, core.HelperToolLocalPath, core.HelperToolPath)
+				err = e.copyHelper(ctx, criContainer)
 				if err == nil {
 					criContainer.Hacked = 2
 					logger.Metaz("[local] hack success",
@@ -503,6 +573,34 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 						zap.String("ns", criPod.Namespace),
 						zap.String("pod", criPod.Name),
 						zap.Error(err))
+
+					ioc.RegistryService.ReportEventAsync(&pb2.ReportEventRequest_Event{
+						EventTimestamp: time.Now().UnixMilli(),
+						EventType:      "DIGEST",
+						PayloadType:    "init_container_error",
+						Tags: map[string]string{
+							"namespace": criPod.Namespace,
+							"pod":       criPod.Name,
+							"cid":       criContainer.ShortContainerID(),
+							"agent":     e.localAgentMeta.PodName(),
+						},
+						Numbers: nil,
+						Strings: map[string]string{
+							"err": err.Error(),
+						},
+						Logs: nil,
+						Json: "",
+					})
+
+					// It makes sense to retry with a timeout
+					if context.DeadlineExceeded == err {
+						time.AfterFunc(3*time.Second, func() {
+							select {
+							case e.chunkCpCh <- criContainer:
+							default:
+							}
+						})
+					}
 				}
 			}
 		} else {
@@ -519,14 +617,14 @@ func (e *defaultCri) maybeSync() {
 
 func (e *defaultCri) syncLoop() {
 	go func() {
-		timer, _ := util.NewAlignedTimer(time.Minute, 40*time.Second, true, false)
-		defer timer.Stop()
+		syncTimer, _ := util.NewAlignedTimer(time.Minute, 40*time.Second, true, false)
+		defer syncTimer.Stop()
 
 		for {
 			select {
-			case <-timer.C:
+			case <-syncTimer.C:
 				e.maybeSync()
-				timer.Next()
+				syncTimer.Next()
 			case <-e.stopCh:
 				return
 			}
@@ -534,7 +632,22 @@ func (e *defaultCri) syncLoop() {
 	}()
 }
 
+func (e *defaultCri) isStopped() bool {
+	select {
+	case <-e.stopCh:
+		return true
+	default:
+		return false
+	}
+}
+
 func (e *defaultCri) syncOnce() {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+
+	if e.isStopped() {
+		return
+	}
 
 	begin := time.Now()
 
@@ -545,6 +658,7 @@ func (e *defaultCri) syncOnce() {
 
 	oldState := e.state
 	newState := newInternalState()
+	newStateLock := &sync.Mutex{}
 
 	// containers index by labels["io.kubernetes.pod.uid"]
 	containersByPod := make(map[string][]*cri.EngineDetailContainer)
@@ -573,110 +687,64 @@ func (e *defaultCri) syncOnce() {
 
 	podPhaseCount := make(map[v1.PodPhase]int)
 
-	changed := false
+	anyChanged := false
 	expiredContainers := 0
-	for _, pod := range localPods {
+	semaphore := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for _, pod0 := range localPods {
+		pod := pod0
+		begin := time.Now()
+
 		podPhaseCount[pod.Status.Phase]++
 		if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
 			logger.Metaz("[local] skip pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name), zap.String("phase", string(pod.Status.Phase)))
 			continue
 		}
 
-		criPod := &cri.Pod{
-			Pod: pod,
-		}
+		semaphore <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-semaphore
+				wg.Done()
+			}()
 
-		// Get all containers belonging to this pod, including exited containers
-		detailContainers := containersByPod[string(pod.UID)]
-
-		// Find newest sandbox
-		var sandboxContainer *cri.EngineDetailContainer
-		multiSandbox := false
-		podExpiredContainers := 0
-		for _, container := range detailContainers {
-			if container.IsSandbox && container.State.IsRunning() {
-				if sandboxContainer == nil {
-					sandboxContainer = container
-				} else {
-					multiSandbox = true
-					break
-				}
+			criPod, podExpiredContainers, podChanged, _ := e.buildPod(pod, oldState, newState, newStateLock, containersByPod)
+			if podChanged {
+				anyChanged = true
 			}
-		}
 
-		if multiSandbox {
-			logger.Metaz("[local] multi sandbox for pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name))
-		} else if sandboxContainer == nil {
-			logger.Metaz("[local] no sandbox for pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name))
-		} else {
-
-			for _, container := range detailContainers {
-				if !container.State.IsRunning() || container.ID != sandboxContainer.ID && container.SandboxId != sandboxContainer.ID {
-					logger.Metaz("[local] ignore expired container",
-						zap.String("ns", pod.Namespace),
-						zap.String("pod", pod.Name),
-						zap.String("sandbox", sandboxContainer.ID),
-						zap.String("cid", container.ID))
-					podExpiredContainers++
-					expiredContainers++
-					continue
-				}
-
-				// Ignore init containers
-				if k8sutils.IsInitContainer(pod, container.Labels) {
-					continue
-				}
-
-				cached := oldState.containerMap[container.ID]
-
-				if cached != nil && !isContainerChanged(cached.engineContainer, container) {
-					cached.criContainer.Pod = criPod
-
-					newState.containerMap[container.ID] = &cachedContainer{
-						criContainer:    cached.criContainer,
-						engineContainer: container,
-					}
-				} else {
-					changed = true
-					criContainer := e.buildCriContainer(criPod, container)
-					cached = &cachedContainer{
-						engineContainer: container,
-						criContainer:    criContainer,
-					}
-					newState.containerMap[container.ID] = cached
-				}
-
-				criPod.All = append(criPod.All, cached.criContainer)
-				if cached.criContainer.Sandbox {
-					criPod.Sandbox = cached.criContainer
-				} else if cached.criContainer.Sidecar {
-					criPod.Sidecar = append(criPod.Sidecar, cached.criContainer)
-				} else {
-					criPod.Biz = append(criPod.Biz, cached.criContainer)
-				}
+			var sandboxCid string
+			if criPod.Sandbox != nil {
+				sandboxCid = criPod.Sandbox.Id
 			}
-		}
 
-		var sandboxCid string
-		if sandboxContainer != nil {
-			sandboxCid = sandboxContainer.ID
-		}
-		logger.Metaz("[local] build pod",
-			zap.String("ns", pod.Namespace),
-			zap.String("pod", pod.Name),
-			zap.String("sandbox", cri.ShortContainerId(sandboxCid)),
-			zap.Int("all", len(criPod.All)),
-			zap.Int("biz", len(criPod.Biz)),
-			zap.Int("sidecar", len(criPod.Sidecar)),
-			zap.Int("expired", podExpiredContainers))
+			cost := time.Since(begin)
+			if podChanged {
+				logger.Metaz("[local] build pod",
+					zap.String("ns", pod.Namespace),
+					zap.String("pod", pod.Name),
+					zap.Bool("changed", podChanged), //
+					zap.String("sandbox", cri.ShortContainerId(sandboxCid)),
+					zap.Int("all", len(criPod.All)),
+					zap.Int("biz", len(criPod.Biz)),
+					zap.Int("sidecar", len(criPod.Sidecar)),
+					zap.Int("expired", podExpiredContainers),
+					zap.Duration("cost", cost))
+			}
 
-		newState.pods = append(newState.pods, criPod)
+			newStateLock.Lock()
+			newState.pods = append(newState.pods, criPod)
+			newStateLock.Unlock()
+		}()
 	}
+
+	wg.Wait()
 	newState.build()
 
 	logger.Metaz("[local] sync once done", //
 		zap.String("engine", e.engine.Type()), //
-		zap.Bool("changed", changed),
+		zap.Bool("changed", anyChanged),
 		zap.Int("pods", len(newState.pods)), //
 		zap.Int("containers", len(containers)),
 		zap.Duration("cost", time.Now().Sub(begin)), //
@@ -685,6 +753,97 @@ func (e *defaultCri) syncOnce() {
 	)
 
 	e.state = newState
+}
+
+func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *internalState, newStateLock *sync.Mutex, containersByPod map[string][]*cri.EngineDetailContainer) (*cri.Pod, int, bool, error) {
+
+	criPod := &cri.Pod{
+		Pod: pod,
+	}
+
+	// Get all containers belonging to this pod, including exited containers
+	detailContainers := containersByPod[string(pod.UID)]
+
+	// Find newest sandbox
+	var sandboxContainer *cri.EngineDetailContainer
+	multiSandbox := false
+	podExpiredContainers := 0
+	expiredContainers := 0
+	changed := false
+
+	for _, container := range detailContainers {
+		if container.IsSandbox && container.State.IsRunning() {
+			if sandboxContainer == nil {
+				sandboxContainer = container
+			} else {
+				multiSandbox = true
+				break
+			}
+		}
+	}
+
+	if multiSandbox {
+		logger.Metaz("[local] multi sandbox for pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name))
+	} else if sandboxContainer == nil {
+		logger.Metaz("[local] no sandbox for pod", zap.String("ns", pod.Namespace), zap.String("pod", pod.Name))
+	} else {
+
+		for _, container := range detailContainers {
+			if !container.State.IsRunning() || container.ID != sandboxContainer.ID && container.SandboxId != sandboxContainer.ID {
+				logger.Metaz("[local] ignore expired container",
+					zap.String("ns", pod.Namespace),
+					zap.String("pod", pod.Name),
+					zap.String("sandbox", sandboxContainer.ID),
+					zap.String("cid", container.ID))
+				podExpiredContainers++
+				expiredContainers++
+				continue
+			}
+
+			// Ignore init containers
+			if k8sutils.IsInitContainer(pod, container.Labels) {
+				continue
+			}
+
+			cached := oldState.containerMap[container.ID]
+
+			if cached != nil && !isContainerChanged(cached.engineContainer, container) {
+				cached.criContainer.Pod = criPod
+
+				newStateLock.Lock()
+				newState.containerMap[container.ID] = &cachedContainer{
+					criContainer:    cached.criContainer,
+					engineContainer: container,
+				}
+				newStateLock.Unlock()
+
+			} else {
+				if cached != nil {
+					logger.Metaz("container changed", zap.String("cid", cached.criContainer.ShortContainerID()))
+				}
+				changed = true
+				criContainer := e.buildCriContainer(criPod, container)
+				cached = &cachedContainer{
+					engineContainer: container,
+					criContainer:    criContainer,
+				}
+				newStateLock.Lock()
+				newState.containerMap[container.ID] = cached
+				newStateLock.Unlock()
+			}
+
+			criPod.All = append(criPod.All, cached.criContainer)
+			if cached.criContainer.Sandbox {
+				criPod.Sandbox = cached.criContainer
+			} else if cached.criContainer.Sidecar {
+				criPod.Sidecar = append(criPod.Sidecar, cached.criContainer)
+			} else {
+				criPod.Biz = append(criPod.Biz, cached.criContainer)
+			}
+		}
+	}
+
+	return criPod, expiredContainers, changed, nil
 }
 
 func isContainerChanged(oldContainer *cri.EngineDetailContainer, newContainer *cri.EngineDetailContainer) bool {

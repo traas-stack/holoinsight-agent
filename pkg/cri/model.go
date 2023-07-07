@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	v1 "k8s.io/api/core/v1"
+	"sync"
 	"time"
 )
 
@@ -89,6 +90,9 @@ type (
 
 		// NetworkMode
 		NetworkMode string
+
+		// Attributes can be used to prevent arbitrary extension fields
+		Attributes sync.Map
 	}
 	ContainerState struct {
 		Pid    int

@@ -40,4 +40,19 @@ func (e *defaultCri) registerHttpHandlers() {
 		}
 		json.NewEncoder(writer).Encode(ret)
 	})
+	http.HandleFunc("/api/meta/local/hackErrorContainers", func(writer http.ResponseWriter, request *http.Request) {
+		state := e.state
+		ret := make([]string, 0)
+		for _, pod := range state.pods {
+			for _, container := range pod.All {
+				if container.Sandbox {
+					continue
+				}
+				if container.Hacked == 1 || container.Hacked == 5 {
+					ret = append(ret, container.ShortContainerID())
+				}
+			}
+		}
+		json.NewEncoder(writer).Encode(ret)
+	})
 }
