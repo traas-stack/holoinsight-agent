@@ -17,4 +17,5 @@ type (
 
 var (
 	ErrUnsupported = errors.New("unsupported")
+	ErrDisabled    = errors.New("disabled")
 )

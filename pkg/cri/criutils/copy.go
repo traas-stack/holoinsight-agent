@@ -8,19 +8,28 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/cricore"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
+	context2 "golang.org/x/net/context"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 const (
-	tempFilePrefix  = ".temp_holoinsight_"
-	tempFilePattern = tempFilePrefix + "*"
+	tempFilePrefix               = ".temp_holoinsight_"
+	tempFilePattern              = tempFilePrefix + "*"
+	chunkCpOnceTimeout           = 15 * time.Second
+	defaultChunkSize             = 90 * 1024
+	copyToContainerByTarDisabled = "copyToContainerByTarDisabled"
 )
 
 // ReadContainerFile copies file from container to local temp file, reads the file content, and then remove the temp file.
@@ -88,7 +97,11 @@ func CopyFromContainerToTempFile(ctx context.Context, i cri.Interface, c *cri.Co
 	}, nil
 }
 
-func CopyToContainerByMountAndExec(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) error {
+func CopyToContainerByMount(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) (retErr error) {
+	if len(c.Mounts) == 0 {
+		return ErrUnsupported
+	}
+
 	// mkdir -p
 	if _, err := i.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"mkdir", "-p", filepath.Dir(dstPath)}}); err != nil {
 		return err
@@ -113,7 +126,7 @@ func CopyToContainerByMountAndExec(ctx context.Context, i cri.Interface, c *cri.
 
 		// We assume that there is a mv command in each container.
 		// Some thin images do not contain mv. Such as prometheus node exporter.
-		if _, err := i.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"mv", filepath.Join(mount.Destination, tempFile), dstPath}}); err != nil {
+		if err := ExecMv(ctx, i, c, filepath.Join(mount.Destination, tempFile), dstPath); err != nil {
 			logger.Errorz("[pouch] mv error",
 				zap.String("cid", c.Id),           //
 				zap.String("mount", mount.Source), //
@@ -143,7 +156,11 @@ func CopyToContainerByMountAndExec(ctx context.Context, i cri.Interface, c *cri.
 	return ErrUnsupported
 }
 
-func CopyFromContainerByMountAndExec(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) error {
+func CopyFromContainerByMount(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) error {
+	if len(c.Mounts) == 0 {
+		return ErrUnsupported
+	}
+
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
 		return err
 	}
@@ -160,7 +177,7 @@ func CopyFromContainerByMountAndExec(ctx context.Context, i cri.Interface, c *cr
 
 		tempFile := tempFilePrefix + filepath.Base(srcPath)
 		tempPath := filepath.Join(mount.Destination, tempFile)
-		if _, err := i.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"cp", srcPath, tempPath}}); err != nil {
+		if err := ExecCp(ctx, i, c, srcPath, tempPath); err != nil {
 			logger.Errorz("[pouch] cp error",
 				zap.String("cid", c.Id),                //
 				zap.String("mount", mount.Destination), //
@@ -193,7 +210,17 @@ func CopyFromContainerByMountAndExec(ctx context.Context, i cri.Interface, c *cr
 }
 
 // CopyToContainerByTar copies file to container using tar
-func CopyToContainerByTar(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) error {
+func CopyToContainerByTar(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) (retErr error) {
+	if l, ok := c.Attributes.Load(copyToContainerByTarDisabled); ok && l.(bool) {
+		return ErrDisabled
+	}
+
+	defer func() {
+		if retErr != nil && strings.Contains(retErr.Error(), "short read") {
+			c.Attributes.Store(copyToContainerByTarDisabled, true)
+		}
+	}()
+
 	file, err := os.Open(srcPath)
 	if err != nil {
 		return err
@@ -223,6 +250,7 @@ func CopyToContainerByTar(ctx context.Context, i cri.Interface, c *cri.Container
 			writeErrCh <- err
 			return
 		}
+		header.Name = filepath.Base(dstPath)
 		if err := tw.WriteHeader(header); err != nil {
 			writeErrCh <- err
 			return
@@ -284,50 +312,238 @@ func CopyFromContainerByTar(ctx context.Context, i cri.Interface, c *cri.Contain
 	return nil
 }
 
+func readFileToChunks(path string) ([][]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	size := stat.Size()
+	chunks := make([][]byte, 0, size/defaultChunkSize+1)
+
+	for off := int64(0); off < size; {
+		end := off + defaultChunkSize
+		if end > size {
+			end = size
+		}
+		buf := make([]byte, end-off)
+		n, err := file.Read(buf)
+		buf = buf[:n]
+		if n > 0 {
+			chunks = append(chunks, buf)
+			off += int64(n)
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+	}
+	return chunks, nil
+}
+
+func CopyToContainerByChunk(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) error {
+	// splits input stream of srcPath into multi chunks
+	// for every chunk: put it on env (base64)
+	// then exec: sh -c 'echo -n $ARG | base64 -d | dd oflag=append status=none conv=notrunc of=/tmp/1'
+	// then exec: chmod a+x /tmp/1
+	tempPath := dstPath + ".temp"
+	if _, err := i.Exec(ctx, c, cri.ExecRequest{Cmd: []string{"mkdir", "-p", filepath.Dir(dstPath)}}); err != nil {
+		return err
+	}
+
+	stat, err := os.Stat(srcPath)
+	if err != nil {
+		return err
+	}
+
+	chunks, err := readFileToChunks(srcPath)
+	if err != nil {
+		return err
+	}
+
+	// When transfer HoloInsight helper (about 18MB) with docker+rund
+	// batch size -> transfer cost:
+	// 1 -> 7.4s
+	// 2 -> 5.5s
+	// 3 -> 4.9s
+	// 4 -> 4.8s
+	// 5 -> 4.4s
+	var batch [][]byte
+	accSize := 0
+	for j, chunk := range chunks {
+		batch = append(batch, chunk)
+		accSize += len(chunk)
+		if j+1 == len(chunks) || len(batch) >= 5 {
+			env := []string{
+				fmt.Sprintf("DST=%s", tempPath),
+				fmt.Sprintf("CHUNK_COUNT=%d", len(batch)),
+			}
+			for k := range batch {
+				b64 := base64.StdEncoding.EncodeToString(batch[k])
+				env = append(env, fmt.Sprintf("CHUNK_ARG_%d=%s", k+1, b64))
+			}
+
+			_, err = SubContextTimeoutExec(ctx, chunkCpOnceTimeout, func(ctx2 context2.Context) (cri.ExecResult, error) {
+				return i.Exec(ctx2, c, cri.ExecRequest{
+					Cmd: []string{"sh", "-c", "set -e; for i in `seq $CHUNK_COUNT`; do\n  printenv CHUNK_ARG_${i} | base64 -d >> $DST \n done\n"},
+					Env: env,
+				})
+			})
+
+			if err != nil {
+				logger.Criz("[digest] copy chunk error", zap.String("cid", c.ShortContainerID()), zap.Int("accSize", accSize), zap.Error(err))
+				return err
+			}
+
+			batch = nil
+			accSize = 0
+		}
+	}
+
+	// mv ${dstPath}.temp ${dstPath}
+	if err := ExecMv(ctx, i, c, tempPath, dstPath); err != nil {
+		return err
+	}
+
+	// example: chmod 0755 dstPath
+	if err := ExecChmod(ctx, i, c, dstPath, stat.Mode().Perm()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func CopyToContainer(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) (string, error) {
+	var errs []error
+
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
+	}
+
 	if c.Runtime == cri.Runc {
 		if err := cricore.CopyToContainerForRunC(ctx, c, srcPath, dstPath); err == nil {
 			return "runc", nil
+		} else {
+			errs = append(errs, err)
 		}
 	}
 
-	if err := CopyToContainerByMountAndExec(ctx, i, c, srcPath, dstPath); err == nil {
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
+	}
+
+	if err := CopyToContainerByMount(ctx, i, c, srcPath, dstPath); err == nil {
 		return "mount", nil
+	} else {
+		errs = append(errs, err)
 	}
 
 	if i.Engine().Supports(cri.ContainerEngineFeatureCopy) {
+		if util.IsContextDone(ctx) {
+			return "unknown", ctx.Err()
+		}
+
 		if err := i.Engine().CopyToContainer(ctx, c, srcPath, dstPath); err == nil {
 			return "engine", nil
+		} else {
+			errs = append(errs, err)
 		}
+	}
+
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
 	}
 
 	if err := CopyToContainerByTar(ctx, i, c, srcPath, dstPath); err == nil {
 		return "tar", nil
+	} else {
+		errs = append(errs, err)
 	}
 
-	return "unknown", ErrUnsupported
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
+	}
+
+	if err := CopyToContainerByChunk(ctx, i, c, srcPath, dstPath); err == nil {
+		return "chunk", nil
+	} else {
+		errs = append(errs, err)
+	}
+
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
+	}
+
+	return "unknown", mergeError("copy to container error: ", errs)
 }
 
 func CopyFromContainer(ctx context.Context, i cri.Interface, c *cri.Container, srcPath, dstPath string) (string, error) {
+	var errs []error
+
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
+	}
+
 	if c.Runtime == cri.Runc {
 		if err := cricore.CopyFromContainerForRunC(ctx, c, srcPath, dstPath); err == nil {
 			return "runc", nil
 		}
 	}
 
-	if err := CopyFromContainerByMountAndExec(ctx, i, c, srcPath, dstPath); err == nil {
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
+	}
+
+	if err := CopyFromContainerByMount(ctx, i, c, srcPath, dstPath); err == nil {
 		return "mount", nil
 	}
 
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
+	}
+
 	if i.Engine().Supports(cri.ContainerEngineFeatureCopy) {
+		if util.IsContextDone(ctx) {
+			return "unknown", ctx.Err()
+		}
 		if err := i.Engine().CopyFromContainer(ctx, c, srcPath, dstPath); err == nil {
 			return "engine", nil
 		}
+	}
+
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
 	}
 
 	if err := CopyFromContainerByTar(ctx, i, c, srcPath, dstPath); err == nil {
 		return "tar", nil
 	}
 
-	return "unknown", ErrUnsupported
+	if util.IsContextDone(ctx) {
+		return "unknown", ctx.Err()
+	}
+
+	return "unknown", mergeError("copy from container error: ", errs)
+}
+
+func mergeError(prefix string, errs []error) error {
+	b := strings.Builder{}
+	b.WriteString(prefix)
+	for i, err := range errs {
+		if err == ErrUnsupported {
+			continue
+		}
+		b.WriteString(err.Error())
+		if i+1 < len(errs) {
+			b.WriteByte(' ')
+		}
+	}
+	return errors.New(b.String())
 }

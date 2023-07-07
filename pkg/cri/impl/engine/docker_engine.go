@@ -161,7 +161,7 @@ func (e *DockerContainerEngine) Exec(ctx context.Context, c *cri.Container, req 
 		// nothing
 	case <-ctx.Done():
 		// timeout
-		return invalidResult, err
+		return invalidResult, ctx.Err()
 	}
 
 	inspect, err2 := e.Client.ContainerExecInspect(ctx, create.ID)

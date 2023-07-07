@@ -10,11 +10,20 @@ import (
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	v1 "k8s.io/api/core/v1"
+	"sync"
 	"time"
 )
 
 const (
 	DefaultSampleOutputLength = 1024
+)
+
+const (
+	HackInit = iota
+	HackIng
+	HackOk
+	HackSkipped
+	HackRetryError
 )
 
 // TODO 我们推出一个规范 让用户按我们规范做 就认为它是主容器
@@ -89,6 +98,9 @@ type (
 
 		// NetworkMode
 		NetworkMode string
+
+		// Attributes can be used to prevent arbitrary extension fields
+		Attributes sync.Map
 	}
 	ContainerState struct {
 		Pid    int

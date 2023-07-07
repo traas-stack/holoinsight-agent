@@ -411,6 +411,9 @@ func (b *AgentBootstrap) setupCRI() error {
 	if err := i.Start(); err != nil {
 		return err
 	}
+	if b.tm != nil {
+		b.tm.AddStopComponents(i)
+	}
 	App.AddStopComponent(i)
 	maybeInitDockerOOMManager()
 	b.callCustomizers("cri-setup-end", nil)
