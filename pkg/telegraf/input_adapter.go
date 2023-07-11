@@ -22,8 +22,12 @@ type (
 
 func NewInputAdapter(input telegraf.Input) api.Input {
 	return &InputAdapter{defaultPrefix: "telegraf_", input: input}
-
 }
+
+func NewInputAdapterWithPrefix(prefix string, input telegraf.Input) api.Input {
+	return &InputAdapter{defaultPrefix: prefix, input: input}
+}
+
 func (i *InputAdapter) GetDefaultPrefix() string {
 	return i.defaultPrefix
 }

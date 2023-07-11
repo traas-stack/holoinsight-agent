@@ -37,7 +37,7 @@ func parse(task *collecttask.CollectTask) (api.Input, error) {
 	if len(servers) == 0 {
 		return nil, errors.New("empty servers")
 	}
-	return telegraf.NewInputAdapter(&mysql.Mysql{
+	return telegraf.NewInputAdapterWithPrefix("", &mysql.Mysql{
 		Servers: servers,
 	}), nil
 }
