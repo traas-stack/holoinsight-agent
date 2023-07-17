@@ -15,6 +15,7 @@ import (
 	regpb "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -162,7 +163,16 @@ func (rs *resourceSyncer) start(stopCh <-chan struct{}) {
 					zap.Error(err))
 			}
 		},
-		OnEvent: em.Add,
+		OnEvent: func(e watch.Event) {
+			if rs.verbose {
+				if ma, err := meta.Accessor(e.Object); err == nil {
+					ns := ma.GetNamespace()
+					name := ma.GetName()
+					logger.Metaz("onEvent", zap.String("type", string(e.Type)), zap.String("ns", ns), zap.String("name", name))
+				}
+			}
+			em.Add(e)
+		},
 	})
 
 	go helper.Run(stopCh)
