@@ -53,6 +53,7 @@ type (
 		objType    runtime.Object
 		reportType string
 		funcs      resourceFuncs
+		verbose    bool
 	}
 )
 
@@ -110,6 +111,9 @@ func (rs *resourceSyncer) start(stopCh <-chan struct{}) {
 				zap.Int("add", len(req.Add)),
 				zap.Int("del", len(req.Del)),
 				zap.Duration("cost", cost))
+			if rs.verbose {
+				logger.Metaz("delta sync success", zap.Any("req", req))
+			}
 		} else {
 			logger.Metaz("delta sync error",
 				zap.Int("code", code),
@@ -119,6 +123,9 @@ func (rs *resourceSyncer) start(stopCh <-chan struct{}) {
 				zap.Int("del", len(req.Del)),
 				zap.Duration("cost", cost),
 				zap.Error(err))
+			if rs.verbose {
+				logger.Metaz("delta sync error", zap.Any("req", req))
+			}
 		}
 	}, stopCh)
 	helper := listwatchext.NewListWatchHelper(lw, listwatchext.ListWatchCallback{
@@ -217,6 +224,7 @@ func (s *metaSyncer) runOnce(stopCh <-chan struct{}) {
 				return pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed
 			},
 		})
+		rs.verbose = true
 		rs.start(stopCh)
 	}
 }
