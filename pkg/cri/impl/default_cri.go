@@ -742,7 +742,6 @@ func (e *defaultCri) syncOnce() {
 
 	wg.Wait()
 	newState.build()
-
 	logger.Metaz("[local] sync once done", //
 		zap.String("engine", e.engine.Type()), //
 		zap.Bool("changed", anyChanged),
@@ -754,6 +753,18 @@ func (e *defaultCri) syncOnce() {
 	)
 
 	e.state = newState
+	if anyChanged {
+		e.firePodChange()
+	}
+}
+
+func (e *defaultCri) firePodChange() {
+	e.defaultMetaStore.mutex.Lock()
+	defer e.defaultMetaStore.mutex.Unlock()
+
+	for _, listener := range e.listeners {
+		listener.OnAnyPodChanged()
+	}
 }
 
 func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *internalState, newStateLock *sync.Mutex, containersByPod map[string][]*cri.EngineDetailContainer) (*cri.Pod, int, bool, error) {

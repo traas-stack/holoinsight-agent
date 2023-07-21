@@ -38,6 +38,12 @@ type (
 		Start() error
 
 		Stop()
+
+		AddListener(MetaListener)
+		RemoveListener(MetaListener)
+	}
+	MetaListener interface {
+		OnAnyPodChanged()
 	}
 
 	// Interface is the entrance of accessing pod/container meta and executing container commands.
