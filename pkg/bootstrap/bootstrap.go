@@ -53,11 +53,11 @@ type (
 		Customizers         map[string][]Customizer
 		StaticTasks         []*collecttask.CollectTask
 		stopComponents      []StopComponent
-		lsm                 *logstream.Manager
-		pm                  *pipeline.Manager
-		tm                  *manager.TransferManager
+		LSM                 *logstream.Manager
+		PM                  *pipeline.Manager
+		TM                  *manager.TransferManager
 		httpServerComponent *server.HttpServerComponent
-		am                  *agent.Manager
+		AM                  *agent.Manager
 	}
 )
 
@@ -85,7 +85,7 @@ func (b *AgentBootstrap) callCustomizers(name string, obj interface{}) interface
 	return obj
 }
 
-func (b *AgentBootstrap) AddStopComponent(components ...StopComponent) {
+func (b *AgentBootstrap) AddStopComponents(components ...StopComponent) {
 	b.stopComponents = append(b.stopComponents, components...)
 }
 
@@ -147,7 +147,7 @@ func (b *AgentBootstrap) Bootstrap() error {
 	}
 
 	b.httpServerComponent = server.NewHttpServerComponent()
-	b.AddStopComponent(b.httpServerComponent)
+	b.AddStopComponents(b.httpServerComponent)
 
 	switch appconfig.StdAgentConfig.Mode {
 	case core.AgentModeDaemonset:
@@ -155,7 +155,7 @@ func (b *AgentBootstrap) Bootstrap() error {
 			return err
 		}
 
-		go b.tm.ListenTransfer()
+		go b.TM.ListenTransfer()
 
 	case core.AgentModeClusteragent:
 		if err := b.setupClusterAgent(); err != nil {
@@ -197,7 +197,7 @@ func (b *AgentBootstrap) setupRegistryService() error {
 	}
 	rs = b.callCustomizers("registryService", rs).(*registry.Service)
 	ioc.RegistryService = rs
-	b.AddStopComponent(rs)
+	b.AddStopComponents(rs)
 
 	rs.ReportEventAsync(&pb2.ReportEventRequest_Event{
 		BornTimestamp: time.Now().UnixMilli(),
@@ -223,8 +223,8 @@ func (b *AgentBootstrap) setupAgentManager() error {
 	am := agent.NewManager(ioc.RegistryService)
 	am = b.callCustomizers("agentManager", am).(*agent.Manager)
 	am.Start()
-	b.am = am
-	b.AddStopComponent(am)
+	b.AM = am
+	b.AddStopComponents(am)
 
 	b.callCustomizers("agentManager-setup-end", nil)
 	return nil
@@ -257,8 +257,8 @@ func (b *AgentBootstrap) callStopComponents() {
 }
 
 func (b *AgentBootstrap) onStop() error {
-	if b.tm != nil {
-		b.tm.StopSaveStateToFile()
+	if b.TM != nil {
+		b.TM.StopSaveStateToFile()
 	}
 	begin0 := time.Now()
 	b.callStopComponents()
@@ -278,7 +278,7 @@ func (b *AgentBootstrap) setupClusterAgent() error {
 
 	k8sm := k8ssync.NewMetaSyncer(ioc.RegistryService, ioc.K8sClientset)
 	k8sm.Start()
-	App.AddStopComponent(k8sm)
+	App.AddStopComponents(k8sm)
 
 	b.callCustomizers("clusteragent-setup-end", nil)
 	return nil
@@ -295,10 +295,10 @@ func (b *AgentBootstrap) setupCentralAgent() error {
 	om.Start()
 
 	lsm := logstream.NewManager()
-	b.lsm = lsm
+	b.LSM = lsm
 	pm := pipeline.NewManager(ctm, lsm)
 	pm.Start()
-	App.AddStopComponent(om, pm)
+	App.AddStopComponents(om, pm)
 	b.callCustomizers("centralagent-setup-end", nil)
 	return nil
 }
@@ -337,16 +337,16 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 	}
 
 	lsm := logstream.NewManager()
-	b.lsm = lsm
+	b.LSM = lsm
 	pm := pipeline.NewManager(ctm, lsm)
-	b.pm = pm
+	b.PM = pm
 	pm.LoadAll()
 
 	bsm := bistream.NewManager(ioc.RegistryService, bizbistream.GetBiStreamHandlerRegistry())
 
-	b.tm = manager.NewTransferManager(b.pm, b.lsm)
-	b.tm.AddStopComponents(b.httpServerComponent, ctm, bsm, b.am)
-	if err := b.tm.Transfer(); err != nil {
+	b.TM = manager.NewTransferManager(b.PM, b.LSM)
+	b.TM.AddStopComponents(b.httpServerComponent, ctm, bsm, b.AM)
+	if err := b.TM.Transfer(); err != nil {
 		logger.Errorz("[transfer] error", zap.Error(err))
 	}
 
@@ -357,12 +357,12 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 
 	bsm.Start()
 
-	App.AddStopComponent(pm, om, bsm)
+	App.AddStopComponents(pm, om, bsm)
 
 	masterMaintainer := master.NewK8sNodeMasterMaintainer(ioc.Crii, ioc.K8sClientset)
 	masterMaintainer.Register(&clusteragent.MasterComponent{})
 	go masterMaintainer.Start()
-	App.AddStopComponent(masterMaintainer)
+	App.AddStopComponents(masterMaintainer)
 
 	b.callCustomizers("daemonagent-setup-end", nil)
 
@@ -378,14 +378,14 @@ func (b *AgentBootstrap) setupSidecarAgent() error {
 	}
 
 	lsm := logstream.NewManager()
-	b.lsm = lsm
+	b.LSM = lsm
 	pm := pipeline.NewManager(ctm, lsm)
 	pm.Start()
 
 	bsm := bistream.NewManager(ioc.RegistryService, bizbistream.GetBiStreamHandlerRegistry())
 	bsm.Start()
 
-	App.AddStopComponent(pm, bsm)
+	App.AddStopComponents(pm, bsm)
 
 	b.callCustomizers("sidecaragent-setup-end", nil)
 
@@ -411,10 +411,10 @@ func (b *AgentBootstrap) setupCRI() error {
 	if err := i.Start(); err != nil {
 		return err
 	}
-	if b.tm != nil {
-		b.tm.AddStopComponents(i)
+	if b.TM != nil {
+		b.TM.AddStopComponents(i)
 	}
-	App.AddStopComponent(i)
+	App.AddStopComponents(i)
 	maybeInitDockerOOMManager()
 	b.callCustomizers("cri-setup-end", nil)
 	return nil

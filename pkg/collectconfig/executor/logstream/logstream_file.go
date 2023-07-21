@@ -608,6 +608,7 @@ func (f *FileLogStream) Clean() {
 			f.cache.Delete(key)
 			atomic.AddInt64(&f.pendingBytes, -resp.Bytes())
 			logger.Errorz("clean cursor cache", //
+				zap.Int64("cursor", resp.Cursor),           //
 				zap.Int32("remainCount", resp.remainCount), //
 				zap.Time("ioStartTime", resp.IOStartTime),  //
 				zap.String("path", f.config.Path))          //

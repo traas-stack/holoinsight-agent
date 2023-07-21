@@ -54,7 +54,7 @@ func InitCollectTaskManager(rs *registry.Service, staticTasks []*collecttask.Col
 	ioc.CollectTaskManager = ctm
 	ctm.StartListen()
 	ctm.AddHttpFuncs()
-	App.AddStopComponent(ctm)
+	App.AddStopComponents(ctm)
 	return ctm, nil
 }
 
@@ -64,7 +64,7 @@ func maybeInitDockerOOMManager() {
 	if x, ok := e.(*engine.DockerContainerEngine); ok {
 		oomManager := engine.NewOOMManager(i, x.Client)
 		oomManager.Start()
-		App.AddStopComponent(oomManager)
+		App.AddStopComponents(oomManager)
 	}
 }
 

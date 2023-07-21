@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,8 @@ type (
 		state          *internalState
 		localPodMeta   *localPodMeta
 		localAgentMeta *localAgentMetaImpl
+		listeners      []cri.MetaListener
+		mutex          sync.Mutex
 	}
 
 	internalState struct {
@@ -51,6 +54,26 @@ func newDefaultMetaStore(clientset *kubernetes.Clientset) *defaultMetaStore {
 		state:          newInternalState(),
 		localPodMeta:   newPodMeta(lm.NodeName(), getter),
 	}
+}
+
+func (e *defaultMetaStore) AddListener(listener cri.MetaListener) {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+
+	e.listeners = append(e.listeners, listener)
+}
+
+func (e *defaultMetaStore) RemoveListener(listener cri.MetaListener) {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+
+	newOne := make([]cri.MetaListener, 0, len(e.listeners))
+	for _, l := range e.listeners {
+		if l != listener {
+			newOne = append(newOne, l)
+		}
+	}
+	e.listeners = newOne
 }
 
 func (e *defaultMetaStore) LocalAgentMeta() cri.LocalAgentMeta {
