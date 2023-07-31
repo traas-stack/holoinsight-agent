@@ -456,6 +456,9 @@ func (s *Service) MetaDeltaSync(request *pb2.MetaSync_DeltaSyncRequest) error {
 }
 
 func (s *Service) ReportEventAsync(events ...*pb2.ReportEventRequest_Event) {
+	if s == nil {
+		return
+	}
 	s.eventManager.add(events)
 }
 
