@@ -10,9 +10,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/text"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
-	"golang.org/x/sys/unix"
 	"golang.org/x/text/encoding"
-	"os"
 )
 
 const (
@@ -31,7 +29,7 @@ func PreviewFile(req *pb.PreviewFileRequest, resp *pb.PreviewFileResponse) error
 }
 
 func previewFile0(req *pb.PreviewFileRequest) (string, []string, error) {
-	file, err := os.OpenFile(req.Path, os.O_RDONLY|unix.O_NOATIME, 0)
+	file, err := util.OpenFileReadonly(req.Path)
 	if err != nil {
 		return "", nil, err
 	}
