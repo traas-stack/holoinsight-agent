@@ -1,0 +1,3 @@
+curl -sG \
+ --data-urlencode "ip=$1" \
+ localhost:9117/api/cri/get

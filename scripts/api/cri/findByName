@@ -1,0 +1,4 @@
+curl -sG \
+ --data-urlencode "ns=$1" \
+ --data-urlencode "pod=$2" \
+ localhost:9117/api/cri/get

@@ -6,6 +6,9 @@ package impl
 
 import (
 	"encoding/json"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
+	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"net/http"
 )
 
@@ -54,5 +57,41 @@ func (e *defaultCri) registerHttpHandlers() {
 			}
 		}
 		json.NewEncoder(writer).Encode(ret)
+	})
+
+	http.HandleFunc("/api/cri/get", func(writer http.ResponseWriter, request *http.Request) {
+		var pods []*cri.Pod
+
+		if len(pods) == 0 {
+			ip := request.URL.Query().Get("ip")
+			if ip != "" {
+				pods := criutils.FindPodsByIp(ioc.Crii, ip)
+				json.NewEncoder(writer).Encode(pods)
+				return
+			}
+		}
+
+		if len(pods) == 0 {
+			ns := request.URL.Query().Get("ns")
+			podName := request.URL.Query().Get("pod")
+			if pod, err := e.GetPod(ns, podName); err == nil {
+				pods = []*cri.Pod{pod}
+			}
+		}
+
+		if len(pods) == 0 {
+			cid := request.URL.Query().Get("cid")
+			if c, ok := e.GetContainerByCid(cid); ok {
+				pods = []*cri.Pod{c.Pod}
+			}
+		}
+
+		if len(pods) > 0 {
+			json.NewEncoder(writer).Encode(pods)
+			return
+		}
+
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write([]byte("not found"))
 	})
 }

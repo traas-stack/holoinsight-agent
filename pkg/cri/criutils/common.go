@@ -59,3 +59,13 @@ func FindFirstPodByIp(i cri.Interface, ip string) *cri.Pod {
 	}
 	return nil
 }
+
+func FindPodsByIp(i cri.Interface, ip string) []*cri.Pod {
+	var pods []*cri.Pod
+	for _, pod := range i.GetAllPods() {
+		if pod.IP() == ip {
+			pods = append(pods, pod)
+		}
+	}
+	return pods
+}
