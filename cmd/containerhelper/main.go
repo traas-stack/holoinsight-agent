@@ -19,13 +19,15 @@ func main() {
 	var resp = &model.Resp{}
 
 	defer func() {
-		bs, _ := json.Marshal(resp)
-		os.Stdout.Write(bs)
+		if os.Getenv("NO_JSON_OUTPUT") != "true" {
+			bs, _ := json.Marshal(resp)
+			os.Stdout.Write(bs)
+		}
 		// Encoder.Encode will append a newline char
 		// json.NewEncoder(os.Stdout).Encode(resp)
 	}()
 
-	if len(os.Args) == 0 {
+	if len(os.Args) == 1 {
 		resp.Message = "miss action"
 		return
 	}
@@ -42,6 +44,10 @@ func main() {
 		resp.Success = false
 		if resp.Message == "" {
 			resp.Message = err.Error()
+		}
+		if os.Getenv("NO_JSON_OUTPUT") == "true" {
+			fmt.Println(err.Error())
+			os.Exit(1)
 		}
 	}
 }

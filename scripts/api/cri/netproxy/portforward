@@ -1,0 +1,3 @@
+curl -sG \
+ --data-urlencode "addr=$1" \
+ localhost:9117/api/cri/netproxy/portforward

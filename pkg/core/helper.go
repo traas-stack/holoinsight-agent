@@ -10,7 +10,7 @@ import (
 )
 
 var HelperToolLocalPath = "/usr/local/holoinsight/agent/bin/helper"
-var HelperToolPath = "/usr/local/holoinsight/agent/tools/helper"
+var HelperToolPath = "/tmp/holoinsight/helper"
 
 type (
 	HelperBaseResp struct {
@@ -22,5 +22,4 @@ type (
 func init() {
 	wd, _ := os.Getwd()
 	HelperToolLocalPath = filepath.Join(wd, "/bin/helper")
-	HelperToolPath = filepath.Join(wd, "/tools/helper")
 }

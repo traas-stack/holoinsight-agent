@@ -7,10 +7,10 @@ package openmetric
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"net/url"
 	"strconv"
 )
@@ -73,7 +73,7 @@ func convertToScrapeConfig(t *collecttask.CollectTask) (*config.ScrapeConfig, er
 		model.AddressLabel: model.LabelValue(fmt.Sprintf("%s:%s", t.Target.GetIP(), omc.ScrapePort)),
 	})
 
-	return &config.ScrapeConfig{
+	sc := &config.ScrapeConfig{
 		JobName:         t.Key,
 		HonorLabels:     omc.HonorLabels,
 		HonorTimestamps: omc.HonorTimestamps,
@@ -89,5 +89,8 @@ func convertToScrapeConfig(t *collecttask.CollectTask) (*config.ScrapeConfig, er
 				},
 			},
 		},
-	}, nil
+	}
+
+	addNetProxy(sc)
+	return sc, nil
 }

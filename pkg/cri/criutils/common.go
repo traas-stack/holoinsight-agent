@@ -50,3 +50,12 @@ func ExecChmod(ctx context.Context, i cri.Interface, c *cri.Container, path stri
 	}
 	return nil
 }
+
+func FindFirstPodByIp(i cri.Interface, ip string) *cri.Pod {
+	for _, pod := range i.GetAllPods() {
+		if pod.IP() == ip {
+			return pod
+		}
+	}
+	return nil
+}

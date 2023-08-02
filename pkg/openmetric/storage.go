@@ -13,6 +13,8 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
 	"go.uber.org/zap"
+	"math"
+	"time"
 
 	"github.com/prometheus/prometheus/storage"
 )
@@ -54,6 +56,9 @@ func (s *storageAppender) Commit() error {
 
 	metrics := make([]*model.Metric, 0, len(s.buffer))
 	for _, e := range s.buffer {
+		if math.IsNaN(e.v) {
+			continue
+		}
 		name := ""
 		tags := make(map[string]string, len(e.l))
 		for _, label := range e.l {
@@ -74,7 +79,12 @@ func (s *storageAppender) Commit() error {
 			logger.Debugz("[openmetrics] [storage] write metric", zap.Int64("t", e.t), zap.Any("labels", e.l), zap.Float64("v", e.v))
 		}
 	}
-	err := gateway.GetWriteService().WriteV1(context.Background(), &gateway.WriteV1Request{
+
+	// TODO timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := gateway.GetWriteService().WriteV1(ctx, &gateway.WriteV1Request{
 		Batch: metrics,
 	})
 	logger.Infoz("[openmetrics] [storage] write", zap.Int("size", len(metrics)), zap.Error(err))

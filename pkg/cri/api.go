@@ -59,6 +59,9 @@ type (
 		// Exec runs command in target container
 		Exec(ctx context.Context, c *Container, req ExecRequest) (ExecResult, error)
 
+		// ExecAsync runs command in target container
+		ExecAsync(ctx context.Context, c *Container, req ExecRequest) (ExecAsyncResult, error)
+
 		Start() error
 
 		Stop()
@@ -80,6 +83,9 @@ type (
 		GetContainerDetail(ctx context.Context, cid string) (*EngineDetailContainer, error)
 
 		Exec(ctx context.Context, c *Container, req ExecRequest) (ExecResult, error)
+
+		// ExecAsync runs command in target container
+		ExecAsync(ctx context.Context, c *Container, req ExecRequest) (ExecAsyncResult, error)
 
 		// CopyToContainer copies file from src(in agent) to dst(in container)
 		CopyToContainer(ctx context.Context, c *Container, src, dst string) error
@@ -124,7 +130,8 @@ type (
 		WorkingDir string   `json:"workingDir"`
 		Input      io.Reader
 		// User is the user passed to docker exec, defaults to 'root'
-		User string
+		User     string
+		NoStdErr bool
 	}
 )
 

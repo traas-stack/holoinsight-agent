@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/prometheus/common/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/impl/netproxy"
 	"go.uber.org/zap"
 	"strings"
 	"sync"
@@ -320,10 +321,17 @@ func makeTestJob() *config.ScrapeConfig {
 		RelabelConfigs:       nil,
 		MetricRelabelConfigs: nil,
 	}
+	addNetProxy(sc)
+
 	return sc
 }
 
-// 测试用代码
+func addNetProxy(sc *config.ScrapeConfig) {
+	if !netproxy.NETPROXY_ENABLED {
+		return
+	}
+	sc.HTTPClientConfig.ProxyURL.URL = netproxy.HttpProxyURL
+}
 
 // 判断是否为一个prometheus目录
 func isPrometheusTask(t *collecttask.CollectTask) bool {

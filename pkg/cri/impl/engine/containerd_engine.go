@@ -15,6 +15,7 @@ import (
 	"github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/cio"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -344,4 +345,123 @@ func generateID() string {
 		panic(fmt.Errorf("expected %d bytes, got %d bytes", bytesLength, n))
 	}
 	return hex.EncodeToString(b)
+}
+
+func (e *ContainerdContainerEngine) ExecAsync(ctx context.Context, c *cri.Container, req cri.ExecRequest) (cri.ExecAsyncResult, error) {
+	// The code for this function refers to: https://github.com/containerd/containerd/blob/main/cmd/ctr/commands/tasks/exec.go
+
+	ctx = wrapK8sCtx(ctx)
+
+	result := make(chan cri.ExecAsyncResultCode)
+	invalidResult := cri.ExecAsyncResult{Cmd: strings.Join(req.Cmd, " "), Result: result}
+
+	container, err := e.Client.LoadContainer(ctx, c.Id)
+	if err != nil {
+		return invalidResult, err
+	}
+
+	spec, err := container.Spec(ctx)
+	if err != nil {
+		return invalidResult, err
+	}
+
+	// TODO
+	// WithUser depends on mounts. This will fail when run inside a container.
+	// Unless I manually copy a copy of the code of oci.WithUsername(), add the prefix of /hostfs to the mount directory.
+
+	// container2, err := container.Info(ctx)
+	// if err != nil {
+	// 	return invalidResult, err
+	// }
+
+	// if err := oci.WithUserID(0)(ctx, e.Client, &container2, spec); err != nil {
+	// 	 return invalidResult, err
+	// }
+
+	// It just so happens that in most cases we execute as root, so simply set this to 0
+	// TODO I found there is no root user in prometheus/node-exporter image.
+	// This image is very thin!
+	spec.Process.User.UID = 0
+	spec.Process.User.GID = 0
+	spec.Process.User.AdditionalGids = []uint32{}
+	spec.Process.User.Umask = nil
+
+	pspec := spec.Process
+	pspec.Terminal = false
+	pspec.Args = req.Cmd
+	if req.WorkingDir != "" {
+		pspec.Cwd = req.WorkingDir
+	}
+
+	// Append user specified env
+	pspec.Env = append(pspec.Env, req.Env...)
+
+	task, err := container.Task(ctx, nil)
+	if err != nil {
+		return invalidResult, err
+	}
+
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+
+	var ioCreator cio.Creator
+
+	var stdinWrapper *util.ReaderCloserFunc
+	if req.Input != nil {
+		stdinWrapper = &util.ReaderCloserFunc{
+			Reader: req.Input,
+		}
+		ioCreator = cio.NewCreator(cio.WithStreams(stdinWrapper, stdoutW, stderrW), cio.WithFIFODir(e.fifoDir))
+	} else {
+		ioCreator = cio.NewCreator(cio.WithStreams(nil, stdoutW, stderrW), cio.WithFIFODir(e.fifoDir))
+	}
+
+	// Containerd has a exec id limit with max length = 76
+	execID := "exec-" + generateID()
+	process, err := task.Exec(ctx, execID, pspec, ioCreator)
+	if err != nil {
+		return invalidResult, err
+	}
+
+	if stdinWrapper != nil {
+		stdinWrapper.Closer = func() { process.CloseIO(ctx, containerd.WithStdinCloser) }
+	}
+
+	// defer process.Delete(ctx)
+
+	statusC, err := process.Wait(ctx)
+	if err != nil {
+		return invalidResult, err
+	}
+
+	if err := process.Start(ctx); err != nil {
+		return invalidResult, err
+	}
+
+	go func() {
+		defer process.Delete(ctx)
+
+		var status containerd.ExitStatus
+		select {
+		case <-ctx.Done():
+			// timeout
+			result <- cri.ExecAsyncResultCode{
+				Code: -1,
+				Err:  ctx.Err(),
+			}
+		case status = <-statusC:
+			code, _, err := status.Result()
+
+			// When exec successfully but with exitCode!=0, I wrap it as an error. This forces developers to handle errors.
+			if err == nil && code != 0 {
+				err = fmt.Errorf("exitcode=[%d]", code)
+			}
+			result <- cri.ExecAsyncResultCode{
+				Code: int(code),
+				Err:  err,
+			}
+		}
+	}()
+
+	return cri.ExecAsyncResult{Cmd: invalidResult.Cmd, Result: result, Stdout: stdoutR, Stderr: stderrR}, err
 }

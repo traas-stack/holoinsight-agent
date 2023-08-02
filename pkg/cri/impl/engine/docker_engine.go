@@ -15,6 +15,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"io"
 	"os"
 	"path/filepath"
@@ -139,29 +140,43 @@ func (e *DockerContainerEngine) Exec(ctx context.Context, c *cri.Container, req 
 	}
 	defer resp.Close()
 
-	copyDone := make(chan struct{}, 1)
-
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
 
+	wait := 1
+	errCh := make(chan error, 2)
 	if req.Input != nil {
+		wait++
 		go func() {
 			// Must close write here which will trigger an EOF
 			defer resp.CloseWrite()
-			io.Copy(resp.Conn, req.Input)
+			_, err := io.Copy(resp.Conn, req.Input)
+			errCh <- err
+			util.MaybeIOClose(req.Input)
 		}()
 	}
 
 	go func() {
 		_, err = stdcopy.StdCopy(stdout, stderr, resp.Reader)
-		copyDone <- struct{}{}
+		errCh <- err
 	}()
-	select {
-	case <-copyDone:
-		// nothing
-	case <-ctx.Done():
-		// timeout
-		return invalidResult, ctx.Err()
+
+wait:
+	for {
+		select {
+		case err := <-errCh:
+			if err != nil && err != io.EOF {
+				return invalidResult, err
+			}
+			wait--
+			if wait == 0 {
+				break wait
+			}
+			// nothing
+		case <-ctx.Done():
+			// timeout
+			return invalidResult, ctx.Err()
+		}
 	}
 
 	inspect, err2 := e.Client.ContainerExecInspect(ctx, create.ID)
@@ -199,4 +214,98 @@ func (e *DockerContainerEngine) Supports(feature cri.ContainerEngineFeature) boo
 	default:
 		return false
 	}
+}
+
+func (e *DockerContainerEngine) ExecAsync(ctx context.Context, c *cri.Container, req cri.ExecRequest) (cri.ExecAsyncResult, error) {
+	resultCh := make(chan cri.ExecAsyncResultCode)
+	invalidResult := cri.ExecAsyncResult{Cmd: strings.Join(req.Cmd, " "), Result: resultCh}
+	create, err := e.Client.ContainerExecCreate(ctx, c.Id, types.ExecConfig{
+		User:         req.User,
+		Privileged:   false,
+		Tty:          false,
+		AttachStdin:  req.Input != nil,
+		AttachStderr: !req.NoStdErr,
+		AttachStdout: true,
+		Detach:       false,
+		DetachKeys:   "",
+		Env:          req.Env,
+		WorkingDir:   req.WorkingDir,
+		Cmd:          req.Cmd,
+	})
+	if err != nil {
+		return invalidResult, err
+	}
+
+	resp, err := e.Client.ContainerExecAttach(ctx, create.ID, types.ExecStartCheck{})
+	if err != nil {
+		return invalidResult, err
+	}
+
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+
+	errCh := make(chan error, 2)
+	wait := 1
+	if req.Input != nil {
+		wait++
+		go func() {
+			// Must close write here which will trigger an EOF
+			defer resp.CloseWrite()
+			_, err := io.Copy(resp.Conn, req.Input)
+			errCh <- err
+			util.MaybeIOClose(req.Input)
+		}()
+	}
+
+	go func() {
+		_, err := stdcopy.StdCopy(stdoutW, stderrW, resp.Reader)
+		stdoutW.Close()
+		stderrW.Close()
+		errCh <- err
+	}()
+
+	go func() {
+
+		for {
+			select {
+			case err := <-errCh:
+				if err != nil && err != io.EOF {
+					resp.Close()
+					resultCh <- cri.ExecAsyncResultCode{
+						Code: -1,
+						Err:  err,
+					}
+					return
+				}
+
+				wait--
+				if wait == 0 {
+					// nothing
+					inspect, err2 := e.Client.ContainerExecInspect(ctx, create.ID)
+					if err == nil {
+						err = err2
+					}
+					// When exec successfully but with exitCode!=0, I wrap it as an error. This forces developers to handle errors.
+					if err == nil && inspect.ExitCode != 0 {
+						err = fmt.Errorf("exitcode=[%d]", inspect.ExitCode)
+					}
+					resultCh <- cri.ExecAsyncResultCode{
+						Code: inspect.ExitCode,
+						Err:  err,
+					}
+					resp.Close()
+					return
+				}
+			case <-ctx.Done():
+				resp.Close()
+				resultCh <- cri.ExecAsyncResultCode{
+					Code: -1,
+					Err:  ctx.Err(),
+				}
+				return
+			}
+		}
+	}()
+
+	return cri.ExecAsyncResult{Cmd: invalidResult.Cmd, Result: resultCh, Stdout: stdoutR, Stderr: stderrR}, nil
 }

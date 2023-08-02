@@ -94,3 +94,26 @@ func GetLocalTimezone() string {
 	tz, _ := time.Now().Zone()
 	return tz
 }
+
+type (
+	closeWrite interface {
+		CloseWrite() error
+	}
+	closeRead interface {
+		CloseRead() error
+	}
+)
+
+func MaybeCloseWrite(conn interface{}) error {
+	if x, ok := conn.(closeWrite); ok {
+		return x.CloseWrite()
+	}
+	return nil
+}
+
+func MaybeCloseRead(conn interface{}) error {
+	if x, ok := conn.(closeRead); ok {
+		return x.CloseRead()
+	}
+	return nil
+}

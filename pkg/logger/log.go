@@ -166,12 +166,21 @@ func Debugz(msg string, fields ...zap.Field) {
 func Infoz(msg string, fields ...zap.Field) {
 	ZapLogger.Info.Info(msg, fields...)
 }
+
+func Infozo(option zap.Option, msg string, fields ...zap.Field) {
+	ZapLogger.Info.WithOptions(option).Info(msg, fields...)
+}
+
 func Warnz(msg string, fields ...zap.Field) {
 	ZapLogger.Warn.Info(msg, fields...)
 }
 func Errorz(msg string, fields ...zap.Field) {
 	ZapLogger.Error.Info(msg, fields...)
 }
+func Errorzo(option zap.Option, msg string, fields ...zap.Field) {
+	ZapLogger.Error.WithOptions(option).Info(msg, fields...)
+}
+
 func Configz(msg string, fields ...zap.Field) {
 	ZapLogger.Config.Info(msg, fields...)
 }
