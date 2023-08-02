@@ -20,11 +20,13 @@ import (
 	pb2 "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/throttle"
+	"github.com/txthinking/socks5"
 	"go.uber.org/zap"
 	"io"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +56,8 @@ type (
 		helperToolLocalMd5sum string
 		mutex                 sync.Mutex
 		chunkCpCh             chan *cri.Container
+		httpProxyServer       *http.Server
+		socks5ProxyServer     *socks5.Server
 	}
 )
 
@@ -113,6 +117,9 @@ func (e *defaultCri) Start() error {
 	go e.syncLoop()
 	go e.chunkCpLoop()
 	e.registerHttpHandlers()
+	e.startHttpProxyServer()
+	e.startSocks5ProxyServer()
+	e.listenPortForward()
 	return nil
 }
 
@@ -160,6 +167,16 @@ func (e *defaultCri) Stop() {
 
 	close(e.stopCh)
 	e.defaultMetaStore.Stop()
+
+	if e.httpProxyServer != nil {
+		logger.Infoz("[netproxy] close http proxy server")
+		e.httpProxyServer.Close()
+	}
+
+	if e.socks5ProxyServer != nil {
+		logger.Infoz("[netproxy] close socks5 proxy server")
+		e.socks5ProxyServer.Shutdown()
+	}
 }
 
 func (e *defaultCri) CopyToContainer(ctx context.Context, c *cri.Container, srcPath, dstPath string) (err error) {
@@ -879,4 +896,11 @@ func parseTzData(b []byte) (string, *time.Location, error) {
 func loadLocation(name string) (string, *time.Location, error) {
 	tzObj, err := time.LoadLocation(name)
 	return name, tzObj, err
+}
+
+func (e *defaultCri) ExecAsync(ctx context.Context, c *cri.Container, req cri.ExecRequest) (cri.ExecAsyncResult, error) {
+	if req.User == "" {
+		req.User = defaultExecUser
+	}
+	return e.engine.ExecAsync(ctx, c, req)
 }

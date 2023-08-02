@@ -6,8 +6,11 @@
 
 package util
 
-import "os"
+import (
+	"golang.org/x/sys/unix"
+	"os"
+)
 
 func OpenFileReadonly(file string) (*os.File, error) {
-	return os.OpenFile(f.config.Path, os.O_RDONLY|os.O_NOATIME, 0)
+	return os.OpenFile(file, os.O_RDONLY|unix.O_NOATIME, 0)
 }

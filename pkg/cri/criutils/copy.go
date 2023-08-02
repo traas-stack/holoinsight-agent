@@ -429,7 +429,7 @@ func CopyToContainer(ctx context.Context, i cri.Interface, c *cri.Container, src
 
 	if c.Runtime == cri.Runc {
 		if err := cricore.CopyToContainerForRunC(ctx, c, srcPath, dstPath); err == nil {
-			return "runc", nil
+			return cri.Runc, nil
 		} else {
 			errs = append(errs, err)
 		}
@@ -493,7 +493,7 @@ func CopyFromContainer(ctx context.Context, i cri.Interface, c *cri.Container, s
 
 	if c.Runtime == cri.Runc {
 		if err := cricore.CopyFromContainerForRunC(ctx, c, srcPath, dstPath); err == nil {
-			return "runc", nil
+			return cri.Runc, nil
 		}
 	}
 

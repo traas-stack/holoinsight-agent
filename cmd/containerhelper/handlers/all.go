@@ -16,4 +16,6 @@ func init() {
 	model.RegisterHandler("previewLog", previewLogHandler)
 	model.RegisterHandler("inspect", inspectHandler)
 	model.RegisterHandler("inputProxy", inputProxyHandler)
+	model.RegisterHandler("httpProxy", httpProxyHandler)
+	model.RegisterHandler("tcpProxy", tcpProxyHandler)
 }

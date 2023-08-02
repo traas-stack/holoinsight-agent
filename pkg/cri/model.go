@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"io"
 	v1 "k8s.io/api/core/v1"
 	"sync"
 	"time"
@@ -119,6 +120,16 @@ type (
 		ExitCode int
 		Stdout   *bytes.Buffer
 		Stderr   *bytes.Buffer
+	}
+	ExecAsyncResult struct {
+		Cmd    string
+		Result chan ExecAsyncResultCode
+		Stdout io.Reader
+		Stderr io.Reader
+	}
+	ExecAsyncResultCode struct {
+		Code int
+		Err  error
 	}
 	TzInfo struct {
 		Name   string

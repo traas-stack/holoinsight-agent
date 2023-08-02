@@ -55,6 +55,13 @@ func ParseDuration(d interface{}) (time.Duration, error) {
 	return time.Duration(i64) * time.Millisecond, nil
 }
 
+func ParseDurationDefault(s string, d time.Duration) time.Duration {
+	if d2, err := time.ParseDuration(s); err == nil {
+		return d2
+	}
+	return d
+}
+
 func TimeTruncateToDay(t time.Time) time.Time {
 	t = t.Truncate(time.Hour)
 	return t.Add(-time.Duration(t.Hour()) * time.Hour)
