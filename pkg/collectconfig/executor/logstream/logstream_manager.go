@@ -6,10 +6,13 @@ package logstream
 
 import (
 	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/transfer"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"go.uber.org/zap"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -120,6 +123,38 @@ func (m *Manager) LoadState(store transfer.StateStore) error {
 
 func (m *Manager) Start() {
 	go m.cleanLoop()
+
+	http.HandleFunc("/api/lsm/state", func(writer http.ResponseWriter, request *http.Request) {
+		json.NewEncoder(writer).Encode(m.State())
+	})
+
+	stat.DefaultManager1S.Gauge("lsm.state.totalPendingBytes", func() []stat.GaugeSubItem {
+		m.mutex.Lock()
+		defer m.mutex.Unlock()
+
+		totalPendingBytes := int64(0)
+		for _, item := range m.cache {
+			item.ls.mutex.Lock()
+			totalPendingBytes += item.ls.pendingBytes
+			item.ls.mutex.Unlock()
+		}
+
+		return []stat.GaugeSubItem{
+			{
+				Values: []int64{totalPendingBytes},
+			},
+		}
+	})
+}
+
+func (m *Manager) Stop() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.isStopped() {
+		return
+	}
+
+	close(m.stop)
 }
 
 func (m *Manager) isStopped() bool {
@@ -222,4 +257,26 @@ func (m *Manager) CleanInvalidRefAfterLoadState() {
 			panic("len(cache.ls.listeners) != cache.ls.matchesSuccessCount")
 		}
 	}
+}
+
+func (m *Manager) State() interface{} {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	r := map[string]interface{}{}
+
+	totalPendingBytes := int64(0)
+	for key, item := range m.cache {
+		totalPendingBytes += item.ls.pendingBytes
+		if item.ls.file != nil {
+			r[key] = map[string]interface{}{
+				"ref":          item.ref,
+				"pendingReads": item.ls.pendingReads,
+				"pendingBytes": item.ls.pendingBytes,
+			}
+		}
+	}
+
+	r["totalPendingBytes"] = totalPendingBytes
+
+	return r
 }

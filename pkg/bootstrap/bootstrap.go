@@ -252,7 +252,7 @@ func (b *AgentBootstrap) callStopComponents() {
 		cost := time.Now().Sub(begin)
 		logger.Infoz("[agent] stop component", //
 			zap.Any("type", reflect.TypeOf(component)), //
-			zap.Duration("cost", cost))                 //
+			zap.Duration("cost", cost)) //
 	}
 }
 
@@ -296,6 +296,10 @@ func (b *AgentBootstrap) setupCentralAgent() error {
 
 	lsm := logstream.NewManager()
 	b.LSM = lsm
+
+	lsm.Start()
+	App.AddStopComponents(lsm)
+
 	pm := pipeline.NewManager(ctm, lsm)
 	pm.Start()
 	App.AddStopComponents(om, pm)
@@ -338,6 +342,10 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 
 	lsm := logstream.NewManager()
 	b.LSM = lsm
+
+	lsm.Start()
+	App.AddStopComponents(lsm)
+
 	pm := pipeline.NewManager(ctm, lsm)
 	b.PM = pm
 	pm.LoadAll()
@@ -379,6 +387,10 @@ func (b *AgentBootstrap) setupSidecarAgent() error {
 
 	lsm := logstream.NewManager()
 	b.LSM = lsm
+
+	lsm.Start()
+	App.AddStopComponents(lsm)
+
 	pm := pipeline.NewManager(ctm, lsm)
 	pm.Start()
 
