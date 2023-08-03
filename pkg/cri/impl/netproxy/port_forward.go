@@ -7,6 +7,7 @@ package netproxy
 import (
 	"context"
 	"errors"
+	"github.com/google/uuid"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
@@ -56,7 +57,7 @@ func (t *PortForwardTask) Start(ctx context.Context) (string, error) {
 			stopCh <- struct{}{}
 		}
 	}()
-	logCtx := zap.Fields(zap.String("cid", biz.ShortContainerID()), zap.String("listenAddr", listener.Addr().String()), zap.String("toAddr", t.Addr))
+	logCtx := zap.Fields(zap.String("uuid", uuid.New().String()), zap.String("cid", biz.ShortContainerID()), zap.String("listenAddr", listener.Addr().String()), zap.String("toAddr", t.Addr))
 	logger.Infozo(logCtx, "[netproxy] create port forward")
 
 	go func() {
@@ -79,13 +80,15 @@ func (t *PortForwardTask) Start(ctx context.Context) (string, error) {
 func handlePortForwardRequest(logCtx zap.Option, biz *cri.Container, conn net.Conn, addr string) {
 	defer conn.Close()
 
-	subConn, err := criutils.TcpProxy(context.Background(), ioc.Crii, biz, addr, DefaultDialTimeout)
+	subConn, err := criutils.TcpProxy(logger.WithLogCtx(context.Background(), logCtx), ioc.Crii, biz, addr, DefaultDialTimeout)
 	if err != nil {
 		panic(err)
 	}
 
 	defer subConn.Close()
 
-	err = util.CopyConn(context.Background(), conn, subConn, DefaultSocketTimeout)
-	logger.Errorzo(logCtx, "[netproxy] portforward conn error", zap.Error(err))
+	err = util.CopyConn(logger.WithLogCtx(context.Background(), logCtx), conn, subConn, DefaultSocketTimeout)
+	if err != nil {
+		logger.Errorzo(logCtx, "[netproxy] portforward conn error", zap.Error(err))
+	}
 }

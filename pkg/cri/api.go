@@ -130,8 +130,7 @@ type (
 		WorkingDir string   `json:"workingDir"`
 		Input      io.Reader
 		// User is the user passed to docker exec, defaults to 'root'
-		User     string
-		NoStdErr bool
+		User string
 	}
 )
 

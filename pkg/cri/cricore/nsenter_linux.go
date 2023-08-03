@@ -30,7 +30,7 @@ func NsEnterAndRunCodes(nsFile string, callback func()) error {
 	var err2 error
 	go func() {
 		runtime.LockOSThread()
-		// Don't call UnlockOSThread. This thread will terminated after task done.
+		// Don't call UnlockOSThread. This thread will be terminated after task done.
 		// defer runtime.UnlockOSThread()
 		defer wg.Done()
 
@@ -49,9 +49,9 @@ func NsEnterAndRunCodes(nsFile string, callback func()) error {
 	return err2
 }
 
-func NsEnterDial(c *cri.Container, network, addr string, timeout time.Duration) (net.Conn, error) {
+func NsEnterDial(c *cri.Container, network, addr string, dialTimeout time.Duration) (net.Conn, error) {
 	if c.NetworkMode == "host" {
-		return net.DialTimeout(network, addr, timeout)
+		return net.DialTimeout(network, addr, dialTimeout)
 	}
 
 	if strings.HasPrefix(c.NetworkMode, "netns:") {
@@ -59,7 +59,7 @@ func NsEnterDial(c *cri.Container, network, addr string, timeout time.Duration) 
 		var conn net.Conn
 		var err error
 		err2 := NsEnterAndRunCodes(netNsFile, func() {
-			conn, err = net.DialTimeout(network, addr, timeout)
+			conn, err = net.DialTimeout(network, addr, dialTimeout)
 		})
 		if err == nil {
 			err = err2
