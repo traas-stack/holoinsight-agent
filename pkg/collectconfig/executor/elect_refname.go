@@ -4,33 +4,48 @@
 
 package executor
 
-import "github.com/spf13/cast"
+import (
+	"github.com/oliveagle/jsonpath"
+	"github.com/spf13/cast"
+	"strings"
+)
 
 type (
 	xElectRefName struct {
-		name string
+		name     string
+		jsonpath *jsonpath.Compiled
+		err      error
 	}
 )
 
 func (x *xElectRefName) Init() {
+	if strings.HasPrefix(x.name, "$") {
+		x.jsonpath, x.err = jsonpath.Compile(x.name)
+	}
 }
 
 func (x *xElectRefName) Elect(ctx *LogContext) (interface{}, error) {
+	if x.err != nil {
+		return nil, x.err
+	}
+	if x.jsonpath != nil {
+		return x.jsonpath.Lookup(ctx.columnMap)
+	}
 	return ctx.GetColumnByName(x.name)
 }
 
 func (x *xElectRefName) ElectString(ctx *LogContext) (string, error) {
-	s, err := ctx.GetColumnByName(x.name)
+	s, err := x.Elect(ctx)
 	if err != nil {
-		return "", err
+		return "", nil
 	}
-	return cast.ToStringE(s)
+	return cast.ToString(s), nil
 }
 
 func (x *xElectRefName) ElectNumber(ctx *LogContext) (float64, error) {
 	c, err := x.Elect(ctx)
 	if err != nil {
-		return 0, err
+		return 0, nil
 	}
-	return cast.ToFloat64E(c)
+	return cast.ToFloat64(c), nil
 }

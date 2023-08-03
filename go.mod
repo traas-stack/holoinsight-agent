@@ -22,6 +22,7 @@ require (
 	github.com/influxdata/telegraf v1.23.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/oklog/run v1.1.0
+	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
 	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.2
