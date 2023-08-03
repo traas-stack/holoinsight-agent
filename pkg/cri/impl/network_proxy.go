@@ -49,6 +49,7 @@ func (e *defaultCri) startSocks5ProxyServer() {
 	handler := &netproxy.CriHandle{
 		Cri: e,
 	}
+	handler.Init()
 
 	logCtx := zap.Fields(zap.String("protocol", "socks5"), zap.String("addr", netproxy.Socks5ProxyAddr))
 

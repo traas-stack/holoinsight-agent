@@ -5,6 +5,7 @@
 package logger
 
 import (
+	"context"
 	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -167,18 +168,35 @@ func Infoz(msg string, fields ...zap.Field) {
 	ZapLogger.Info.Info(msg, fields...)
 }
 
+func logzo(logger *zap.Logger, option zap.Option, msg string, fields ...zap.Field) {
+	if option != nil {
+		logger.WithOptions(option).Info(msg, fields...)
+	} else {
+		logger.Info(msg, fields...)
+	}
+}
+
 func Infozo(option zap.Option, msg string, fields ...zap.Field) {
-	ZapLogger.Info.WithOptions(option).Info(msg, fields...)
+	logzo(ZapLogger.Info, option, msg, fields...)
+}
+
+func Infozc(ctx context.Context, msg string, fields ...zap.Field) {
+	Infozo(getLogCtx(ctx), msg, fields...)
 }
 
 func Warnz(msg string, fields ...zap.Field) {
 	ZapLogger.Warn.Info(msg, fields...)
 }
+
 func Errorz(msg string, fields ...zap.Field) {
 	ZapLogger.Error.Info(msg, fields...)
 }
 func Errorzo(option zap.Option, msg string, fields ...zap.Field) {
-	ZapLogger.Error.WithOptions(option).Info(msg, fields...)
+	logzo(ZapLogger.Error, option, msg, fields...)
+}
+
+func Errorzc(ctx context.Context, msg string, fields ...zap.Field) {
+	Errorzo(getLogCtx(ctx), msg, fields...)
 }
 
 func Configz(msg string, fields ...zap.Field) {
@@ -214,4 +232,22 @@ func IsDebugEnabled() bool {
 // Criz prints logs to Cri.log
 func Criz(msg string, fields ...zap.Field) {
 	ZapLogger.Cri.Info(msg, fields...)
+}
+
+func WithLogCtx(ctx context.Context, option zap.Option) context.Context {
+	if option == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, "logCtx", option)
+}
+
+func getLogCtx(ctx context.Context) zap.Option {
+	i := ctx.Value("logCtx")
+	if i == nil {
+		return nil
+	}
+	if x, ok := i.(zap.Option); ok {
+		return x
+	}
+	return nil
 }

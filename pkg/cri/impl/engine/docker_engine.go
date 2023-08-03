@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type (
@@ -153,12 +154,14 @@ func (e *DockerContainerEngine) Exec(ctx context.Context, c *cri.Container, req 
 			_, err := io.Copy(resp.Conn, req.Input)
 			errCh <- err
 			util.MaybeIOClose(req.Input)
+			io.Copy(io.Discard, req.Input)
 		}()
 	}
 
 	go func() {
 		_, err = stdcopy.StdCopy(stdout, stderr, resp.Reader)
 		errCh <- err
+		io.Copy(io.Discard, resp.Reader)
 	}()
 
 wait:
@@ -224,7 +227,7 @@ func (e *DockerContainerEngine) ExecAsync(ctx context.Context, c *cri.Container,
 		Privileged:   false,
 		Tty:          false,
 		AttachStdin:  req.Input != nil,
-		AttachStderr: !req.NoStdErr,
+		AttachStderr: true,
 		AttachStdout: true,
 		Detach:       false,
 		DetachKeys:   "",
@@ -245,59 +248,73 @@ func (e *DockerContainerEngine) ExecAsync(ctx context.Context, c *cri.Container,
 	stderrR, stderrW := io.Pipe()
 
 	errCh := make(chan error, 2)
-	wait := 1
 	if req.Input != nil {
-		wait++
 		go func() {
-			// Must close write here which will trigger an EOF
-			defer resp.CloseWrite()
 			_, err := io.Copy(resp.Conn, req.Input)
 			errCh <- err
-			util.MaybeIOClose(req.Input)
+			// Must close write here which will trigger an EOF
+			resp.CloseWrite()
+			util.MaybeCloseRead(req.Input)
+			io.Copy(io.Discard, req.Input)
 		}()
 	}
 
+	respReaderDone := false
 	go func() {
 		_, err := stdcopy.StdCopy(stdoutW, stderrW, resp.Reader)
-		stdoutW.Close()
-		stderrW.Close()
+		respReaderDone = true
+		if err != nil && err != io.EOF {
+			stdoutW.CloseWithError(err)
+			stderrW.CloseWithError(err)
+		}
 		errCh <- err
+		io.Copy(io.Discard, resp.Reader)
 	}()
 
+	wait := 2
 	go func() {
-
+		defer func() {
+			// Close resources anyway
+			stdoutW.Close()
+			stderrW.Close()
+			resp.Close()
+		}()
 		for {
 			select {
 			case err := <-errCh:
 				if err != nil && err != io.EOF {
-					resp.Close()
 					resultCh <- cri.ExecAsyncResultCode{
 						Code: -1,
 						Err:  err,
 					}
 					return
 				}
-
 				wait--
-				if wait == 0 {
-					// nothing
-					inspect, err2 := e.Client.ContainerExecInspect(ctx, create.ID)
-					if err == nil {
-						err = err2
-					}
-					// When exec successfully but with exitCode!=0, I wrap it as an error. This forces developers to handle errors.
-					if err == nil && inspect.ExitCode != 0 {
-						err = fmt.Errorf("exitcode=[%d]", inspect.ExitCode)
-					}
-					resultCh <- cri.ExecAsyncResultCode{
-						Code: inspect.ExitCode,
-						Err:  err,
-					}
-					resp.Close()
-					return
+
+				if !respReaderDone && wait > 0 {
+					continue
 				}
+
+				// Use a new context here
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				inspect, err2 := e.Client.ContainerExecInspect(ctx, create.ID)
+				cancel()
+				if err == nil || err == io.EOF {
+					err = err2
+				}
+				// When exec successfully but with exitCode!=0, I wrap it as an error. This forces developers to handle errors.
+				if err == nil && inspect.ExitCode != 0 {
+					err = fmt.Errorf("exitcode=[%d]", inspect.ExitCode)
+				}
+
+				resultCh <- cri.ExecAsyncResultCode{
+					Code: inspect.ExitCode,
+					Err:  err,
+				}
+				stdoutW.CloseWithError(err)
+				stderrW.CloseWithError(err)
+				return
 			case <-ctx.Done():
-				resp.Close()
 				resultCh <- cri.ExecAsyncResultCode{
 					Code: -1,
 					Err:  ctx.Err(),

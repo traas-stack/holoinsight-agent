@@ -46,7 +46,7 @@ func main() {
 			resp.Message = err.Error()
 		}
 		if os.Getenv("NO_JSON_OUTPUT") == "true" {
-			fmt.Println(err.Error())
+			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
 	}

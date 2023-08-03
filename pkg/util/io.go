@@ -30,15 +30,15 @@ type (
 	ReadWriterConn struct {
 		io.Reader
 		io.Writer
-		Cancel context.CancelFunc
+		CloseFunc context.CancelFunc
 	}
 )
 
 func (r *ReadWriterConn) Close() error {
 	MaybeIOClose(r.Reader)
 	MaybeIOClose(r.Writer)
-	if r.Cancel != nil {
-		r.Cancel()
+	if r.CloseFunc != nil {
+		r.CloseFunc()
 	}
 	return nil
 }
