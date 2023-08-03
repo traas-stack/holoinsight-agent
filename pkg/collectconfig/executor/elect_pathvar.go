@@ -4,6 +4,8 @@
 
 package executor
 
+import "github.com/spf13/cast"
+
 type (
 	xPathVar struct {
 		name string
@@ -25,5 +27,6 @@ func (x *xPathVar) ElectString(ctx *LogContext) (string, error) {
 }
 
 func (x *xPathVar) ElectNumber(ctx *LogContext) (float64, error) {
-	return 0, nil
+	i, _ := x.Elect(ctx)
+	return cast.ToFloat64(i), nil
 }
