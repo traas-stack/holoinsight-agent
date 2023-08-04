@@ -14,6 +14,10 @@ type (
 	}
 )
 
+var (
+	electFirstLine = &xElectLine{}
+)
+
 func (x *xElectLine) Init() {
 }
 

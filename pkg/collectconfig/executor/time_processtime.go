@@ -7,10 +7,10 @@ package executor
 import "github.com/traas-stack/holoinsight-agent/pkg/util"
 
 type (
-	processTimeParser struct {
+	timeProcessTimeParser struct {
 	}
 )
 
-func (a *processTimeParser) Parse(context *LogContext) (int64, error) {
+func (a *timeProcessTimeParser) Parse(context *LogContext) (int64, error) {
 	return util.CurrentMS(), nil
 }
