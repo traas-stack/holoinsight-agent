@@ -17,11 +17,8 @@ const (
 	FormatUnix               = "unix"
 	FormatUnixMilli          = "unixMilli"
 	FormatGolangLayout       = "golangLayout"
-	timeFormatUnknown  uint8 = iota
-	timeFormatUnix
-	timeFormatUnixMilli
-	timeFormatGolangLayout
-	TimeParseError int64 = -2
+	FormatAuto               = "auto"
+	TimeParseError     int64 = -2
 )
 
 type (
@@ -32,33 +29,28 @@ type (
 
 func parseTimeParser(timeConf *collectconfig.TimeConf) (TimeParser, error) {
 	if timeConf == nil {
-		return &autoParser{}, nil
+		return &timeElectAutoParser{elect: electFirstLine}, nil
 	}
 
 	switch timeConf.Type {
 	case TypeAuto:
-		// ???
-		return &autoParser{}, nil
+		return &timeElectAutoParser{elect: electFirstLine}, nil
 	case TypeProcessTime:
-		return &processTimeParser{}, nil
+		return &timeProcessTimeParser{}, nil
 	case TypeElect:
 		elect, err := parseElect(timeConf.Elect)
 		if err != nil {
 			return nil, err
 		}
-		tz := time.Local
 		switch timeConf.Format {
+		case FormatAuto:
+			return &timeElectAutoParser{elect: elect}, nil
 		case FormatUnix:
-			return &electParser{
-				elect:  elect,
-				format: timeFormatUnix,
-			}, nil
+			return &timeElectUnixParser{elect: elect}, nil
 		case FormatUnixMilli:
-			return &electParser{
-				elect:  elect,
-				format: timeFormatUnixMilli,
-			}, nil
+			return &timeElectUnixMilliParser{elect: elect}, nil
 		case FormatGolangLayout:
+			tz := time.Local
 			if timeConf.Timezone != "" {
 				tz0, err := time.LoadLocation(timeConf.Timezone)
 				if err != nil {
@@ -74,12 +66,7 @@ func parseTimeParser(timeConf *collectconfig.TimeConf) (TimeParser, error) {
 				return nil, errors.New("invalid golang time layout " + timeConf.Layout)
 			}
 
-			return &electParser{
-				elect:  elect,
-				format: timeFormatGolangLayout,
-				layout: timeConf.Layout,
-				tz:     tz,
-			}, nil
+			return &timeElectGolangLayoutParser{elect: elect, layout: timeConf.Layout, tz: tz}, nil
 		default:
 			return nil, errors.New("unsupported timeConf format " + timeConf.Format)
 		}
