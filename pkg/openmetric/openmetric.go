@@ -177,7 +177,6 @@ func (m *Manager) Start() {
 	logger.Infof("[openmetric] start")
 	go m.g.Run()
 
-	// 初始化
 	all := m.ctm.GetAll()
 	changed := false
 	for _, t := range all {
@@ -330,7 +329,7 @@ func addNetProxy(sc *config.ScrapeConfig) {
 	if !netproxy.NETPROXY_ENABLED {
 		return
 	}
-	sc.HTTPClientConfig.ProxyURL.URL = netproxy.HttpProxyURL
+	sc.HTTPClientConfig.ProxyURL.URL = netproxy.Socks5ProxyURL
 }
 
 // 判断是否为一个prometheus目录
@@ -345,6 +344,14 @@ func (m *Manager) OnUpdate(delta *collecttask.Delta) {
 	}
 
 	changed := false
+	for _, t := range delta.Del {
+		if !isPrometheusTask(t) {
+			continue
+		}
+		logger.Infoz("[openmetric] delta del", zap.String("key", t.Key))
+		delete(jobs, t.Key)
+		changed = true
+	}
 	for _, t := range delta.Add {
 		if !isPrometheusTask(t) {
 			continue
@@ -357,14 +364,6 @@ func (m *Manager) OnUpdate(delta *collecttask.Delta) {
 		}
 		logger.Infoz("[openmetric] delta add", zap.Any("scrapeConfig", scrapeConfig))
 		jobs[t.Key] = scrapeConfig
-	}
-	for _, t := range delta.Del {
-		if !isPrometheusTask(t) {
-			continue
-		}
-		logger.Infoz("[openmetric] delta del", zap.String("key", t.Key))
-		delete(jobs, t.Key)
-		changed = true
 	}
 
 	if changed {
