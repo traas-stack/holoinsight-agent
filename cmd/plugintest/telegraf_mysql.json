@@ -1,0 +1,41 @@
+{
+  "key": "demo/1",
+  "config": {
+    "key": "demo",
+    "type": "telegraf_mysql",
+    "contentObj": {
+      "executeRule": {
+        "type": "fixedRate",
+        "fixedRate": 5000,
+        "offset": 0
+      },
+      "refMetas": {
+        "a": {
+          "name": "a1"
+        }
+      },
+      "transform": {
+        "metricFormat": "yyy_%s",
+        "metricWhiteList": [
+          "mysql_commands_select"
+        ],
+        "metricConfigs": {
+          "mysql_commands_select": {
+            "valueManipulation": "DELTA"
+          }
+        }
+      },
+      "port": 3306,
+      "username": "root",
+      "password": "TEST"
+    }
+  },
+  "target": {
+    "key": "1",
+    "type": "ip",
+    "meta": {
+      "a1": "b",
+      "ip": ""
+    }
+  }
+}

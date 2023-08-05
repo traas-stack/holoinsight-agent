@@ -6,6 +6,8 @@ package model
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 )
@@ -86,4 +88,27 @@ func MakeDetailDataSlice(dd *DetailData, dds ...*DetailData) []*DetailData {
 
 func (m *Metric) String() string {
 	return fmt.Sprintf("name=[%s] ts=[%d] tags=%v value=[%f]", m.Name, m.Timestamp, m.Tags, m.Value)
+}
+
+// BuildMetricKey builds the key for the given Metric object.
+// So it can be stored in map[string]float64.
+func BuildMetricKey(m *Metric) string {
+	sb := strings.Builder{}
+
+	sb.WriteString(m.Name)
+
+	keys := make([]string, 0, len(m.Tags))
+	for k := range m.Tags {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+	for _, key := range keys {
+		sb.WriteByte(',')
+		sb.WriteString(key)
+		sb.WriteByte('=')
+		sb.WriteString(m.Tags[key])
+	}
+
+	return sb.String()
 }

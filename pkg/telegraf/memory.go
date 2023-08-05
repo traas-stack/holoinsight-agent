@@ -13,6 +13,7 @@ import (
 type (
 	Memory struct {
 		Metrics []telegraf.Metric
+		Errors  []error
 	}
 )
 
@@ -64,6 +65,7 @@ func (m *Memory) SetPrecision(precision time.Duration) {
 }
 
 func (m *Memory) AddError(err error) {
+	m.Errors = append(m.Errors, err)
 }
 
 func (m *Memory) WithTracking(maxTracked int) telegraf.TrackingAccumulator {

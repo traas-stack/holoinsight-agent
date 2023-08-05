@@ -54,6 +54,8 @@ type (
 
 		state *internalState
 		mutex sync.RWMutex
+
+		lastMetricValueCache map[string]float64
 	}
 	internalState struct {
 		timer *util.AlignedTimer
@@ -248,6 +250,7 @@ func (p *Pipeline) UpdateFrom(old api2.Pipeline) {
 	}
 	if p.interval == old2.interval {
 		p.state = old2.state
+		p.lastMetricValueCache = old2.lastMetricValueCache
 		if ext, ok := p.input.(api2.InputExt); ok {
 			ext.UpdateFrom(old2.input)
 		}
@@ -346,11 +349,18 @@ func (p *Pipeline) getTargetAttachTags() map[string]string {
 }
 
 func (p *Pipeline) transformMetrics(metricTime time.Time, m *accumulator.Memory) {
+	if p.lastMetricValueCache == nil {
+		p.lastMetricValueCache = make(map[string]float64)
+	}
 	attachTags := p.getTargetAttachTags()
 
 	ts := metricTime.UnixMilli()
 
 	keep := make([]*model.Metric, 0, len(m.Metrics))
+	lastMetricValueCache := p.lastMetricValueCache
+	metricValueCache := make(map[string]float64)
+	p.lastMetricValueCache = metricValueCache
+
 	for i := range m.Metrics {
 		metric := m.Metrics[i]
 		if len(p.metricWhitelist) > 0 {
@@ -365,6 +375,34 @@ func (p *Pipeline) transformMetrics(metricTime time.Time, m *accumulator.Memory)
 		}
 
 		metric.Timestamp = ts
+
+		if mc, ok := p.transform.MetricConfigs[metric.Name]; ok {
+			metricKey := model.BuildMetricKey(metric)
+			metricValueCache[metricKey] = metric.Value
+
+			if mc.ValueManipulation == base.ValueManipulationDelta || mc.ValueManipulation == base.ValueManipulationRate {
+				lastPeriodMetric, ok := lastMetricValueCache[metricKey]
+				// no last period metric
+				if !ok {
+					continue
+				}
+
+				delta := metric.Value - lastPeriodMetric
+				if delta < 0 && !mc.KeepNegative {
+					delta = 0
+				}
+
+				if mc.ValueManipulation == base.ValueManipulationDelta {
+					metric.Value = delta
+				} else {
+					seconds := p.interval.Seconds()
+					if seconds == 0 {
+						continue
+					}
+					metric.Value = delta / seconds
+				}
+			}
+		}
 
 		if metric.Tags == nil {
 			metric.Tags = make(map[string]string)
