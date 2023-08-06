@@ -6,6 +6,11 @@ package base
 
 import "github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 
+const (
+	ValueManipulationDelta = "DELTA"
+	ValueManipulationRate  = "RATE"
+)
+
 type (
 	Conf struct {
 		Name        string                                 `json:"name,omitempty"`
@@ -23,6 +28,15 @@ type (
 		// Metric white list
 		MetricWhitelist []string `json:"metricWhitelist,omitempty"`
 		// Metric black list
-		MetricBlacklist []string `json:"metricBlacklist,omitempty"`
+		MetricBlacklist []string                 `json:"metricBlacklist,omitempty"`
+		MetricConfigs   map[string]*MetricConfig `json:"metricConfigs,omitempty"`
+	}
+	MetricConfig struct {
+		// DELTA = currentValue - lastValue
+		// RATE = DELTA / SECONDS
+		// GAUGE: the collected value is an instantaneous value
+		ValueManipulation string `json:"valueManipulation"`
+		// If KeepNegative is false, fix the result to 0 when the result is negative
+		KeepNegative bool `json:"keepNegative"`
 	}
 )

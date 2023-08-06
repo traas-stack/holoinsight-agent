@@ -38,6 +38,11 @@ func (i *InputAdapter) Collect(a api.Accumulator) error {
 		return err
 	}
 
+	// When metrics is empty, an error may have occurred
+	if len(memory.Metrics) == 0 && len(memory.Errors) > 0 {
+		return memory.Errors[0]
+	}
+
 	for _, metric := range memory.Metrics {
 		for key, value := range metric.Fields() {
 			if f64, err := cast.ToFloat64E(value); err == nil {

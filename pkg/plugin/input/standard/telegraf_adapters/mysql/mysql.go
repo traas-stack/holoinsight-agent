@@ -6,7 +6,6 @@ package mysql
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	telegraf2 "github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs/mysql"
@@ -33,25 +32,23 @@ func init() {
 		}
 
 		var telegrafInput telegraf2.Input
-		switch task.Target.Type {
-		case collecttask.TargetPod:
+		ip := task.Target.GetIP()
+		if ip != "" {
 			if conf.Port <= 0 {
 				conf.Port = 3306
 			}
-			server := fmt.Sprintf("%s:%s@tcp(%s:%d)/?tls=false", conf.Username, conf.Password, task.Target.GetIP(), conf.Port)
+			server := fmt.Sprintf("%s:%s@tcp(%s:%d)/?tls=false&timeout=2s", conf.Username, conf.Password, task.Target.GetIP(), conf.Port)
 			telegrafInput = &mysql.Mysql{
 				Servers: []string{server},
 				Log:     logger.ZapLogger.InfoS,
 			}
-		case collecttask.TargetNone:
+		} else {
 			telegrafInput = &mysql.Mysql{
 				Log: logger.ZapLogger.InfoS,
 			}
 			if err := json.Unmarshal(task.Config.Content, telegrafInput); err != nil {
 				return nil, err
 			}
-		default:
-			return nil, errors.New("unsupported target type: " + task.Target.Type)
 		}
 		return telegraf.NewInputAdapter(telegrafInput), nil
 	})

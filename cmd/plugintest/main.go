@@ -17,8 +17,7 @@ import (
 
 func main() {
 	appconfig.SetDev(true)
-	//data, err := os.ReadFile("cmd/plugintest/telegraf_redis.json")
-	data, err := os.ReadFile("cmd/plugintest/telegraf_nginx.json")
+	data, err := os.ReadFile("cmd/plugintest/telegraf_mysql.json")
 	if err != nil {
 		panic(err)
 	}
