@@ -38,6 +38,7 @@ func parseElect(e *collectconfig.Elect) (XElect, error) {
 			}
 		}
 	}
+	xe.Init()
 	return xe, nil
 }
 
