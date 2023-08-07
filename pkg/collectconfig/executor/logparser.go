@@ -25,7 +25,6 @@ type (
 		sep string
 	}
 	jsonParser struct {
-		sep string
 	}
 )
 
