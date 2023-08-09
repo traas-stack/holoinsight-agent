@@ -84,6 +84,11 @@ type (
 		// docker pouch
 		Type  string            `json:"type,omitempty" yaml:"type" toml:"type"`
 		Pouch K8sCriPouchConfig `json:"pouch,omitempty" yaml:"pouch" toml:"pouch"`
+		// If GetPodsFromKubeletAPI is not empty, it means to get pods information from the kubelet http API of the physical machine.
+		// It supports the following values:
+		// - http://127.0.0.1:10255/pods requires the agent to use the host network
+		// - http://%s:10255/pods where %s will be automatically replaced with the Node IP
+		GetPodsFromKubeletAPI string `json:"getPodsFromKubeletAPI" yaml:"getPodsFromKubeletAPI"`
 	}
 	K8sMetaConfig struct {
 		AppRef          string                `json:"appRef,omitempty" yaml:"appRef" toml:"appRef"`
