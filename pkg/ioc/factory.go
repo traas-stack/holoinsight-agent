@@ -11,6 +11,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"sync"
 )
 
@@ -18,6 +19,7 @@ var Crii cri.Interface
 var CollectTaskManager *collecttask.Manager
 var RegistryService *registry.Service
 var K8sClientset *kubernetes.Clientset
+var K8sClientConfig *rest.Config
 
 var m sync.Map
 

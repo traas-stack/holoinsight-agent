@@ -74,6 +74,7 @@ func InitK8sClientsetInCluster() (*kubernetes.Clientset, error) {
 		return nil, err
 	}
 	config = metadata.ConfigFor(config)
+	ioc.K8sClientConfig = config
 	clientset, err := kubernetes.NewForConfig(config)
 	if err == nil {
 		ioc.K8sClientset = clientset
