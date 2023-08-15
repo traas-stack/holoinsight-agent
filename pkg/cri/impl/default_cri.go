@@ -99,18 +99,27 @@ func (e *defaultCri) Start() error {
 	e.localPodMeta.addEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pod := obj.(*v1.Pod)
-			logger.Metaz("[local] [k8s] add pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
+			//logger.Metaz("[local] [k8s] add pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
+			revision := pod.Labels["controller-revision-hash"]
+			logger.Metaz("[local] [k8s] add podx", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name), zap.String("revision", revision), zap.String("phase", string(pod.Status.Phase)), zap.Bool("updating", isUpdating(pod)))
 			e.maybeSync()
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			pod := newObj.(*v1.Pod)
-			logger.Metaz("[local] [k8s] update pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
+			revision := pod.Labels["controller-revision-hash"]
+			if strings.HasPrefix(pod.Name, "home-") {
+				logger.Metaz("[local] [k8s] update podx", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name), zap.String("revision", revision), zap.String("phase", string(pod.Status.Phase)), zap.Bool("include", isInclude(pod)), zap.Bool("updating", isUpdating(pod)), zap.String("pod", util.ToJsonString(pod)))
+			} else {
+				logger.Metaz("[local] [k8s] update podx", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name), zap.String("revision", revision), zap.String("phase", string(pod.Status.Phase)), zap.Bool("include", isInclude(pod)), zap.Bool("updating", isUpdating(pod)))
+			}
 			e.maybeSync()
 		},
 		DeleteFunc: func(obj interface{}) {
 			e.maybeSync()
 			pod := obj.(*v1.Pod)
-			logger.Metaz("[local] [k8s] delete pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
+			//logger.Metaz("[local] [k8s] delete pod", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name))
+			revision := pod.Labels["controller-revision-hash"]
+			logger.Metaz("[local] [k8s] del podx", zap.String("namespace", pod.Namespace), zap.String("name", pod.Name), zap.String("revision", revision), zap.String("phase", string(pod.Status.Phase)), zap.Bool("updating", isUpdating(pod)))
 		},
 	})
 
@@ -121,6 +130,41 @@ func (e *defaultCri) Start() error {
 	e.startSocks5ProxyServer()
 	e.listenPortForward()
 	return nil
+}
+
+func isInclude(pod *v1.Pod) bool {
+	labels := pod.Labels
+
+	ulabels := []string{
+		"cafe.sofastack.io/upgrade-included",
+	}
+
+	for _, label := range ulabels {
+		if labels[label] != "" {
+			return true
+		}
+	}
+	return false
+}
+func isUpdating(pod *v1.Pod) bool {
+	labels := pod.Labels
+
+	ulabels := []string{
+		//"cafe.sofastack.io/upgrade-included",
+		"cafe.sofastack.io/upgrading",
+		"cafe.sofastack.io/pre-checking",
+		"lifecycle.cafe.sofastack.io/prepare-upgrade",
+		"lifecycle.cafe.sofastack.io/upgrade",
+		"cafe.sofastack.io/post-checking",
+		"lifecycle.cafe.sofastack.io/finish-upgrade",
+	}
+
+	for _, label := range ulabels {
+		if labels[label] != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *defaultCri) chunkCpLoop() {

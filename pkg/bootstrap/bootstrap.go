@@ -21,6 +21,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssync"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8ssysmetrics"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/resources"
+	"github.com/traas-stack/holoinsight-agent/pkg/k8s/silence"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/master"
 	"github.com/traas-stack/holoinsight-agent/pkg/openmetric"
@@ -58,6 +59,7 @@ type (
 		TM                  *manager.TransferManager
 		httpServerComponent *server.HttpServerComponent
 		AM                  *agent.Manager
+		MasterMaintainer    *master.K8sNodeMasterMaintainer
 	}
 )
 
@@ -252,7 +254,7 @@ func (b *AgentBootstrap) callStopComponents() {
 		cost := time.Now().Sub(begin)
 		logger.Infoz("[agent] stop component", //
 			zap.Any("type", reflect.TypeOf(component)), //
-			zap.Duration("cost", cost)) //
+			zap.Duration("cost", cost))                 //
 	}
 }
 
@@ -368,7 +370,9 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 	App.AddStopComponents(pm, om, bsm)
 
 	masterMaintainer := master.NewK8sNodeMasterMaintainer(ioc.Crii, ioc.K8sClientset)
+	App.MasterMaintainer = masterMaintainer
 	masterMaintainer.Register(&clusteragent.MasterComponent{})
+	masterMaintainer.Register(&silence.PodUpdateListenerMasterComponent{})
 	go masterMaintainer.Start()
 	App.AddStopComponents(masterMaintainer)
 

@@ -225,6 +225,14 @@ func Metaz(msg string, fields ...zap.Field) {
 	ZapLogger.Meta.Info(msg, fields...)
 }
 
+func Metazo(option zap.Option, msg string, fields ...zap.Field) {
+	if option != nil {
+		ZapLogger.Meta.WithOptions(option).Info(msg, fields...)
+	} else {
+		ZapLogger.Meta.Info(msg, fields...)
+	}
+}
+
 func IsDebugEnabled() bool {
 	return DebugEnabled
 }
