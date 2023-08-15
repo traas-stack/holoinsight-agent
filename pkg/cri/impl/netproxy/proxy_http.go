@@ -17,6 +17,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
 	"net"
 	"net/http"
@@ -75,24 +76,13 @@ func HandleHttpProxy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *
 }
 
 func createNsEnterHttpClient(pod *cri.Pod) (*http.Transport, *http.Client, error) {
-	t := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			timeout := DefaultDialTimeout
-			if d, ok := ctx.Deadline(); ok {
-				timeout = d.Sub(time.Now())
-			}
-
-			return cricore.NsEnterDial(pod.Sandbox, network, addr, timeout)
-		},
-		DisableKeepAlives:   true,
-		MaxIdleConnsPerHost: -1,
-	}
-	client := &http.Client{
-		Transport: t,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		}}
-	return t, client, nil
+	return util.CreateHttpClientWithDialContext(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		timeout := DefaultDialTimeout
+		if d, ok := ctx.Deadline(); ok {
+			timeout = d.Sub(time.Now())
+		}
+		return cricore.NsEnterDial(pod.Sandbox, network, addr, timeout)
+	})
 }
 
 func CreateServerInternalErrorResp(req *http.Request, extra string) *http.Response {

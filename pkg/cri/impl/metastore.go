@@ -19,7 +19,7 @@ import (
 type (
 	defaultMetaStore struct {
 		state          *internalState
-		localPodMeta   *localPodMeta
+		localPodMeta   localPodMeta
 		localAgentMeta *localAgentMetaImpl
 		listeners      []cri.MetaListener
 		mutex          sync.Mutex
@@ -52,7 +52,7 @@ func newDefaultMetaStore(clientset *kubernetes.Clientset) *defaultMetaStore {
 	return &defaultMetaStore{
 		localAgentMeta: lm,
 		state:          newInternalState(),
-		localPodMeta:   newPodMeta(lm.NodeName(), getter),
+		localPodMeta:   newLocalPodMeta(lm.NodeName(), getter),
 	}
 }
 
@@ -118,7 +118,11 @@ func (e *defaultMetaStore) Start() error {
 		Max:    time.Second,
 	}
 
-	for _, controller := range []cache.Controller{e.localAgentMeta.informer, e.localPodMeta.informer} {
+	controllers := []cache.Controller{e.localAgentMeta.informer}
+	if i := e.localPodMeta.getInformer(); i != nil {
+		controllers = append(controllers, i)
+	}
+	for _, controller := range controllers {
 		for !controller.HasSynced() {
 			logger.Infoz("[bootstrap] [k8s] [meta] wait meta sync")
 			time.Sleep(b.Duration())

@@ -866,8 +866,8 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 				logger.Metaz("[local] ignore expired container",
 					zap.String("ns", pod.Namespace),
 					zap.String("pod", pod.Name),
-					zap.String("sandbox", sandboxContainer.ID),
-					zap.String("cid", container.ID))
+					zap.String("sandbox", cri.ShortContainerId(sandboxContainer.ID)),
+					zap.String("cid", cri.ShortContainerId(container.ID)))
 				podExpiredContainers++
 				expiredContainers++
 				continue
