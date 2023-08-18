@@ -5,6 +5,7 @@
 package executor
 
 import (
+	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"time"
 )
@@ -30,7 +31,7 @@ func (e *timeElectGolangLayoutParser) Parse(ctx *LogContext) (int64, error) {
 
 	parsed, err := time.ParseInLocation(e.layout, s, tz)
 	if err != nil {
-		return TimeParseError, err
+		return TimeParseError, fmt.Errorf("str=[%s] layout=[%s]: %v", s, e.layout, err)
 	}
 	return util.ToMS(parsed), nil
 }
