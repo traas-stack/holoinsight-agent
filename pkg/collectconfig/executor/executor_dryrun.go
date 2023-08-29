@@ -96,7 +96,7 @@ func (e *DryRunExecutor) Run() *DryRunResponse {
 		inputEvent.Set("type", "read")
 
 		// TODO 还有一种方式是用户手动提供lines
-		ld := NewLogDetector("debug", sqltask.From.Log.Path, task.Target)
+		ld := NewLogDetector("debug", sqltask.From, task.Target)
 		detectedPaths := ld.Detect()
 		inputEvent.Info("detect %d path(s)", len(detectedPaths))
 
@@ -121,8 +121,6 @@ func (e *DryRunExecutor) processLines(evt *event.Event, consumer *Consumer, fatp
 	mockResp := &logstream.ReadResponse{
 		IOStartTime: time.Now(),
 		Lines:       lines,
-		Continued:   true,
-		FileId:      "mock",
 		Path:        fatpath.Path,
 	}
 	mockIw := &inputWrapper{

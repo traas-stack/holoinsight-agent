@@ -11,6 +11,13 @@ import (
 )
 
 type (
+	// 一个日志组, 单行情况下一行日志为一个组
+	LogGroup struct {
+		// 第一行
+		Line string
+		// 多行case, 99%的case都只有一行
+		Lines []string
+	}
 	// 日志上下文
 	LogContext struct {
 		// for log
@@ -21,6 +28,7 @@ type (
 		columns []string
 		// map模式
 		columnMap    map[string]interface{}
+		logTags      map[string]interface{}
 		tz           *time.Location
 		event        *event.Event
 		whereEvent   *event.WhereEvent
@@ -46,10 +54,18 @@ func (c *LogContext) GetColumnByIndex(index int) (string, error) {
 }
 
 func (c *LogContext) GetColumnByName(name string) (interface{}, error) {
-	if c.columnMap == nil {
-		return nil, nil
+	if len(c.columnMap) > 0 {
+		x, ok := c.columnMap[name]
+		if ok {
+			return x, nil
+		}
 	}
-	return c.columnMap[name], nil
+
+	if len(c.logTags) > 0 {
+		return c.logTags[name], nil
+	}
+
+	return nil, nil
 }
 
 func (c *LogContext) clearData() {
@@ -62,4 +78,26 @@ func (c *LogContext) clearData() {
 	c.contextValue = nil
 	c.vars = nil
 	c.tz = nil
+	c.logTags = nil
+}
+
+func (l *LogGroup) FirstLine() string {
+	return l.Line
+}
+
+func (l *LogGroup) Add(line string) {
+	if len(l.Lines) == 0 {
+		l.Line = line
+	}
+	l.Lines = append(l.Lines, line)
+}
+
+func (l *LogGroup) SetOneLine(line string) {
+	l.Line = line
+	l.Lines[0] = line
+}
+
+func (l *LogGroup) reset() {
+	l.Line = ""
+	l.Lines = nil
 }

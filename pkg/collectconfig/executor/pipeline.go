@@ -15,6 +15,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/zap"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -23,11 +24,11 @@ import (
 const (
 	defaultMonitorFileInterval = 10 * time.Second
 	// 默认每10s拉一次日志
-	defaultPullDelay = 10 * time.Second
+	defaultPullDelay = 2 * time.Second
 	// Logs generated at T1 may not be printed in the log file until T2.
 	// Our system tolerates a delay(T2 - T1) of up to 300.
 	// If the delay exceeds this value, it may cause these delayed data to be ignored.
-	logDelayTolerance                         = 300 * time.Millisecond
+	logDelayTolerance                         = time.Second
 	inputWrapperStateFirst inputWrapperStatus = iota
 	inputWrapperStateSuccess
 	inputWrapperStateError
@@ -101,9 +102,7 @@ func (p *LogPipeline) StopAndSaveState(store transfer.StateStore) error {
 	}
 
 	for _, i := range p.inputsManager.inputs {
-		if i.FileId != "" {
-			state.Inputs = append(state.Inputs, i.inputStateObj)
-		}
+		state.Inputs = append(state.Inputs, i.inputStateObj)
 	}
 
 	if b, err := util.GobEncode(state); err != nil {
@@ -140,12 +139,8 @@ func (p *LogPipeline) LoadState(store transfer.StateStore) error {
 	p.lastEmitWindow = state.LastEmitWindow
 
 	for _, s := range state.Inputs {
-		ls := p.inputsManager.lsm.Acquire(s.Path)
-		if err := ls.LoadReadState(&logstream.LoadReadState{
-			Cursor: s.Cursor,
-			FileId: s.FileId,
-			Offset: s.Offset,
-		}); err != nil {
+		ls := p.inputsManager.lsm.AcquireFile(s.Path)
+		if err := ls.LoadReadState(s.Cursor); err != nil {
 			logger.Infoz("[transfer] [pipeline] log input load state error", zap.String("key", p.Key()), zap.String("path", s.Path), zap.Error(err))
 			p.inputsManager.lsm.Release(s.Path, ls)
 		} else {
@@ -162,10 +157,10 @@ func (p *LogPipeline) LoadState(store transfer.StateStore) error {
 }
 
 func (iw *inputWrapper) read() (*logstream.ReadResponse, int64, error) {
-	return iw.ls.Read(&logstream.ReadRequest{Cursor: iw.Cursor})
+	return iw.ls.Read(iw.Cursor)
 }
 
-func (l *listenerImpl) Changed(path string, ls logstream.LogStream, lcursor int64) {
+func (l *listenerImpl) Changed(ls logstream.LogStream, lcursor int64) {
 }
 
 func (p *LogPipeline) Key() string {
@@ -310,22 +305,17 @@ func (p *LogPipeline) isStopped() bool {
 // 对一个数据源消费一次, 如果该数据源还有更多数据, 就会返回true
 func (p *LogPipeline) consumeUntilEndForOneInput(iw *inputWrapper) bool {
 	resp, nextCursor, err := iw.read()
+	iw.Cursor = nextCursor
 
-	if err != nil {
-		if iw.Cursor != resp.NextCursor {
-			iw.Cursor = resp.NextCursor
-			iw.FileId = ""
-			iw.Offset = -1
-			logger.Errorz("[pipeline] [log] [input] error, will skip to latest cursor", zap.String("key", p.st.CT.Key), zap.Int64("nextCursor", nextCursor), zap.Error(err))
-		}
+	if err != nil && !os.IsNotExist(err) {
+		logger.Errorz("[pipeline] [log] [input] read error", zap.String("key", p.st.CT.Key), zap.Error(err))
+	}
+
+	if resp == nil {
 		return false
 	}
 
-	iw.Cursor = resp.NextCursor
-	iw.FileId = resp.FileId
-	iw.Offset = resp.EndOffset
-
-	if resp.Error == nil {
+	if err == nil {
 		iw.State = inputWrapperStateSuccess
 	} else {
 		iw.State = inputWrapperStateError
@@ -333,18 +323,16 @@ func (p *LogPipeline) consumeUntilEndForOneInput(iw *inputWrapper) bool {
 	if iw.State != iw.LastState {
 		if iw.LastState == inputWrapperStateFirst {
 			logger.Infoz("[pipeline] [log] [input] [event] first", //
-				zap.String("key", p.st.CT.Key),             //
-				zap.String("path", resp.Path),              //
-				zap.String("fileId", resp.FileId),          //
-				zap.Int64("beginOffset", resp.BeginOffset), //
-				zap.Error(resp.Error))                      //
+				zap.String("key", p.st.CT.Key),  //
+				zap.String("path", resp.Path),   //
+				zap.String("range", resp.Range), //tail -1111 in
+				zap.Error(err))                  //
 		} else {
 			logger.Infoz("[pipeline] [log] [input] [event] changed", //
-				zap.String("key", p.st.CT.Key),             //
-				zap.String("path", resp.Path),              //
-				zap.String("fileId", resp.FileId),          //
-				zap.Int64("beginOffset", resp.BeginOffset), //
-				zap.Error(resp.Error))                      //
+				zap.String("key", p.st.CT.Key),  //
+				zap.String("path", resp.Path),   //
+				zap.String("range", resp.Range), //
+				zap.Error(err))                  //
 		}
 	}
 	iw.LastState = iw.State
@@ -511,7 +499,9 @@ func (p *LogPipeline) pullAndConsume() {
 // check last emit time and current data time, maybe trigger an emit.
 func (p *LogPipeline) maybeEmit() {
 	interval := p.consumer.Window.Interval.Milliseconds()
-	lastFinishedWindow := p.consumer.estimatedMaxDataTimestamp/interval*interval - interval
+
+	lastFinishedWindow := p.consumer.watermark/interval*interval - interval
+
 	if lastFinishedWindow <= 0 {
 		return
 	}

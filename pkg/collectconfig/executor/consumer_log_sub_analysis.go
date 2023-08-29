@@ -91,7 +91,6 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 
 	periodStatus := c.parent.getOrCreatePeriodStatusWithoutLock(alignTs)
 	periodStatus.Stat.Broken = periodStatus.Stat.Broken || c.parent.stat.Broken
-	periodStatus.Stat.NoContinued = periodStatus.Stat.NoContinued || c.parent.stat.NoContinued
 	periodStatus.Stat.Groups++
 	ctx.periodStatus = periodStatus
 

@@ -24,8 +24,6 @@ type (
 		// lastState and state are used to detect state change
 		LastState inputWrapperStatus
 		State     inputWrapperStatus
-		FileId    string
-		Offset    int64
 	}
 	// inputsManager wraps inputs of a LogPipeline
 	inputsManager struct {
@@ -40,7 +38,6 @@ type (
 // check inputs change
 func (im *inputsManager) checkInputsChange() {
 	paths := im.ld.Detect()
-
 	usedPaths := make(map[string]struct{})
 	newInputs := make(map[string]*inputWrapper, len(paths))
 
@@ -59,7 +56,15 @@ func (im *inputsManager) checkInputsChange() {
 			logger.Infoz("[pipeline] [log] [input] add", //
 				zap.String("key", im.key), //
 				zap.String("path", path))
-			ls := im.lsm.Acquire(path)
+
+			var ls logstream.LogStream
+
+			if fatPath.IsSls {
+				ls = im.lsm.AcquireSls(fatPath.SlsConfig)
+			} else {
+				ls = im.lsm.AcquireFile(path)
+			}
+
 			newInputs[path] = &inputWrapper{
 				ls: ls,
 				inputStateObj: inputStateObj{
@@ -99,6 +104,6 @@ func (im *inputsManager) stop() {
 }
 
 func (im *inputsManager) update(st *api.SubTask) {
-	im.ld = NewLogDetector(im.key, st.SqlTask.From.Log.Path, st.CT.Target)
+	im.ld = NewLogDetector(im.key, st.SqlTask.From, st.CT.Target)
 	im.checkInputsChange()
 }

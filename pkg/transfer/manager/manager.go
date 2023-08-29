@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
+	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/pipeline"
@@ -27,6 +28,7 @@ import (
 
 const (
 	stateFileFreshDuration = 2 * time.Minute
+	storeVersion           = "1"
 )
 
 type (
@@ -99,6 +101,8 @@ func (tm *TransferManager) StopAndSaveState() ([]byte, error) {
 		}
 	}
 
+	store.Put("storeVersion", storeVersion)
+
 	stateBytes, err := util.GobEncode(store.State)
 	if err != nil {
 		return nil, err
@@ -160,6 +164,17 @@ func (tm *TransferManager) getRemoteState(client transferpb.TransferSrviceClient
 }
 
 func (tm *TransferManager) loadState(stateStore *transfer.MemoryStateStore) error {
+	{
+		// version check
+		stateVersion, err := stateStore.Get("storeVersion")
+		if err != nil {
+			return err
+		}
+		if storeVersion != cast.ToString(stateVersion) {
+			return fmt.Errorf("old state has different version, version=%s repected=%s", cast.ToString(stateVersion), storeVersion)
+		}
+	}
+
 	if err := tm.lsm.LoadState(stateStore); err != nil {
 		logger.Errorz("[transfer] [client] LogStream.Manager load state error", zap.Error(err))
 		return err

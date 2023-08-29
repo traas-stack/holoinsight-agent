@@ -54,6 +54,7 @@ var offset = &offsetTimeElector{
 		{layout: "02/Jan/2006 15:04:05"},
 		{layout: "Jan 02 2006 15:04:05"},
 		{layout: "01/02/2006 15:04:05"},
+		{layout: "02/Jan/2006:15:04:05 Z0700"},
 	},
 }
 

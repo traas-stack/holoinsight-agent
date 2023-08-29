@@ -29,7 +29,11 @@ func (x *xElectRefName) Elect(ctx *LogContext) (interface{}, error) {
 		return nil, x.err
 	}
 	if x.jsonpath != nil {
-		return x.jsonpath.Lookup(ctx.columnMap)
+		y, err := x.jsonpath.Lookup(ctx.columnMap)
+		if err != nil && len(ctx.logTags) > 0 {
+			y, err = x.jsonpath.Lookup(ctx.logTags)
+		}
+		return y, err
 	}
 	return ctx.GetColumnByName(x.name)
 }

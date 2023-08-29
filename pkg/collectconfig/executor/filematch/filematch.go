@@ -4,11 +4,14 @@
 
 package filematch
 
+import "github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
+
 const (
 	TypePath   = "path"
 	TypeGlob   = "glob"
 	TypeRegexp = "regexp"
 	TypeFormat = "format"
+	TypeSls    = "sls"
 )
 
 type (
@@ -21,8 +24,10 @@ type (
 	// 对于绝对路径来说, tags==nil
 	// 对于 /home/admin/{a}/{b} 的路径来说 会有2个tags
 	FatPath struct {
-		Path string
-		Tags map[string]string
+		Path      string
+		Tags      map[string]string
+		IsSls     bool
+		SlsConfig logstream.SlsConfig
 	}
 )
 

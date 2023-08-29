@@ -9,6 +9,7 @@ import (
 	json2 "encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/agent/agentmeta"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/agg"
@@ -79,9 +80,7 @@ type (
 		stat ConsumerStat
 		// 实际遇到过的最大时间戳
 		maxDataTimestamp int64
-		// estimatedMaxDataTimestamp is an estimate of the actual log time.
-		// When there is no logs in file this period, this estimatedMaxDataTimestamp value will be treated as maxDataTimestamp as if there is really a log at this time.
-		estimatedMaxDataTimestamp int64
+		watermark        int64
 		// printStatCalledCounter records the number of calls to `printStat`
 		printStatCalledCounter int
 		firstIOSuccessTime     int64
@@ -103,7 +102,6 @@ type (
 		Broken bool
 		// File is missing
 		Miss                   bool
-		NoContinued            bool
 		Processed              int32
 		FilterBeforeParseWhere int32
 		FilterLogParseError    int32
@@ -140,18 +138,18 @@ type (
 
 	// PeriodStatus holds stats for that time period
 	PeriodStatus struct {
-		Stat                      ConsumerStat
-		EmitSuccess               bool
-		EmitError                 int
-		EstimatedMaxDataTimestamp int64
+		Stat        ConsumerStat
+		EmitSuccess bool
+		EmitError   int
+		Watermark   int64
 	}
 	// consumerStateObj is Consumer state obj for gob.
 	consumerStateObj struct {
-		FirstIOSuccessTime        int64
-		MaxDataTimestamp          int64
-		EstimatedMaxDataTimestamp int64
-		Shards                    []*shardSateObj
-		ConsumerStat              ConsumerStat
+		FirstIOSuccessTime int64
+		MaxDataTimestamp   int64
+		Watermark          int64
+		Shards             []*shardSateObj
+		ConsumerStat       ConsumerStat
 	}
 	// shardSateObj is storage.Shard state obj for gob.
 	shardSateObj struct {
@@ -173,7 +171,7 @@ func (c *Consumer) reportUpEvent(expectedTs int64, ps *PeriodStatus) {
 	// 2. log consumption is not lagging behind
 	// 3. the task is not started in the middle of the cycle
 	ok := ps.EmitSuccess &&
-		ps.EstimatedMaxDataTimestamp >= expectedTs+c.Window.Interval.Milliseconds() &&
+		ps.Watermark >= expectedTs+c.Window.Interval.Milliseconds() &&
 		c.firstIOSuccessTime < expectedTs
 
 	event := &pb2.ReportEventRequest_Event{
@@ -258,14 +256,14 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 	}
 
 	if !c.addCommonTags(datum) {
-		logger.Errorz("[log] [consumer] fail to add common tags to metrics", zap.String("key", c.key))
+		logger.Errorz("[consumer] [log] fail to add common tags to metrics", zap.String("key", c.key))
 		return
 	}
 
 	go func() {
 		if logger.DebugEnabled {
 			for _, data := range datum {
-				logger.Debugz("[log] [consumer] debug emit", zap.String("key", c.key), zap.Any("data", data))
+				logger.Debugz("[consumer] [log] debug emit", zap.String("key", c.key), zap.Any("data", data))
 			}
 		}
 
@@ -285,24 +283,27 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 			} else {
 				c.stat.EmitError += int32(len(datum))
 				c.reportLogs(expectedTs, fmt.Sprintf("emit error %+v", err))
-				logger.Errorz("[log] [consumer] emit error", zap.String("key", c.key), zap.Error(err))
-				logger.Debugz("[log] [consumer] emit error", zap.String("key", c.key), zap.Any("datum", datum), zap.Error(err))
+				logger.Errorz("[consumer] [log] emit error", zap.String("key", c.key), zap.Error(err))
+				logger.Debugz("[consumer] [log] emit error", zap.String("key", c.key), zap.Any("datum", datum), zap.Error(err))
 			}
 		})
 	}()
+}
+
+func (c *Consumer) getLateParams(iw *inputWrapper) (int64, int64) {
+	if logstream.IsSlsLogStream(iw.ls) {
+		return 1_000, 1_000 + 60_000
+	}
+	return 1_000, 1_000 + 3_000
 }
 
 func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err error) {
 	c.stat.IoTotal++
 	if err != nil {
 		c.stat.IoError++
-		logger.Errorz("[consumer] [log] digest",
-			zap.String("key", c.key),
-			zap.Any("resp", resp),
-			zap.Error(err))
-		return
 	}
-	fileNotExists := os.IsNotExist(resp.Error)
+
+	fileNotExists := os.IsNotExist(err)
 	if fileNotExists {
 		// There is no need to stat ioError when file misses.
 		// This is helpful to reduce server log size.
@@ -322,12 +323,10 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 	if resp.HasBroken {
 		c.stat.Broken = true
 	}
-	if !resp.Continued {
-		c.stat.NoContinued = true
-	}
-	c.stat.Bytes += resp.Bytes()
-	c.stat.Lines += int32(len(resp.Lines))
-	if len(resp.Lines) == 0 {
+	c.stat.Bytes += resp.Bytes
+	c.stat.Lines += int32(resp.Count)
+
+	if resp.IsEmpty() {
 		c.stat.IoEmpty++
 	}
 
@@ -339,37 +338,40 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 		c.maxDataTimestamp = maxTs
 	}
 
-	if c.estimatedMaxDataTimestamp < c.maxDataTimestamp {
-		c.estimatedMaxDataTimestamp = c.maxDataTimestamp
+	maxOutOfOrderness, maxLagTime := c.getLateParams(iw)
+	if c.watermark < c.maxDataTimestamp-maxOutOfOrderness {
+		c.watermark = c.maxDataTimestamp - maxOutOfOrderness
 	}
 
 	// 'HasMore == true' means there is more logs, we will to start next pulling as soon as possible.
-	// Next time when 'HasMore == false' we will update the estimatedMaxDataTimestamp.
+	// Next time when 'HasMore == false' we will update the watermark.
 	if !resp.HasMore {
 		// 'HasMore == false' means we have reached the log file end.
-		// So we can safely update the estimatedMaxDataTimestamp to 'IOStartTime - logDelayTolerance'.
+		// So we can safely update the watermark to 'IOStartTime - logDelayTolerance'.
 		ts := resp.IOStartTime.Add(-logDelayTolerance).UnixMilli()
-		if c.estimatedMaxDataTimestamp < ts {
-			c.estimatedMaxDataTimestamp = ts
+		if c.watermark < ts-maxLagTime {
+			if maxLagTime > 15_000 {
+				logger.Warnz("[consumer] [log] force update watermark", zap.String("key", c.key), zap.Time("watermark", time.UnixMilli(c.watermark)), zap.Time("ioStartTime", time.UnixMilli(ts)), zap.String("range", resp.Range))
+			}
+			c.watermark = ts - maxLagTime
 		}
 	}
 
 	nowMs := util.CurrentMS()
-	if c.estimatedMaxDataTimestamp > nowMs {
-		c.estimatedMaxDataTimestamp = nowMs
+	if c.watermark > nowMs {
+		c.watermark = nowMs
 	}
 
-	if logger.DebugEnabled {
+	if !resp.IsEmpty() && logger.DebugEnabled {
 		logger.Debugz("[consumer] [log] digest", //
-			zap.String("key", c.key),                    //
-			zap.String("path", resp.Path),               //
-			zap.Int64("beginOffset", resp.BeginOffset),  //
-			zap.Int64("endOffset", resp.EndOffset),      //
-			zap.Bool("continued", resp.Continued),       //
-			zap.Bool("more", resp.HasMore),              //
-			zap.String("fileId", resp.FileId),           //
-			zap.Time("dataTime", time.UnixMilli(maxTs)), //
-			zap.Error(resp.Error),                       //
+			zap.String("key", c.key),                           //
+			zap.String("path", resp.Path),                      //
+			zap.Bool("more", resp.HasMore),                     //
+			zap.Int("count", len(resp.Lines)),                  //
+			zap.String("range", resp.Range),                    //
+			zap.Time("dataTime", time.UnixMilli(maxTs)),        //
+			zap.Time("watermark", time.UnixMilli(c.watermark)), //
+			zap.Error(err),                                     //
 		)
 	}
 }
@@ -391,7 +393,7 @@ func (c *Consumer) SetStorage(s *storage.Storage) {
 	intervalMs := c.Window.Interval.Milliseconds()
 	if timeline == nil {
 		capacity := getCapacity(intervalMs)
-		logger.Infoz("[consumer] create timeline",
+		logger.Infoz("[consumer] [log] create timeline",
 			zap.String("key", c.key),
 			zap.Int64("interval", intervalMs),
 			zap.Int64("capacity", capacity))
@@ -427,7 +429,7 @@ func (c *Consumer) Start() {
 	if c.task.Output != nil {
 		out, err := output.Parse(c.task.Output.Type, c.task.Output)
 		if err != nil {
-			logger.Errorz("[consumer] parse output error",
+			logger.Errorz("[consumer] [log] parse output error",
 				zap.String("key", c.key),
 				zap.String("outputType", c.task.Output.Type),
 				zap.Error(err))
@@ -461,7 +463,7 @@ func (c *Consumer) Stop() {
 			"c_version": c.ct.Config.Version,
 		},
 	})
-	logger.Infoz("[consumer] stop", zap.String("key", c.key), zap.String("version", c.ct.Version))
+	logger.Infoz("[consumer] [log] stop", zap.String("key", c.key), zap.String("version", c.ct.Version))
 
 	if !c.updated {
 		c.maybeReleaseTimeline()
@@ -489,7 +491,7 @@ func (c *Consumer) Update(o *Consumer) {
 
 	// 检查时间窗口是否变化
 	if o.Window.Interval != c.Window.Interval {
-		logger.Infoz("[consumer] window changed, delete old timeline", zap.String("key", c.key))
+		logger.Infoz("[consumer] [log] window changed, delete old timeline", zap.String("key", c.key))
 		o.storage.Update(func(s *storage.Storage) {
 			s.DeleteTimeline(o.timeline.Key)
 		})
@@ -546,7 +548,7 @@ func (c *Consumer) getBizContainer() *cri.Container {
 }
 
 func (c *Consumer) consume(resp *logstream.ReadResponse, iw *inputWrapper) int64 {
-	maxTs := int64(-1)
+	maxTs := int64(0)
 	c.sub.Update(func() {
 		c.processMultiline(iw, resp, func(ctx *LogContext) {
 			c.sub.ProcessGroup(iw, ctx, &maxTs)
@@ -555,28 +557,74 @@ func (c *Consumer) consume(resp *logstream.ReadResponse, iw *inputWrapper) int64
 	return maxTs
 }
 
+func convertStringMapToInterfaceMap(m map[string]string) map[string]interface{} {
+	im := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		im[k] = v
+	}
+	return im
+}
+
 func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadResponse, consumer func(*LogContext)) {
-	tz := c.getTargetTimezone()
 	ctx := &LogContext{}
 	oneLine := &LogGroup{Lines: []string{""}}
+
+	tz := c.getTargetTimezone()
 	var err error
 
 	lines := resp.Lines
 	if decoded, err := resp.GetDecodedLines(c.task.From.Log.Charset); err == nil {
 		lines = decoded
 	} else {
-		logger.Errorz("[log] [consumer] decode error", zap.String("key", c.key), zap.String("charset", c.task.From.Log.Charset))
+		logger.Errorz("[consumer] [log] decode error", zap.String("key", c.key), zap.String("charset", c.task.From.Log.Charset))
 	}
+
+	// single line mode
+	if c.multilineAccumulator == nil {
+		if len(resp.LogGroups) > 0 {
+			for _, lg := range resp.LogGroups {
+				groupTags := convertStringMapToInterfaceMap(lg.Tags)
+				for _, log := range lg.Logs {
+					ctx.columnMap = convertStringMapToInterfaceMap(log.Contents)
+					ctx.logTags = groupTags
+
+					// TODO hardcode
+					if line, ok := log.Contents["content"]; ok {
+						oneLine.SetOneLine(line)
+						ctx.log = oneLine
+					}
+					c.stat.Groups++
+					ctx.tz = tz
+					consumer(ctx)
+					ctx.clearData()
+				}
+			}
+		} else {
+			for _, line := range lines {
+				oneLine.SetOneLine(line)
+				if line == "" || strings.HasPrefix(line, "\tat") || (strings.HasPrefix(line, "\t... ") && strings.HasSuffix(line, " more")) {
+					c.stat.FilterIgnore++
+					continue
+				}
+				ctx.log = oneLine
+				ctx.path = iw.Path
+				ctx.pathTags = iw.PathTags
+				c.stat.Groups++
+				ctx.tz = tz
+				consumer(ctx)
+				ctx.clearData()
+			}
+		}
+
+		return
+	}
+
+	// multiline mode
 	for i := 0; i <= len(lines); i++ {
 		var fullGroup *LogGroup
 
 		// 特殊处理
 		if i == len(lines) {
-			if c.multilineAccumulator == nil {
-				// 没有多行模式, 不需要
-				continue
-			}
-
 			// 进入这个block说明已经遍历完当前批次了, 此时可能有一种特殊情况: pendingLog 有残留 lines
 			// 但此时无法知道该组是否已经完整了, 因为组的完成性是靠遇到下一个组的 start 才能确定的, 如果下一行首日志迟迟不打印呢? 或者由于各种原因, 暂时还没有读到下一行首日志呢
 
@@ -596,25 +644,16 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 		} else {
 			line := lines[i]
 			oneLine.SetOneLine(line)
-			if c.multilineAccumulator != nil {
-				ctx.log = oneLine
+			ctx.log = oneLine
 
-				fullGroup, err = c.multilineAccumulator.add(ctx)
-				if err != nil {
-					logger.Debugz("[consumer] parse multiline error", zap.String("consumer", c.key), zap.Error(err))
-					c.stat.FilterMultiline++
-					continue
-				}
-				if fullGroup == nil {
-					continue
-				}
-			} else {
-				// 不需要配置多行 默认过滤掉一些常见的java error case
-				if line == "" || strings.HasPrefix(line, "\tat") || (strings.HasPrefix(line, "\t... ") && strings.HasSuffix(line, " more")) {
-					c.stat.FilterIgnore++
-					continue
-				}
-				fullGroup = oneLine
+			fullGroup, err = c.multilineAccumulator.add(ctx)
+			if err != nil {
+				logger.Debugz("[consumer] [log] parse multiline error", zap.String("consumer", c.key), zap.Error(err))
+				c.stat.FilterMultiline++
+				continue
+			}
+			if fullGroup == nil {
+				continue
 			}
 		}
 		ctx.log = fullGroup
@@ -671,16 +710,16 @@ func (c *Consumer) createTaskInfoEvent(stat ConsumerStat) *pb2.ReportEventReques
 	json := map[string]interface{}{
 		"t_key":    c.key,
 		"in_mdt":   c.maxDataTimestamp,
-		"in_emdt":  c.estimatedMaxDataTimestamp,
+		"in_emdt":  c.watermark,
 		"c_config": parsedContent,
 		"c_target": c.ct.Target,
 	}
 
 	now := time.Now().UnixMilli()
 	if !stat.Miss {
-		lag := (now - c.estimatedMaxDataTimestamp) / 1000
+		lag := (now - c.watermark) / 1000
 		if lag > 30 {
-			json["in_lag"] = (now - c.estimatedMaxDataTimestamp) / 1000
+			json["in_lag"] = (now - c.watermark) / 1000
 		}
 	}
 
@@ -715,7 +754,6 @@ func (c *Consumer) createStatEvent(stat ConsumerStat) *pb2.ReportEventRequest_Ev
 			"in_miss": util.BoolToInt64(stat.Miss),
 
 			"in_broken":    util.BoolToInt64(stat.Broken),
-			"in_skip":      util.BoolToInt64(stat.NoContinued),
 			"in_processed": int64(stat.Processed),
 
 			"f_logparse":  int64(stat.FilterLogParseError),
@@ -769,7 +807,6 @@ func (c *Consumer) printStat() {
 		zap.Int32("emit", stat.Emit),
 		zap.Bool("miss", stat.Miss),
 		zap.Bool("broken", stat.Broken),
-		zap.Bool("continued", !stat.NoContinued),
 		zap.Int32("processed", stat.Processed),
 		zap.Int32("fwhere", stat.FilterWhere),
 		zap.Int32("fbwhere", stat.FilterBeforeParseWhere),
@@ -778,19 +815,23 @@ func (c *Consumer) printStat() {
 		zap.Int32("fignore", stat.FilterIgnore),
 		zap.Int32("filterDelay", stat.FilterDelay),
 		zap.Time("maxDataTime", time.UnixMilli(c.maxDataTimestamp)),
-		zap.Time("estimatedMaxDataTime", time.UnixMilli(c.estimatedMaxDataTimestamp)),
+		zap.Time("watermark", time.UnixMilli(c.watermark)),
 	)
 }
 
 func (c *Consumer) getCommonTags() (map[string]string, bool) {
 	var tags map[string]string
-	if c.ct.Target.IsTypePod() {
+	switch c.ct.Target.Type {
+	case collecttask.TargetPod:
 		if biz := c.getBizContainer(); biz != nil {
 			tags = meta.ExtractPodCommonTags(biz.Pod.Pod)
 		} else {
 			return nil, false
 		}
-	} else {
+	case collecttask.TargetSlsShard:
+		tags = make(map[string]string, 1)
+		tags["shardId"] = cast.ToString(cast.ToInt(c.ct.Target.Meta["shardId"]))
+	default:
 		tags = meta.ExtractSidecarTags()
 	}
 	return tags, true
@@ -820,8 +861,10 @@ func (c *Consumer) SetOutput(output output.Output) {
 }
 
 func (c *Consumer) emit(expectedTs int64) {
+	logger.Debugz("[consumer] [log] prepare emit", zap.String("key", c.key), zap.Time("ts", time.UnixMilli(expectedTs)), zap.Time("watermark", time.UnixMilli(c.watermark)), zap.Time("maxTs", time.UnixMilli(c.maxDataTimestamp)))
+
 	c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
-		status.EstimatedMaxDataTimestamp = c.estimatedMaxDataTimestamp
+		status.Watermark = c.watermark
 	})
 	c.sub.Emit(expectedTs)
 }
@@ -851,12 +894,12 @@ func (c *Consumer) executeBeforeParseWhere(ctx *LogContext) bool {
 			if ctx.event != nil {
 				ctx.event.Error("beforeParseWhere error %+v", err)
 			}
-			logger.Debugz("[consumer] beforeParseWhere err", zap.String("key", c.key), zap.Error(err))
+			logger.Debugz("[consumer] [log] beforeParseWhere err", zap.String("key", c.key), zap.Error(err))
 		} else {
 			if ctx.event != nil {
 				ctx.event.Info("beforeParseWhere false")
 			}
-			logger.Debugz("[consumer] filter before where", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()))
+			logger.Debugz("[consumer] [log] filter before where", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()))
 		}
 		c.stat.FilterBeforeParseWhere++
 		return false
@@ -869,7 +912,7 @@ func (c *Consumer) executeLogParse(ctx *LogContext) bool {
 		return true
 	}
 	if err := c.LogParser.Parse(ctx); err != nil {
-		logger.Debugz("log parse error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.Error(err))
+		logger.Debugz("[consumer] [log] log parse error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.Error(err))
 		c.stat.FilterLogParseError++
 		return false
 	}
@@ -882,7 +925,7 @@ func (c *Consumer) executeVarsProcess(ctx *LogContext) bool {
 		return true
 	}
 	if vars, err := c.varsProcessor.process(ctx); err != nil {
-		logger.Debugz("parse vars error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.Error(err))
+		logger.Debugz("[consumer] [log] parse vars error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.Error(err))
 		c.stat.FilterLogParseError++
 		return false
 	} else {
@@ -896,7 +939,7 @@ func (c *Consumer) executeVarsProcess(ctx *LogContext) bool {
 func (c *Consumer) executeTimeParse(ctx *LogContext) (int64, bool) {
 	ts, err := c.executeTimeParse0(ctx)
 	if err != nil {
-		logger.Debugz("parse time error", //
+		logger.Debugz("[consumer] [log] parse time error", //
 			zap.String("consumer", c.key), //
 			zap.String("line", ctx.GetLine()),
 			zap.Error(err)) //
@@ -935,9 +978,9 @@ func (c *Consumer) executeWhere(ctx *LogContext) bool {
 			if ctx.event != nil {
 				ctx.event.Error("where error: %+v", err)
 			}
-			logger.Debugz("[consumer] where err", zap.String("key", c.key), zap.Error(err))
+			logger.Debugz("[consumer] [log] where err", zap.String("key", c.key), zap.Error(err))
 		} else {
-			logger.Debugz("[consumer] filter where", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()))
+			logger.Debugz("[consumer] [log] filter where", zap.String("key", c.key), zap.String("line", ctx.log.FirstLine()))
 		}
 		c.stat.FilterWhere++
 		ctx.periodStatus.Stat.FilterWhere++
@@ -964,9 +1007,9 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 					}
 					c.stat.AggWhereError++
 					ctx.periodStatus.Stat.AggWhereError++
-					logger.Debugz("[consumer] agg error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
+					logger.Debugz("[consumer] [log] agg error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				} else {
-					logger.Debugz("[consumer] agg where false", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
+					logger.Debugz("[consumer] [log] agg where false", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				}
 				continue
 			}
@@ -986,7 +1029,7 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 			if err != nil {
 				c.stat.SelectError++
 				ctx.periodStatus.Stat.SelectError++
-				logger.Debugz("[consumer] select string error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
+				logger.Debugz("[consumer] [log] select string error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				continue
 			}
 			// TODO 此处注意别长期引用这个字符串 否则造成大字符串泄漏
@@ -994,6 +1037,9 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 				n.MergeHll(str)
 			}
 		default:
+			if so.agg == agg.AggLogAnalysis {
+				return
+			}
 			// TODO 对于普通聚合型的可能要考虑保留count/sum两个值, 以便能够计算出avg
 			number, err := so.elect.ElectNumber(ctx)
 			if err != nil {
@@ -1002,7 +1048,7 @@ func (c *Consumer) executeSelectAgg(processGroupEvent *event.Event, ctx *LogCont
 				}
 				c.stat.SelectError++
 				ctx.periodStatus.Stat.SelectError++
-				logger.Debugz("[consumer] select number error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
+				logger.Debugz("[consumer] [log] select number error", zap.String("consumer", c.key), zap.String("line", ctx.GetLine()), zap.String("as", so.as), zap.Error(err))
 				continue
 			}
 
@@ -1054,7 +1100,7 @@ func (c *Consumer) getOrCreateStoragePoint(alignTs int64, ctx *LogContext, shard
 	point := shard.GetPoint(pointKey)
 	if point == nil {
 		if c.maxKeySize > 0 && shard.PointCount() >= c.maxKeySize {
-			logger.Debugz("[consumer] filter maxKeySize", zap.String("key", c.key), zap.Int("maxKeySize", c.maxKeySize))
+			logger.Debugz("[consumer] [log] filter maxKeySize", zap.String("key", c.key), zap.Int("maxKeySize", c.maxKeySize))
 			c.stat.FilterGroupMaxKeys++
 			ctx.periodStatus.Stat.FilterGroupMaxKeys++
 			return nil
@@ -1092,10 +1138,10 @@ func (c *Consumer) executeGroupBy(ctx *LogContext) ([]string, bool) {
 
 func (c *Consumer) SaveState() (*consumerStateObj, error) {
 	state := &consumerStateObj{
-		FirstIOSuccessTime:        c.firstIOSuccessTime,
-		MaxDataTimestamp:          c.maxDataTimestamp,
-		EstimatedMaxDataTimestamp: c.estimatedMaxDataTimestamp,
-		ConsumerStat:              c.stat,
+		FirstIOSuccessTime: c.firstIOSuccessTime,
+		MaxDataTimestamp:   c.maxDataTimestamp,
+		Watermark:          c.watermark,
+		ConsumerStat:       c.stat,
 	}
 
 	for _, shard := range c.timeline.InternalGetShard() {
@@ -1117,7 +1163,7 @@ func (c *Consumer) SaveState() (*consumerStateObj, error) {
 func (c *Consumer) LoadState(state *consumerStateObj) error {
 	c.firstIOSuccessTime = state.FirstIOSuccessTime
 	c.maxDataTimestamp = state.MaxDataTimestamp
-	c.estimatedMaxDataTimestamp = state.EstimatedMaxDataTimestamp
+	c.watermark = state.Watermark
 	c.stat = state.ConsumerStat
 
 	for _, s := range state.Shards {

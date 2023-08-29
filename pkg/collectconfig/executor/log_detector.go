@@ -5,8 +5,10 @@
 package executor
 
 import (
+	"github.com/spf13/cast"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/filematch"
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"go.uber.org/zap"
@@ -26,7 +28,9 @@ type (
 // TODO 这东西会变化...
 // 如果当时pod不可用 那么这个方法会失败从而忽略它的路径
 // 如果后来pod变得可用了, 由于该方法已经执行过, 因此不会再重试...
-func NewLogDetector(key string, paths []*collectconfig.FromLogPath, target *collecttask.CollectTarget) *LogPathDetector {
+func NewLogDetector(key string, from *collectconfig.From, target *collecttask.CollectTarget) *LogPathDetector {
+	paths := from.Log.Path
+
 	// TODO 考虑 daemonset case
 
 	matchers := make([]filematch.FileMatcher, 0, len(paths))
@@ -61,6 +65,24 @@ func NewLogDetector(key string, paths []*collectconfig.FromLogPath, target *coll
 			matchers = append(matchers, m)
 		case filematch.TypeFormat:
 			matchers = append(matchers, filematch.NewFormatFileMatcher(path.Pattern))
+		case filematch.TypeSls:
+			endpoint := target.Meta["endpoint"]
+			project := target.Meta["project"]
+			logstore := target.Meta["logstore"]
+			shardStr := target.Meta["shardId"]
+			ak := target.Meta["ak"]
+			sk := target.Meta["sk"]
+
+			matchers = append(matchers, &filematch.SlsFileMatch{SlsConfigs: []logstream.SlsConfig{
+				{
+					Endpoint: endpoint,
+					AK:       ak,
+					SK:       sk,
+					Project:  project,
+					Logstore: logstore,
+					Shard:    cast.ToInt(shardStr),
+				},
+			}})
 		}
 	}
 	return &LogPathDetector{
