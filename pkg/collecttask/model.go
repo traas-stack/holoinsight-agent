@@ -7,6 +7,7 @@ package collecttask
 const (
 	TargetLocalhost = "localhost"
 	TargetPod       = "pod"
+	TargetSlsShard  = "SLS_SHARD"
 	TargetNone      = "none"
 	TargetContainer = "container"
 

@@ -22,43 +22,42 @@ const (
 )
 
 type (
-	// Manager 用于确保相同路径的path只有一个 FileLogStream 实例
+	// Manager 用于确保相同路径的path只有一个 LogStream 实例
 	Manager struct {
-		mutex          sync.Mutex
-		maxLineSize    int
-		maxIOReadBytes int64
-		stop           chan struct{}
+		mutex sync.Mutex
+		stop  chan struct{}
 		managerState
 	}
 	managerState struct {
-		cache map[string]*cacheItem
+		cache map[string]*managerCachedItem
 	}
-	cacheItem struct {
+	managerCachedItem struct {
 		ref int32
-		ls  *FileLogStream
+		ls  *GLogStream
 	}
 	// Manager state obj for gob
 	managerStateObj struct {
-		Cache map[string]*fileLogStreamStateObj
+		Cache []*cachedLogStreamStateObj
+	}
+	cachedLogStreamStateObj struct {
+		Key            string
+		SlsConfig      *SlsConfig
+		LogStreamState interface{}
 	}
 )
 
 func init() {
 	gob.Register(&managerStateObj{})
+	//gob.Register(&cachedLogStreamStateObj{})
+	gob.Register(&fileStateObj{})
 }
 
 func NewManager() *Manager {
-	return NewManager2(DefaultLogInputConfig.MaxLineSize, DefaultLogInputConfig.MaxIOReadBytes)
-}
-
-func NewManager2(maxLineSize int, maxIOReadBytes int64) *Manager {
 	return &Manager{
 		managerState: managerState{
-			cache: make(map[string]*cacheItem),
+			cache: make(map[string]*managerCachedItem),
 		},
-		maxLineSize:    maxLineSize,
-		maxIOReadBytes: maxIOReadBytes,
-		stop:           make(chan struct{}),
+		stop: make(chan struct{}),
 	}
 }
 
@@ -71,19 +70,25 @@ func (m *Manager) StopAndSaveState(store transfer.StateStore) error {
 	// clean right now
 	m.cleanOnce()
 
-	state := &managerStateObj{
-		Cache: map[string]*fileLogStreamStateObj{},
-	}
+	state := &managerStateObj{}
 
 	for k, v := range m.cache {
 		if s, err := v.ls.SaveState(); err == nil {
 			// s == nil means nothing to save
 			if s != nil {
-				state.Cache[k] = s
-				logger.Infoz("[transfer] [logstream] stream save state success", zap.String("path", k))
+				var sc *SlsConfig
+				if x, ok := v.ls.sub.(*slsSubLogStream); ok {
+					sc = &x.config
+				}
+				state.Cache = append(state.Cache, &cachedLogStreamStateObj{
+					Key:            k,
+					SlsConfig:      sc,
+					LogStreamState: s,
+				})
+				logger.Infoz("[transfer] [logstream] stream save state success", zap.String("key", k))
 			}
 		} else {
-			logger.Errorz("[transfer] [logstream] stream save state error", zap.String("path", k), zap.Error(err))
+			logger.Errorz("[transfer] [logstream] stream save state error", zap.String("key", k), zap.Error(err))
 		}
 	}
 
@@ -107,14 +112,19 @@ func (m *Manager) LoadState(store transfer.StateStore) error {
 		return fmt.Errorf("LogStream.Manager already has cached LogStreams, size=%d", x)
 	}
 
-	for key, s := range state.Cache {
+	for _, ms := range state.Cache {
+		key := ms.Key
 		// We first load the LogStream. Now its ref is 1.
-		fls := m.acquire0(key).(*FileLogStream)
-		if err := fls.LoadState(s); err != nil {
-			m.release0(key, fls)
-			logger.Errorz("[transfer] [logstream] stream load state error", zap.String("key", key), zap.Error(err))
+		ls := m.acquire0(key, ms.SlsConfig)
+		if x, ok := ls.(LogStreamState); ok {
+			if err := x.LoadState(ms.LogStreamState); err != nil {
+				m.release0(key, ls)
+				logger.Errorz("[transfer] [logstream] stream load state error", zap.String("key", key), zap.Error(err))
+			} else {
+				logger.Infoz("[transfer] [logstream] stream load state success", zap.String("key", key))
+			}
 		} else {
-			logger.Infoz("[transfer] [logstream] stream load state success", zap.String("key", key))
+			logger.Infoz("[transfer] [logstream] skip load state", zap.String("key", key))
 		}
 	}
 
@@ -134,9 +144,7 @@ func (m *Manager) Start() {
 
 		totalPendingBytes := int64(0)
 		for _, item := range m.cache {
-			item.ls.mutex.Lock()
-			totalPendingBytes += item.ls.pendingBytes
-			item.ls.mutex.Unlock()
+			totalPendingBytes += item.ls.Stat().PendingBytes
 		}
 
 		return []stat.GaugeSubItem{
@@ -194,31 +202,43 @@ func (m *Manager) cleanOnce() {
 	}
 }
 
-func (m *Manager) Acquire(path string) LogStream {
+func (m *Manager) AcquireFile(path string) LogStream {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	return m.acquire0(path)
+	return m.acquire0(path, nil)
 }
 
-func (m *Manager) acquire0(path string) LogStream {
-	i := m.cache[path]
+func (m *Manager) AcquireSls(config SlsConfig) LogStream {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	return m.acquire0(config.BuildKey(), &config)
+}
+
+func (m *Manager) acquire0(key string, sc *SlsConfig) LogStream {
+	i := m.cache[key]
 	if i != nil {
 		i.ref++
 		return i.ls
 	}
 
-	ls := NewFileLogStream(LogInputConfig{
-		Path:           path,
-		MaxLineSize:    m.maxLineSize,
-		MaxIOReadBytes: m.maxIOReadBytes,
-	})
+	var ls *GLogStream
+	if sc != nil {
+		ls = NewSlsLogStream(*sc)
+	} else {
+		ls = NewFileLogStream(FileConfig{
+			Path:           key,
+			MaxLineSize:    DefaultFileConfig.MaxLineSize,
+			MaxIOReadBytes: DefaultFileConfig.MaxIOReadBytes,
+		})
+	}
 	ls.Start()
-	i = &cacheItem{
+	i = &managerCachedItem{
 		ref: 1,
 		ls:  ls,
 	}
-	m.cache[path] = i
+	m.cache[key] = i
 	return i.ls
 }
 
@@ -251,11 +271,6 @@ func (m *Manager) CleanInvalidRefAfterLoadState() {
 			cache.ls.Stop()
 			continue
 		}
-
-		if len(cache.ls.listeners) != cache.ls.matchesSuccessCount {
-			// TODO fatal error
-			panic("len(cache.ls.listeners) != cache.ls.matchesSuccessCount")
-		}
 	}
 }
 
@@ -266,13 +281,12 @@ func (m *Manager) State() interface{} {
 
 	totalPendingBytes := int64(0)
 	for key, item := range m.cache {
-		totalPendingBytes += item.ls.pendingBytes
-		if item.ls.file != nil {
-			r[key] = map[string]interface{}{
-				"ref":          item.ref,
-				"pendingReads": item.ls.pendingReads,
-				"pendingBytes": item.ls.pendingBytes,
-			}
+		st := item.ls.Stat()
+		totalPendingBytes += st.PendingBytes
+		r[key] = map[string]interface{}{
+			"ref":          item.ref,
+			"pendingReads": st.PendingReads,
+			"pendingBytes": st.PendingBytes,
 		}
 	}
 

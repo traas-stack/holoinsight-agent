@@ -13,19 +13,36 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	ModeLine     Mode = "line"
+	ModeLogGroup Mode = "loggroup"
+)
+
 type (
+	Mode      string
 	LogStream interface {
 		Start()
 		Stop()
-		Read(*ReadRequest) (*ReadResponse, int64, error)
+		Read(int64) (*ReadResponse, int64, error)
 		AddListener(Listener) int64
 		RemoveListener(Listener, int64)
 		Stat() Stat
 		Clean()
-		// LoadReadState should be called during loading state when new agent start.
-		// Every LogPipeline holds several 'Cursor' of LogStream s.
-		// Called this method to check if these cursors are still valid after loading state.
-		LoadReadState(readState *LoadReadState) error
+		LoadReadState(cursor int64) error
+	}
+	LogStreamState interface {
+		SaveState() (interface{}, error)
+		LoadState(interface{}) error
+	}
+	Reader interface {
+		// Returns current cursor
+		Cursor() int64
+		LoadReadState(int64) error
+		// Read
+		Read() (*ReadResponse, error)
+		// Set listener
+		SetListener(Listener)
+		Release()
 	}
 	Stat struct {
 		LatestCursor int64
@@ -33,58 +50,56 @@ type (
 		PendingReads int32
 	}
 	Listener interface {
-		Changed(string, LogStream, int64)
+		Changed(LogStream, int64)
 	}
 	ReadRequest struct {
 		Cursor int64
 	}
-	LoadReadState struct {
-		Cursor int64
-		FileId string
-		Offset int64
-	}
+	// ReadResponse. The caller must not modify the structure.
 	ReadResponse struct {
 		// current read cursor
 		Cursor int64
-		// next read cursor
-		NextCursor int64
-		// io(read) start time
+		// io read start time
 		IOStartTime time.Time
+		// io read end time
+		IOEndTime time.Time
 		// error when read (such as 'no such file or directory')
-		Error error
+		error error
 
-		// 这里不会合并多行, 也不会解析时间戳, 需要上层自己去处理
-		Lines []string `json:"-"`
+		Lines     []string `json:"-"`
+		LogGroups []*LogGroup
 
-		// 数据是否是连续的
-		// 我们规定第一个PullResult总是连续的
-		Continued bool
-		// whether file has more available data to read
-		HasMore bool
+		// Whether the next data can be read immediately
+		HasMore   bool
+		HasBroken bool
 
-		// 如果为true表示已经日志流已经结束
-		Finished bool
-
-		// 一些内部信息, 可以依赖他们去调试
-		HasBroken  bool
-		HasBuffer  bool
-		FileLength int64
-		FileId     string
-		Path       string
-
-		BeginOffset int64
-		EndOffset   int64
-
-		// 剩余可读次数
-		remainCount int32
+		Path string
+		// The number of bytes read.
+		// For some implementations, this value may be inaccurate.
+		Bytes int64
+		Count int
+		// Use a string to describe the scope of this read.
+		Range string
 
 		decodeMutex  sync.Mutex
 		decodedCache map[string][]string
 	}
+	cachedRead struct {
+		pendingReads int32
+		resp         *ReadResponse
+	}
+	LogGroup struct {
+		Tags map[string]string
+		Logs []*Log
+	}
+	Log struct {
+		Time     int64
+		Contents map[string]string
+	}
 )
 
-func (resp *ReadResponse) Bytes() int64 {
-	return resp.EndOffset - resp.BeginOffset
+func (resp *ReadResponse) IsEmpty() bool {
+	return len(resp.Lines) == 0 && len(resp.LogGroups) == 0
 }
 
 // GetDecodedLines returns lines decoded using specified charset
@@ -94,8 +109,6 @@ func (resp *ReadResponse) GetDecodedLines(charset string) ([]string, error) {
 		return resp.Lines, nil
 	}
 
-	// TODO AUTO detect from data ?
-
 	supportedEncoding := text.GetEncoding(charset)
 	if supportedEncoding == nil {
 		return nil, errors.New("unsupported charset: " + charset)
@@ -104,6 +117,7 @@ func (resp *ReadResponse) GetDecodedLines(charset string) ([]string, error) {
 	resp.decodeMutex.Lock()
 	defer resp.decodeMutex.Unlock()
 
+	// lazy init
 	if resp.decodedCache == nil {
 		resp.decodedCache = make(map[string][]string)
 	}

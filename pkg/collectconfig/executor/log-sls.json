@@ -1,0 +1,62 @@
+{
+  "json": {
+    "select": {
+      "values": [
+        {
+          "agg": "count",
+          "as": "count"
+        }
+      ]
+    },
+    "from": {
+      "type": "log",
+      "log": {
+        "path": [
+          {
+            "type": "sls"
+          }
+        ]
+      }
+    },
+    "groupBy": {
+      "groups": [
+        {
+          "name": "ip",
+          "elect": {
+            "type": "refName",
+            "refName": {
+              "name": "__source__"
+            }
+          }
+        }
+      ]
+    },
+    "window": {
+      "interval": 60000
+    },
+    "output": {
+      "type": "gateway",
+      "gateway": {
+        "metricName": "sls_count_1"
+      }
+    }
+  },
+  "collectRange": {
+    "type": "cloudmonitor",
+    "cloudmonitor": {
+      "table": "sls_shard",
+      "condition": [
+        {
+          "project": "foo",
+          "logstore": "bar"
+        }
+      ]
+    }
+  },
+  "executorSelector": {
+    "type": "fixed",
+    "fixed": {
+      "agentId": "XXX"
+    }
+  }
+}

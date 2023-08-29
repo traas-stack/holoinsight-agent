@@ -99,7 +99,8 @@ type (
 		Time      *TimeConf         `json:"time"`
 		Multiline *FromLogMultiline `json:"multiline"`
 		// Vars define vars for log processing
-		Vars *Vars `json:"vars,omitempty"`
+		Vars *Vars  `json:"vars,omitempty"`
+		Mode string `json:"mode,omitempty"`
 	}
 	// TODO 用于支持多文件
 	FromLogPaths struct {

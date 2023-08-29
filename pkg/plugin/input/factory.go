@@ -42,7 +42,6 @@ func Parse(inputType string, config Config) (_ api.Input, retErr error) {
 			retErr = fmt.Errorf("parse error %+v", r)
 		}
 	}()
-
 	if f, ok := factories[inputType]; ok {
 		return f(config)
 	}

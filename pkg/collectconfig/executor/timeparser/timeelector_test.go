@@ -186,4 +186,13 @@ func TestNormal(t *testing.T) {
 		assert.Equal(t, int64(1686821051000), te.Parse(ts, s, time.Local))
 		assert.Equal(t, ts.Layout, "2006-01-02T15:04:05 Z07:00")
 	}
+
+	{
+		s := "[18/Aug/2023:10:22:54 +0800] XXX"
+		te, ts := ParseTimeStyle(s)
+		assert.NotNil(t, te)
+		assert.NotNil(t, ts)
+		assert.Equal(t, int64(1692325374000), te.Parse(ts, s, time.Local))
+		assert.Equal(t, ts.Layout, "02/Jan/2006:15:04:05 Z0700")
+	}
 }

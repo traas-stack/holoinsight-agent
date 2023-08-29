@@ -19,6 +19,7 @@ type (
 		RefMetas    map[string]*collectconfig.ElectRegMeta `json:"refMetas,omitempty"`
 		Transform   Transform                              `json:"transform,omitempty"`
 	}
+
 	Transform struct {
 		// MetricPrefix adds a prefix to the original metric name
 		MetricPrefix string `json:"metricPrefix,omitempty"`

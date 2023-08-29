@@ -10,6 +10,7 @@ require (
 	github.com/alibabacloud-go/rds-20140815/v2 v2.1.0
 	github.com/alibabacloud-go/tea v1.1.17
 	github.com/alibabacloud-go/tea-utils v1.4.3
+	github.com/aliyun/aliyun-log-go-sdk v0.1.53
 	github.com/bep/debounce v1.2.1
 	github.com/containerd/containerd v1.5.13
 	github.com/containerd/typeurl v1.0.2
@@ -28,6 +29,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/common v0.37.0
 	github.com/prometheus/prometheus v1.8.2-0.20210430082741-2a4b8e12bbf2
+	github.com/rs/dnscache v0.0.0-20230804202142-fc85eb664529
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d
 	github.com/shirou/gopsutil/v3 v3.22.4
 	github.com/spf13/cast v1.4.1
@@ -67,6 +69,7 @@ require (
 	github.com/aws/aws-sdk-go v1.44.20 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/caio/go-tdigest v3.1.0+incompatible // indirect
+	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/clbanning/mxj/v2 v2.5.6 // indirect
 	github.com/containerd/cgroups v1.0.3 // indirect
@@ -138,6 +141,7 @@ require (
 	github.com/opencontainers/selinux v1.10.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/philhofer/fwd v1.1.1 // indirect
+	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
@@ -172,6 +176,7 @@ require (
 	google.golang.org/genproto v0.0.0-20220524023933-508584e28198 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.66.6 // indirect
+	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/cri-api v0.20.6 // indirect
 	k8s.io/klog/v2 v2.80.1 // indirect
