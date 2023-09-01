@@ -13,7 +13,7 @@ import (
 
 const (
 	DefaultDialTimeout   = 2 * time.Second
-	DefaultSocketTimeout = 60 * time.Second
+	DefaultSocketTimeout = 3 * time.Minute
 )
 
 type (

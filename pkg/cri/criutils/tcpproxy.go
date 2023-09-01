@@ -30,7 +30,7 @@ func TcpProxy(ctx context.Context, i cri.Interface, c *cri.Container, addr strin
 	ctx2, cancel := context.WithCancel(ctx)
 	ear, err := i.ExecAsync(ctx2, c, cri.ExecRequest{
 		Cmd:   []string{core.HelperToolPath, "tcpProxy"},
-		Env:   []string{"TCPPROXY_ADDR=" + addr, "TCPPROXY_IDLE_TIMEOUT=60s", "NO_JSON_OUTPUT=true"},
+		Env:   []string{"TCPPROXY_ADDR=" + addr, "TCPPROXY_IDLE_TIMEOUT=180s", "NO_JSON_OUTPUT=true"},
 		Input: pin,
 	})
 	if err != nil {
