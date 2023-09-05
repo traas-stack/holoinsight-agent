@@ -5,7 +5,6 @@
 package executor
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig"
 	"github.com/vjeantet/grok"
@@ -24,13 +23,7 @@ type (
 	separatorParser struct {
 		sep string
 	}
-	jsonParser struct {
-	}
 )
-
-func (j *jsonParser) Parse(ctx *LogContext) error {
-	return json.Unmarshal([]byte(ctx.GetLine()), &ctx.columnMap)
-}
 
 func (s *separatorParser) Parse(ctx *LogContext) error {
 	ctx.columns = strings.Split(ctx.GetLine(), s.sep)
