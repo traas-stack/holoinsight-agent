@@ -263,7 +263,11 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 	go func() {
 		if logger.DebugEnabled {
 			for _, data := range datum {
-				logger.Debugz("[consumer] [log] debug emit", zap.String("key", c.key), zap.Any("data", data))
+				logger.Debugz("[consumer] [log] debug emit",
+					zap.String("key", c.key),
+					zap.Time("ts", time.UnixMilli(data.Timestamp)), //
+					zap.Any("tags", data.Tags),
+					zap.Any("value", data.Values))
 			}
 		}
 
@@ -362,16 +366,17 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 		c.watermark = nowMs
 	}
 
-	if !resp.IsEmpty() && logger.DebugEnabled {
+	if logger.DebugEnabled {
 		logger.Debugz("[consumer] [log] digest", //
-			zap.String("key", c.key),                           //
-			zap.String("path", resp.Path),                      //
-			zap.Bool("more", resp.HasMore),                     //
-			zap.Int("count", len(resp.Lines)),                  //
-			zap.String("range", resp.Range),                    //
-			zap.Time("dataTime", time.UnixMilli(maxTs)),        //
-			zap.Time("watermark", time.UnixMilli(c.watermark)), //
-			zap.Error(err),                                     //
+			zap.String("key", c.key),                             //
+			zap.String("path", resp.Path),                        //
+			zap.Bool("more", resp.HasMore),                       //
+			zap.Int("count", resp.Count),                         //
+			zap.String("range", resp.Range),                      //
+			zap.Time("dataTime", time.UnixMilli(maxTs)),          //
+			zap.Time("watermark", time.UnixMilli(c.watermark)),   //
+			zap.Int("cost", int(resp.IOCost()/time.Millisecond)), //
+			zap.Error(err),                                       //
 		)
 	}
 }
@@ -591,8 +596,9 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 					// TODO hardcode
 					if line, ok := log.Contents["content"]; ok {
 						oneLine.SetOneLine(line)
-						ctx.log = oneLine
 					}
+
+					ctx.log = oneLine
 					c.stat.Groups++
 					ctx.tz = tz
 					consumer(ctx)
@@ -877,7 +883,7 @@ func (c *Consumer) executeBeforeParseWhere(ctx *LogContext) bool {
 
 	// When execute 'beforeParseWhere', we treat whole line group as a string.
 	// So many filters don't need to consider the multiline situation.
-	if len(ctx.log.Lines) > 1 {
+	if ctx.log != nil && len(ctx.log.Lines) > 1 {
 		content := strings.Join(ctx.log.Lines, "\n")
 		bak := ctx.log
 		ctx.log = &LogGroup{

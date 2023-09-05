@@ -102,6 +102,10 @@ func (resp *ReadResponse) IsEmpty() bool {
 	return len(resp.Lines) == 0 && len(resp.LogGroups) == 0
 }
 
+func (resp *ReadResponse) IOCost() time.Duration {
+	return resp.IOEndTime.Sub(resp.IOStartTime)
+}
+
 // GetDecodedLines returns lines decoded using specified charset
 func (resp *ReadResponse) GetDecodedLines(charset string) ([]string, error) {
 	if charset == "" || charset == text.UTF8 {
