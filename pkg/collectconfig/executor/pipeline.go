@@ -24,7 +24,7 @@ import (
 const (
 	defaultMonitorFileInterval = 10 * time.Second
 	// 默认每10s拉一次日志
-	defaultPullDelay = 2 * time.Second
+	defaultPullDelay = 10 * time.Second
 	// Logs generated at T1 may not be printed in the log file until T2.
 	// Our system tolerates a delay(T2 - T1) of up to 300.
 	// If the delay exceeds this value, it may cause these delayed data to be ignored.
