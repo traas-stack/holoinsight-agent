@@ -98,7 +98,7 @@ func (o *onePodDiscovery) once(init bool) {
 		tg = o.buildPod(pod.Pod)
 	} else {
 		// delete
-		if !init && o.last == nil {
+		if !init && o.last == nil || pod == nil {
 			return
 		}
 		o.last = nil
