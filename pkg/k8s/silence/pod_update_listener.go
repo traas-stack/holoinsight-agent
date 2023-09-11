@@ -5,7 +5,10 @@
 package silence
 
 import (
+	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
+	"github.com/traas-stack/holoinsight-agent/pkg/meta"
+	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -162,11 +165,28 @@ func (l *PodUpdateListener) OnPodDel(obj interface{}) {
 }
 
 func (l *PodUpdateListener) EnterSilence(pod *v1.Pod) {
-	// TODO report to server side
 	logger.Metaz("[k8s-op] [pod] enter silence", zap.String("ns", pod.Namespace), zap.String("name", pod.Name))
+
+	tags := meta.ExtractPodCommonTags(pod)
+	tags["event"] = "enter"
+	ioc.RegistryService.ReportEventAsync(&pb.ReportEventRequest_Event{
+		EventTimestamp: time.Now().UnixMilli(),
+		EventType:      "DIGEST",
+		PayloadType:    "pod_silence",
+		Tags:           tags,
+	})
+
 }
 
 func (l *PodUpdateListener) LeaveSilence(pod *v1.Pod) {
-	// TODO report to server side
 	logger.Metaz("[k8s-op] [pod] leave silence", zap.String("ns", pod.Namespace), zap.String("name", pod.Name))
+
+	tags := meta.ExtractPodCommonTags(pod)
+	tags["event"] = "leave"
+	ioc.RegistryService.ReportEventAsync(&pb.ReportEventRequest_Event{
+		EventTimestamp: time.Now().UnixMilli(),
+		EventType:      "DIGEST",
+		PayloadType:    "pod_silence",
+		Tags:           tags,
+	})
 }
