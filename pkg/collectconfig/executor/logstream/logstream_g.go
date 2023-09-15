@@ -147,9 +147,15 @@ func (f *GLogStream) RemoveListener(listener Listener, cursor int64) {
 
 	listeners := make([]Listener, 0, len(f.Listeners))
 	for _, l := range f.Listeners {
+		// The implementations of Listener must not be empty structs.
+		// They will result in same object address when their instances are converted to Listener interface,
+		// which leads to the following 'l!=listener' always returns false
 		if l != listener {
 			listeners = append(listeners, l)
 		}
+	}
+	if x := len(f.Listeners) - len(listeners); x > 1 {
+		logger.Errorz("remove multi listeners", zap.String("key", f.Key), zap.Int("old", len(f.Listeners)), zap.Int("new", len(listeners)))
 	}
 	f.Listeners = listeners
 

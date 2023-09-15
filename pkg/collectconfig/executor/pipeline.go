@@ -35,7 +35,9 @@ const (
 )
 
 type (
-	listenerImpl struct{}
+	listenerImpl struct {
+		_ int
+	}
 
 	// LogPipeline is responsible for detecting log inputs(see inputsManager) , scheduling pulling logs task, and put logs to consumer.
 	LogPipeline struct {
@@ -162,7 +164,6 @@ func (iw *inputWrapper) read() (*logstream.ReadResponse, int64, error) {
 
 func (l *listenerImpl) Changed(ls logstream.LogStream, lcursor int64) {
 }
-
 func (p *LogPipeline) Key() string {
 	return p.st.CT.Key
 }
