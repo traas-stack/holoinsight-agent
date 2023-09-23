@@ -197,7 +197,7 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) bool {
 						"maxCount": c.parent.task.Select.LogSamples.MaxCount,
 						"samples": []interface{}{
 							map[string]interface{}{
-								"hostname": tags[c.parent.getTargetHostname()],
+								"hostname": c.parent.getTargetHostname(),
 								"logs":     v.LogSamples,
 							},
 						},
