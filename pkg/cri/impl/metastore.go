@@ -5,6 +5,7 @@
 package impl
 
 import (
+	"fmt"
 	"github.com/jpillora/backoff"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
@@ -31,8 +32,9 @@ type (
 		containerMap         map[string]*cachedContainer
 		shortCidContainerMap map[string]*cachedContainer
 		// podByKey pod map by key("${ns}/${pod}")
-		podByKey map[string]*cri.Pod
-		podByUID map[types.UID]*cri.Pod
+		podByKey       map[string]*cri.Pod
+		podByUID       map[types.UID]*cri.Pod
+		podBySandboxId map[string]*cri.Pod
 	}
 
 	cachedContainer struct {
@@ -82,6 +84,14 @@ func (e *defaultMetaStore) LocalAgentMeta() cri.LocalAgentMeta {
 
 func (e *defaultMetaStore) GetAllPods() []*cri.Pod {
 	return e.state.pods
+}
+
+func (e *defaultMetaStore) GetPodBySandboxId(sandboxId string) (*cri.Pod, error) {
+	pod, ok := e.state.podBySandboxId[sandboxId]
+	if ok {
+		return pod, nil
+	}
+	return nil, fmt.Errorf("no pod sandboxId=[%s]", sandboxId)
 }
 
 func (e *defaultMetaStore) GetContainerByCid(cid string) (*cri.Container, bool) {
@@ -155,6 +165,7 @@ func newInternalState() *internalState {
 		shortCidContainerMap: make(map[string]*cachedContainer),
 		podByKey:             make(map[string]*cri.Pod),
 		podByUID:             make(map[types.UID]*cri.Pod),
+		podBySandboxId:       make(map[string]*cri.Pod),
 	}
 }
 
@@ -168,11 +179,11 @@ func (s *internalState) build() {
 		}
 		s.podByKey[pod.Namespace+"/"+pod.Name] = pod
 		s.podByUID[pod.UID] = pod
-
 		for _, container := range pod.All {
 			cri.SortMountPointsByLongSourceFirst(container.Mounts)
 		}
 		if pod.Sandbox != nil {
+			s.podBySandboxId[pod.Sandbox.Id] = pod
 			for _, container := range pod.All {
 				if pod.Sandbox != container {
 					container.NetworkMode = pod.Sandbox.NetworkMode
