@@ -30,6 +30,10 @@ type (
 		// Returns an error if not found.
 		GetPod(namespace, podName string) (*Pod, error)
 
+		// GetPod queries one local pod by its sandbox id.
+		// Returns an error if not found.
+		GetPodBySandboxId(sandboxId string) (*Pod, error)
+
 		// GetContainerByCid queries one container by cid
 		GetContainerByCid(cid string) (*Container, bool)
 
