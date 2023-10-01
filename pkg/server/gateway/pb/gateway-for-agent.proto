@@ -135,6 +135,7 @@ message WriteMetricsRequestV4 {
     string ref_target_key = 3;
     // 数据结果, 使用表的形式
     Table table = 4;
+    map<string, string> extension = 5;
   }
 
   message Table {
@@ -142,6 +143,8 @@ message WriteMetricsRequestV4 {
     Header header = 1;
     // 每个行就是一个维度组合的聚合结果
     repeated Row rows = 2;
+    // if timestamp > 0, then all rows use this same timestamp
+    int64 timestamp = 3;
   }
 
   // 表头
