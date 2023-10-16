@@ -72,13 +72,13 @@ func (c *gatewayOutput) Stop() {
 }
 
 func (c *gatewayOutput) WriteBatchAsync(configKey, targetKey, metricName string, array []*model.DetailData) error {
-	batch := convertToTaskResult2(configKey, targetKey, metricName, array)
+	batch := convertToTaskResult2(configKey, targetKey, metricName, array, nil)
 	go GetWriteService().WriteV4(context.Background(), &WriteV4Request{Batch: batch})
 	return nil
 }
 
-func (c *gatewayOutput) WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData) error {
-	batch := convertToTaskResult2(configKey, targetKey, metricName, array)
+func (c *gatewayOutput) WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData, completeness *output.PeriodCompleteness) error {
+	batch := convertToTaskResult2(configKey, targetKey, metricName, array, completeness)
 	return GetWriteService().WriteV4(context.Background(), &WriteV4Request{Batch: batch})
 }
 
@@ -122,7 +122,7 @@ func getOrCreate(configKey, targetKey, metricName string, taskResultByValueName 
 	return r
 }
 
-func convertToTaskResult2(configKey, targetKey, metricName string, array []*model.DetailData) []*pb.WriteMetricsRequestV4_TaskResult {
+func convertToTaskResult2(configKey, targetKey, metricName string, array []*model.DetailData, completeness *output.PeriodCompleteness) []*pb.WriteMetricsRequestV4_TaskResult {
 	// datum in array must have same tag keys
 
 	taskResultByValueName := make(map[string]*pb.WriteMetricsRequestV4_TaskResult)
@@ -148,10 +148,27 @@ func convertToTaskResult2(configKey, targetKey, metricName string, array []*mode
 		}
 	}
 
-	a := make([]*pb.WriteMetricsRequestV4_TaskResult, 0, len(taskResultByValueName))
+	a := make([]*pb.WriteMetricsRequestV4_TaskResult, 0, len(taskResultByValueName)+1)
 	for _, r := range taskResultByValueName {
 		a = append(a, r)
 	}
+
+	if completeness != nil {
+		r := &pb.WriteMetricsRequestV4_TaskResult{
+			Key:           configKey + "/" + targetKey,
+			RefCollectKey: configKey,
+			RefTargetKey:  targetKey,
+			Table: &pb.WriteMetricsRequestV4_Table{
+				Timestamp: completeness.TS,
+			},
+			Timestamp: completeness.TS,
+			Completeness: &pb.WriteMetricsRequestV4_Completeness{
+				Ok: completeness.OK,
+			},
+		}
+		a = append(a, r)
+	}
+
 	return a
 }
 
