@@ -320,6 +320,7 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 	if err := b.setupCRI(); err != nil {
 		return err
 	}
+	b.AddStopComponents(ioc.Crii)
 
 	// system metrics
 	{
@@ -355,7 +356,7 @@ func (b *AgentBootstrap) setupDaemonAgent() error {
 	bsm := bistream.NewManager(ioc.RegistryService, bizbistream.GetBiStreamHandlerRegistry())
 
 	b.TM = manager.NewTransferManager(b.PM, b.LSM)
-	b.TM.AddStopComponents(b.httpServerComponent, ctm, bsm, b.AM)
+	b.TM.AddStopComponents(b.httpServerComponent, ctm, bsm, b.AM, ioc.Crii)
 	if err := b.TM.Transfer(); err != nil {
 		logger.Errorz("[transfer] error", zap.Error(err))
 	}
