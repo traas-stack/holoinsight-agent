@@ -39,7 +39,7 @@ func (c *ConsoleOutput) WriteBatchAsync(configKey, targetKey, metricName string,
 	return nil
 }
 
-func (c *ConsoleOutput) WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData) error {
+func (c *ConsoleOutput) WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData, _ *output.PeriodCompleteness) error {
 	return nil
 }
 

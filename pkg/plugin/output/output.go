@@ -13,10 +13,16 @@ type (
 	Output interface {
 		WriteMetricsV1([]*model.Metric, Extension)
 
-		WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData) error
+		WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData, c *PeriodCompleteness) error
 	}
 	composite struct {
 		array []Output
+	}
+	PeriodCompleteness struct {
+		Valid  bool
+		TS     int64
+		OK     bool
+		Target map[string]string
 	}
 )
 
@@ -26,9 +32,9 @@ func (c *composite) WriteMetricsV1(metrics []*model.Metric, extension Extension)
 	}
 }
 
-func (c *composite) WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData) error {
+func (c *composite) WriteBatchV4(configKey, targetKey, metricName string, array []*model.DetailData, pc *PeriodCompleteness) error {
 	for _, output := range c.array {
-		output.WriteBatchV4(configKey, targetKey, metricName, array)
+		output.WriteBatchV4(configKey, targetKey, metricName, array, pc)
 	}
 	return nil
 }

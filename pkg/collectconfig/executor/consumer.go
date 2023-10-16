@@ -247,14 +247,6 @@ func (c *Consumer) getTargetHostname() string {
 }
 
 func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailData) {
-	if len(datum) == 0 {
-		c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
-			status.EmitSuccess = true
-			c.reportUpEvent(expectedTs, status)
-		})
-		return
-	}
-
 	if !c.addCommonTags(datum) {
 		logger.Errorz("[consumer] [log] fail to add common tags to metrics", zap.String("key", c.key))
 		return
@@ -271,7 +263,16 @@ func (c *Consumer) AddBatchDetailDatus(expectedTs int64, datum []*model.DetailDa
 			}
 		}
 
-		err := c.output.WriteBatchV4(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum)
+		ps := c.getOrCreatePeriodStatusWithoutLock(expectedTs)
+		ok := ps.Watermark >= expectedTs+c.Window.Interval.Milliseconds() &&
+			c.firstIOSuccessTime < expectedTs
+
+		pc := &output.PeriodCompleteness{
+			TS:     expectedTs,
+			OK:     ok,
+			Target: c.ct.Target.Meta,
+		}
+		err := c.output.WriteBatchV4(c.ct.Config.Key, c.ct.Target.Key, c.metricName, datum, pc)
 		c.runInLock(func() {
 			c.updatePeriodStatus(expectedTs, func(status *PeriodStatus) {
 				if err != nil {

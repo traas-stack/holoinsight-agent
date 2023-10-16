@@ -13,6 +13,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"go.uber.org/zap"
+	"strings"
 	"time"
 )
 
@@ -101,7 +102,19 @@ func (b *batchConsumerV4) Consume(a []interface{}) {
 		}
 	}
 	begin := time.Now()
-	resp, err := b.gw.WriteMetrics(ctx, taskResults)
+
+	var err error
+	var resp *pb.WriteMetricsResponse
+
+	for i := 0; i < 3; i++ {
+		resp, err = b.gw.WriteMetrics(ctx, taskResults)
+		if err != nil && strings.Contains(err.Error(), "connection refused") {
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		break
+	}
+
 	cost := time.Now().Sub(begin)
 	if err == nil && resp.Header.Code != 0 {
 		err = fmt.Errorf("server error %+v", resp.Header)
