@@ -831,7 +831,8 @@ func (e *defaultCri) firePodChange() {
 func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *internalState, newStateLock *sync.Mutex, containersByPod map[string][]*cri.EngineDetailContainer) (*cri.Pod, int, bool, error) {
 
 	criPod := &cri.Pod{
-		Pod: pod,
+		Pod:      pod,
+		Hostname: k8smetaextractor.DefaultPodMetaService.ExtractHostname(pod),
 	}
 
 	// Get all containers belonging to this pod, including exited containers

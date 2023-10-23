@@ -44,7 +44,8 @@ type (
 		Biz     []*Container `json:"biz"`
 		Sidecar []*Container `json:"sidecar"`
 		// Sandbox container
-		Sandbox *Container `json:"sandbox"`
+		Sandbox  *Container `json:"sandbox"`
+		Hostname string     `json:"hostname"`
 	}
 	Container struct {
 		// container 可能会依赖底层实现, 因此这里不让它依赖具体的实现类
