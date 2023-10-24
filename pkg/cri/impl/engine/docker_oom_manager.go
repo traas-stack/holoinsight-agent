@@ -18,6 +18,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"time"
 )
 
@@ -135,20 +136,35 @@ func (m *OOMManager) emitLoop() {
 
 func (m *OOMManager) emitOOMMetrics(emitTime time.Time) {
 	record := m.oomRecoder.getAndClear()
-	if len(record) == 0 {
-		return
-	}
 
 	// k8s_pod_oom
 	var metrics []*model.Metric
+
+	processed := make(map[k8stypes.UID]struct{})
 	for _, item := range record {
 		tags := meta.ExtractContainerCommonTags(item.container)
+		processed[item.container.Pod.UID] = struct{}{}
 
 		metrics = append(metrics, &model.Metric{
 			Name:      "k8s_pod_oom",
 			Tags:      tags,
 			Timestamp: emitTime.UnixMilli(),
 			Value:     float64(item.count),
+		})
+	}
+	pods := m.CRI.GetAllPods()
+	for _, pod := range pods {
+		if _, ok := processed[pod.UID]; ok {
+			continue
+		}
+		processed[pod.UID] = struct{}{}
+		tags := meta.ExtractPodCommonTags(pod.Pod)
+		tags["container"] = "-"
+		metrics = append(metrics, &model.Metric{
+			Name:      "k8s_pod_oom",
+			Tags:      tags,
+			Timestamp: emitTime.UnixMilli(),
+			Value:     float64(0),
 		})
 	}
 
