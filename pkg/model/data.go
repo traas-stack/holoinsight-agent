@@ -43,6 +43,20 @@ type (
 		Ip   string
 		Port int
 	}
+	Table struct {
+		Name   string  `json:"name"`
+		Header *Header `json:"header"`
+		Rows   []*Row  `json:"rows"`
+	}
+	Header struct {
+		TagKeys   []string `json:"tagKeys"`
+		FieldKeys []string `json:"fieldKeys"`
+	}
+	Row struct {
+		Timestamp   int64     `json:"timestamp"`
+		TagValues   []string  `json:"tagValues"`
+		FieldValues []float64 `json:"fieldValues"`
+	}
 )
 
 func (a Addr) String() string {

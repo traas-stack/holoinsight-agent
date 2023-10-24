@@ -77,6 +77,7 @@ type (
 		Groups      []*Group         `json:"groups"`
 		MaxKeySize  int              `json:"maxKeySize"`
 		LogAnalysis *LogAnalysisConf `json:"logAnalysis"`
+		Details     *Details         `json:"details"`
 	}
 	Window struct {
 		// 5s 5000
@@ -313,6 +314,10 @@ type (
 	MetricConfig struct {
 		Name       string `json:"name"`
 		MetricType string `json:"metricType"`
+	}
+	Details struct {
+		// If Enabled is true, the elect results will be reported as details
+		Enabled bool `json:"enabled"`
 	}
 )
 

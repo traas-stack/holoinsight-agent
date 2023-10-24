@@ -14,5 +14,6 @@ type (
 		// Returns true if data is not empty
 		Emit(expectedTs int64) bool
 		init()
+		MaybeFlush()
 	}
 )

@@ -26,6 +26,9 @@ type (
 	}
 )
 
+func (c *logAnalysisSubConsumer) MaybeFlush() {
+}
+
 func init() {
 	gob.Register(&logAnalysisSubConsumerState{})
 }
