@@ -1185,6 +1185,10 @@ func (c *Consumer) LoadState(state *consumerStateObj) error {
 	return nil
 }
 
+func (c *Consumer) maybeFlush() {
+	c.sub.MaybeFlush()
+}
+
 func removeZeroNumbers(event *pb2.ReportEventRequest_Event) {
 	for key, value := range event.Numbers {
 		if key != "ok" && value == 0 {

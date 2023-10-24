@@ -108,6 +108,8 @@ func parseConsumer(st *api.SubTask) (*Consumer, error) {
 		if err != nil {
 			return nil, err
 		}
+	} else if task.GroupBy.Details != nil && task.GroupBy.Details.Enabled {
+		sub = &detailConsumer{}
 	} else {
 		sub = &logStatSubConsumer{}
 	}

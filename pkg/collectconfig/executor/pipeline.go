@@ -494,6 +494,7 @@ func (p *LogPipeline) pullAndConsume() {
 			// give up scheduling
 			runtime.Gosched()
 		}
+		p.consumer.maybeFlush()
 	}
 }
 

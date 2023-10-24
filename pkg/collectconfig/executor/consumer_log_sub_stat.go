@@ -21,6 +21,9 @@ type (
 	}
 )
 
+func (c *logStatSubConsumer) MaybeFlush() {
+}
+
 func (c *logStatSubConsumer) init() {
 }
 
