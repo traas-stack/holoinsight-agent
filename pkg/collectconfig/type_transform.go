@@ -20,6 +20,7 @@ type (
 		ConstV1         *TransformFilterConstV1         `json:"constV1" yaml:"constV1"`
 		RegexpReplaceV1 *TransformFilterRegexpReplaceV1 `json:"regexpReplaceV1" yaml:"regexpReplaceV1"`
 		DiscardV1       *struct{}                       `json:"discardV1" yaml:"discardV1"`
+		CleanUrlV1      *TransformFilterCleanUrlV1      `json:"cleanUrlV1" yaml:"cleanUrlV1"`
 	}
 	// TransformFilterAppendV1 represents appending suffix to the current value
 	TransformFilterAppendV1 struct {
@@ -68,5 +69,7 @@ type (
 	TransformFilterRegexpReplaceV1 struct {
 		Expression  string `json:"expression,omitempty" yaml:"expression"`
 		Replacement string `json:"replacement,omitempty" yaml:"replacement"`
+	}
+	TransformFilterCleanUrlV1 struct {
 	}
 )

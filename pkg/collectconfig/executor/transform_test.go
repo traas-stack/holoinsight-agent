@@ -184,3 +184,17 @@ func TestTransform_regexp2(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "HoloinsightXXX", ret)
 }
+
+func TestTransform_cleanurl(t *testing.T) {
+	c, err := loadTransformFilter("transforms/cleanurl.yaml")
+	assert.NoError(t, err)
+	assert.NotNil(t, c)
+
+	ret, err := c.Filter(&LogContext{contextValue: "https://example.org/a/b?c=d"})
+	assert.NoError(t, err)
+	assert.Equal(t, "/a/b", ret)
+
+	ret, err = c.Filter(&LogContext{contextValue: "/a/b?c=d"})
+	assert.NoError(t, err)
+	assert.Equal(t, "/a/b", ret)
+}
