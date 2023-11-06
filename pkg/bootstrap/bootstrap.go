@@ -389,6 +389,9 @@ func (b *AgentBootstrap) setupSidecarAgent() error {
 		return err
 	}
 
+	om := openmetric.NewManager(ctm)
+	om.Start()
+
 	lsm := logstream.NewManager()
 	b.LSM = lsm
 

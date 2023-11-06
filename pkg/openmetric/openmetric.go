@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/impl/netproxy"
 	"go.uber.org/zap"
@@ -192,6 +193,26 @@ func (m *Manager) Start() {
 		m.jobs[t.Key] = scrapeConfig
 		changed = true
 	}
+
+	m.jobs["dcgm"] = &config.ScrapeConfig{
+		JobName:         "dcgm",
+		HonorLabels:     true,
+		HonorTimestamps: false,
+		Params:          nil,
+		ScrapeInterval:  model.Duration(5 * time.Second),
+		ScrapeTimeout:   model.Duration(5 * time.Second),
+		MetricsPath:     "/metrics",
+		Scheme:          "http",
+		SampleLimit:     0,
+		TargetLimit:     0,
+		ServiceDiscoveryConfigs: discovery.Configs{
+			&dcgmConfig{},
+		},
+		RelabelConfigs:       []*relabel.Config{},
+		MetricRelabelConfigs: nil,
+	}
+
+	changed = true
 	//
 	//logger.Infoz("[openmetric] add kubernetes-pod")
 	//
