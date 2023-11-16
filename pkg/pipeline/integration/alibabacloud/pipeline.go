@@ -410,8 +410,8 @@ func (p *Pipeline) collectOneMetric(traceId string, ams *alibabacloud.AliyunMetr
 	// 遍历每种聚合方式 (一般只有一个, 比如 average)
 	for _, aggregation := range conf.metricConf.Aggregations {
 		convertedName := fmt.Sprintf("%s_%s_%s_%s", prefix, //
-			strings.ReplaceAll(conf.namespaceMetrics.Name, "-", "_"), //
-			conf.metricConf.ConvertedMetricName, aggregation)         //
+			strings.ReplaceAll(conf.namespaceMetrics.Namespace, "-", "_"), //
+			conf.metricConf.ConvertedMetricName, aggregation)              //
 		for _, aliyunMetric := range aliyunMetrics {
 			aggregationValue, ok := aliyunMetric.Value[aggregation]
 			if !ok {
