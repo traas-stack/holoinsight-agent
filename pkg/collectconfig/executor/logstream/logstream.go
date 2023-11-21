@@ -80,6 +80,8 @@ type (
 		Count int
 		// Use a string to describe the scope of this read.
 		Range string
+		// Count of \u0000 of this read
+		ZeroBytes int
 
 		decodeMutex  sync.Mutex
 		decodedCache map[string][]string
