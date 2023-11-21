@@ -119,6 +119,7 @@ type (
 		AggWhereError int32
 		// error count when select
 		SelectError int32
+		ZeroBytes   int
 	}
 
 	ParsedConf struct {
@@ -307,6 +308,7 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 	if err != nil {
 		c.stat.IoError++
 	}
+	c.stat.ZeroBytes += resp.ZeroBytes
 
 	fileNotExists := os.IsNotExist(err)
 	if fileNotExists {
@@ -772,6 +774,7 @@ func (c *Consumer) createStatEvent(stat ConsumerStat) *pb2.ReportEventRequest_Ev
 			"f_where":     int64(stat.FilterWhere),
 			"f_delay":     int64(stat.FilterDelay),
 			"f_multiline": int64(stat.FilterMultiline),
+			"f_zerobytes": int64(stat.ZeroBytes),
 
 			"out_emit":  int64(stat.Emit),
 			"out_error": int64(stat.EmitError),
@@ -815,6 +818,7 @@ func (c *Consumer) printStat() {
 		zap.Bool("miss", stat.Miss),
 		zap.Bool("broken", stat.Broken),
 		zap.Int32("processed", stat.Processed),
+		zap.Int("zerobytes", stat.ZeroBytes),
 		zap.Int32("fwhere", stat.FilterWhere),
 		zap.Int32("fbwhere", stat.FilterBeforeParseWhere),
 		zap.Int32("flogparse", stat.FilterLogParseError),

@@ -5,6 +5,7 @@
 package logstream
 
 import (
+	"bytes"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -13,12 +14,15 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 )
 
 const (
-	expireTimeout = 3 * time.Minute
+	expireTimeout             = 3 * time.Minute
+	DiscardLineWithZeroBytes  = true
+	DiscardZeroBytesThreshold = 4096
 )
 
 type (
@@ -231,6 +235,7 @@ func (f *fileSubLogStream) Read(resp *ReadResponse) error {
 		n, err := f.file.ReadAt(buf, f.offset)
 		resp.IOEndTime = time.Now()
 		buf = buf[:n]
+		resp.ZeroBytes = bytes.Count(buf, []byte{0})
 		if err != nil && err != io.EOF {
 			f.closeFile()
 			logger.Errorz("[logstream] read error", zap.String("path", f.config.Path), zap.Error(err))
@@ -240,7 +245,13 @@ func (f *fileSubLogStream) Read(resp *ReadResponse) error {
 		resp.HasMore = f.offset < fileLength
 
 		var lines []string
-		if f.consumeBytes(buf[:n], func(line string) { lines = append(lines, line) }) {
+		if f.consumeBytes(buf[:n], func(line string) {
+			if DiscardLineWithZeroBytes && strings.Count(line, "\u0000") >= DiscardZeroBytesThreshold {
+				resp.HasBroken = true
+			} else {
+				lines = append(lines, line)
+			}
+		}) {
 			resp.HasBroken = true
 		}
 		resp.Lines = lines
