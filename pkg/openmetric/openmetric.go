@@ -199,7 +199,7 @@ func (m *Manager) Start() {
 		HonorLabels:     true,
 		HonorTimestamps: false,
 		Params:          nil,
-		ScrapeInterval:  model.Duration(5 * time.Second),
+		ScrapeInterval:  model.Duration(time.Minute),
 		ScrapeTimeout:   model.Duration(5 * time.Second),
 		MetricsPath:     "/metrics",
 		Scheme:          "http",
