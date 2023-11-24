@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/impl/netproxy"
 	"go.uber.org/zap"
 	"strings"
@@ -194,22 +196,24 @@ func (m *Manager) Start() {
 		changed = true
 	}
 
-	m.jobs["dcgm"] = &config.ScrapeConfig{
-		JobName:         "dcgm",
-		HonorLabels:     true,
-		HonorTimestamps: false,
-		Params:          nil,
-		ScrapeInterval:  model.Duration(time.Minute),
-		ScrapeTimeout:   model.Duration(5 * time.Second),
-		MetricsPath:     "/metrics",
-		Scheme:          "http",
-		SampleLimit:     0,
-		TargetLimit:     0,
-		ServiceDiscoveryConfigs: discovery.Configs{
-			&dcgmConfig{},
-		},
-		RelabelConfigs:       []*relabel.Config{},
-		MetricRelabelConfigs: nil,
+	if appconfig.StdAgentConfig.Mode == core.AgentModeDaemonset {
+		m.jobs["dcgm"] = &config.ScrapeConfig{
+			JobName:         "dcgm",
+			HonorLabels:     true,
+			HonorTimestamps: false,
+			Params:          nil,
+			ScrapeInterval:  model.Duration(time.Minute),
+			ScrapeTimeout:   model.Duration(5 * time.Second),
+			MetricsPath:     "/metrics",
+			Scheme:          "http",
+			SampleLimit:     0,
+			TargetLimit:     0,
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&dcgmConfig{},
+			},
+			RelabelConfigs:       []*relabel.Config{},
+			MetricRelabelConfigs: nil,
+		}
 	}
 
 	changed = true
