@@ -60,14 +60,14 @@ func (c *detailConsumer) MaybeFlush() {
 		tr.Table.Rows = append(tr.Table.Rows, &pb.WriteMetricsRequestV4_Row{
 			Timestamp:   row.Timestamp,
 			TagValues:   row.TagValues,
-			ValueValues: nil,
+			ValueValues: pbValueValues,
 		})
 	}
 
 	begin := time.Now()
 	err := gateway.GetWriteService().WriteV4(context.Background(), &gateway.WriteV4Request{Batch: []*pb.WriteMetricsRequestV4_TaskResult{tr}})
 	sendCost := time.Since(begin)
-	logger.Infoz("detail", zap.Int("count", len(c.table.Rows)), zap.Duration("sendCost", sendCost), zap.Error(err))
+	logger.Infoz("detail", zap.String("key", c.parent.key), zap.Int("count", len(c.table.Rows)), zap.Duration("sendCost", sendCost), zap.Error(err))
 	c.table = nil
 }
 
