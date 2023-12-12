@@ -366,6 +366,11 @@ func (e *defaultCri) setupTimezone(ctx context.Context, c *cri.Container) {
 	}
 
 	c.Tz.Zone, c.Tz.Offset = time.Now().In(c.Tz.TzObj).Zone()
+
+	// when /etc/localtime is a regular file, we need to fix name
+	if c.Tz.Zone == "UTC" {
+		c.Tz.Name = "UTC"
+	}
 }
 
 func (e *defaultCri) getEtcTimezone0(ctx context.Context, c *cri.Container) (string, *time.Location, error) {
