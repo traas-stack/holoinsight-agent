@@ -171,7 +171,7 @@ func (tm *TransferManager) loadState(stateStore *transfer.MemoryStateStore) erro
 			return err
 		}
 		if storeVersion != cast.ToString(stateVersion) {
-			return fmt.Errorf("old state has different version, version=%s repected=%s", cast.ToString(stateVersion), storeVersion)
+			return fmt.Errorf("old state has different version, version=%s epected=%s", cast.ToString(stateVersion), storeVersion)
 		}
 	}
 
