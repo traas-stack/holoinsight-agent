@@ -122,6 +122,7 @@ type (
 		Runtime     string
 		NetworkMode string
 		MergedDir   string
+		LogPath     string
 		Mounts      []*MountPoint
 		State       ContainerState
 	}

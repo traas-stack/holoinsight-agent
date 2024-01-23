@@ -125,8 +125,7 @@ func (e *DryRunExecutor) processLines(evt *event.Event, consumer *Consumer, fatp
 	}
 	mockIw := &inputWrapper{
 		inputStateObj: inputStateObj{
-			Path:     fatpath.Path,
-			PathTags: fatpath.Tags,
+			FatPath: fatpath,
 		},
 	}
 	consumer.debugEvent = evt.AddChild("consume")

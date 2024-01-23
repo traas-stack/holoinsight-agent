@@ -38,5 +38,5 @@ func (l *logStreamReaderImpl) SetListener(listener Listener) {
 }
 
 func (l *logStreamReaderImpl) Release() {
-	l.m.Release(l.key, l.ls)
+	l.m.Release(l.ls)
 }

@@ -113,6 +113,8 @@ func (e *DockerContainerEngine) GetContainerDetail(ctx context.Context, cid stri
 		})
 	}
 
+	detail.LogPath = i.LogPath
+
 	return detail, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/biztypes"
 	"github.com/traas-stack/holoinsight-agent/pkg/bistream/cmds/previewlog"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	commonpb "github.com/traas-stack/holoinsight-agent/pkg/server/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"google.golang.org/protobuf/proto"
@@ -36,9 +37,15 @@ func previewFile0(reqBytes []byte, resp *pb.PreviewFileResponse) error {
 	if _, container, err := getPodContainer(req.Header); err != nil {
 		return err
 	} else if container != nil {
-		hostPath, err := cri.TransferToHostPathForContainer(container, req.Path, true)
-		if err != nil {
-			return err
+		var hostPath string
+		isDockerJsonLog := req.Path == dockerutils.DockerJsonLogFile
+		if isDockerJsonLog {
+			hostPath = container.LogPath
+		} else {
+			hostPath, err = cri.TransferToHostPathForContainer(container, req.Path, true)
+			if err != nil {
+				return err
+			}
 		}
 
 		req2 := &pb.PreviewFileRequest{}
@@ -46,7 +53,15 @@ func previewFile0(reqBytes []byte, resp *pb.PreviewFileResponse) error {
 		req2.Path = hostPath
 
 		resp.Timezone = container.GetTzName()
-		return trimErrorPathInfo(previewlog.PreviewFile(req2, resp), hostPath, req.Path)
+		err = previewlog.PreviewFile(req2, resp)
+		if err == nil && isDockerJsonLog {
+			for i := range resp.Content {
+				if dl, err := dockerutils.DecodeJsonLog(resp.Content[i]); err == nil {
+					resp.Content[i] = dl.Log
+				}
+			}
+		}
+		return trimErrorPathInfo(err, hostPath, req.Path)
 	}
 
 	return previewlog.PreviewFile(req, resp)

@@ -5,5 +5,6 @@
 package dockerutils
 
 const (
-	MergedDir = "MergedDir"
+	MergedDir           = "MergedDir"
+	AttrIsDockerJsonLog = "isDockerJsonLog"
 )

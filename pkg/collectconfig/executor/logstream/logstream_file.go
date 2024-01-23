@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/utils"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"go.uber.org/zap"
 	"io"
@@ -30,6 +31,8 @@ type (
 		Path           string
 		MaxLineSize    int
 		MaxIOReadBytes int64
+		// https://docs.docker.com/config/containers/logging/json-file/
+		IsDockerJsonLog bool
 	}
 	fileSubLogStream struct {
 		g      *GLogStream
@@ -70,7 +73,7 @@ func init() {
 	gob.Register(&fileStateObj{})
 }
 
-func NewFileLogStream(config FileConfig) *GLogStream {
+func NewFileLogStream(key string, config FileConfig) *GLogStream {
 	if config.MaxIOReadBytes < DefaultFileConfig.MaxIOReadBytes {
 		config.MaxIOReadBytes = DefaultFileConfig.MaxIOReadBytes
 	}
@@ -78,7 +81,7 @@ func NewFileLogStream(config FileConfig) *GLogStream {
 		config.MaxLineSize = DefaultFileConfig.MaxLineSize
 	}
 
-	g := &GLogStream{Key: config.Path}
+	g := &GLogStream{Key: key}
 	sub := &fileSubLogStream{
 		g:      g,
 		config: config,
@@ -249,6 +252,11 @@ func (f *fileSubLogStream) Read(resp *ReadResponse) error {
 			if DiscardLineWithZeroBytes && strings.Count(line, "\u0000") >= DiscardZeroBytesThreshold {
 				resp.HasBroken = true
 			} else {
+				if f.config.IsDockerJsonLog {
+					if dl, err := dockerutils.DecodeJsonLog(line); err == nil {
+						line = dl.Log
+					}
+				}
 				lines = append(lines, line)
 			}
 		}) {

@@ -8,11 +8,14 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/transfer"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"go.uber.org/zap"
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -32,8 +35,10 @@ type (
 		cache map[string]*managerCachedItem
 	}
 	managerCachedItem struct {
-		ref int32
-		ls  *GLogStream
+		ref   int32
+		ls    *GLogStream
+		path  string
+		attrs map[string]string
 	}
 	// Manager state obj for gob
 	managerStateObj struct {
@@ -41,6 +46,8 @@ type (
 	}
 	cachedLogStreamStateObj struct {
 		Key            string
+		Path           string
+		Attrs          map[string]string
 		SlsConfig      *SlsConfig
 		LogStreamState interface{}
 	}
@@ -72,7 +79,7 @@ func (m *Manager) StopAndSaveState(store transfer.StateStore) error {
 
 	state := &managerStateObj{}
 
-	for k, v := range m.cache {
+	for lsKey, v := range m.cache {
 		if s, err := v.ls.SaveState(); err == nil {
 			// s == nil means nothing to save
 			if s != nil {
@@ -81,14 +88,16 @@ func (m *Manager) StopAndSaveState(store transfer.StateStore) error {
 					sc = &x.config
 				}
 				state.Cache = append(state.Cache, &cachedLogStreamStateObj{
-					Key:            k,
+					Key:            lsKey,
+					Path:           v.path,
+					Attrs:          v.attrs,
 					SlsConfig:      sc,
 					LogStreamState: s,
 				})
-				logger.Infoz("[transfer] [logstream] stream save state success", zap.String("key", k))
+				logger.Infoz("[transfer] [logstream] stream save state success", zap.String("key", lsKey))
 			}
 		} else {
-			logger.Errorz("[transfer] [logstream] stream save state error", zap.String("key", k), zap.Error(err))
+			logger.Errorz("[transfer] [logstream] stream save state error", zap.String("key", lsKey), zap.Error(err))
 		}
 	}
 
@@ -113,18 +122,17 @@ func (m *Manager) LoadState(store transfer.StateStore) error {
 	}
 
 	for _, ms := range state.Cache {
-		key := ms.Key
 		// We first load the LogStream. Now its ref is 1.
-		ls := m.acquire0(key, ms.SlsConfig)
+		ls := m.acquire0(ms.Path, ms.Attrs, ms.SlsConfig)
 		if x, ok := ls.(LogStreamState); ok {
 			if err := x.LoadState(ms.LogStreamState); err != nil {
-				m.release0(key, ls)
-				logger.Errorz("[transfer] [logstream] stream load state error", zap.String("key", key), zap.Error(err))
+				m.release0(ls)
+				logger.Errorz("[transfer] [logstream] stream load state error", zap.String("key", ls.GetKey()), zap.Error(err))
 			} else {
-				logger.Infoz("[transfer] [logstream] stream load state success", zap.String("key", key))
+				logger.Infoz("[transfer] [logstream] stream load state success", zap.String("key", ls.GetKey()))
 			}
 		} else {
-			logger.Infoz("[transfer] [logstream] skip load state", zap.String("key", key))
+			logger.Infoz("[transfer] [logstream] skip load state", zap.String("key", ms.Key))
 		}
 	}
 
@@ -202,22 +210,46 @@ func (m *Manager) cleanOnce() {
 	}
 }
 
-func (m *Manager) AcquireFile(path string) LogStream {
+// AcquireFile returns a File LogStream
+func (m *Manager) AcquireFile(path string, attrs map[string]string) LogStream {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	return m.acquire0(path, nil)
+	return m.acquire0(path, attrs, nil)
+}
+
+func buildFileKey(path string, attrs map[string]string) string {
+	if len(attrs) == 0 {
+		return path
+	}
+	keys := make([]string, 0, len(attrs))
+	for key := range attrs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	sb := strings.Builder{}
+	sb.WriteString(path)
+	sb.WriteByte(';')
+	for _, key := range keys {
+		sb.WriteString(key)
+		sb.WriteByte('=')
+		sb.WriteString(attrs[key])
+		sb.WriteByte(';')
+	}
+	// ${path};${key1}=${value1};${key2}=${value2};
+	return sb.String()
 }
 
 func (m *Manager) AcquireSls(config SlsConfig) LogStream {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	return m.acquire0(config.BuildKey(), &config)
+	return m.acquire0(config.BuildKey(), nil, &config)
 }
 
-func (m *Manager) acquire0(key string, sc *SlsConfig) LogStream {
-	i := m.cache[key]
+func (m *Manager) acquire0(path string, attrs map[string]string, sc *SlsConfig) LogStream {
+	lsKey := buildFileKey(path, attrs)
+	i := m.cache[lsKey]
 	if i != nil {
 		i.ref++
 		return i.ls
@@ -227,33 +259,41 @@ func (m *Manager) acquire0(key string, sc *SlsConfig) LogStream {
 	if sc != nil {
 		ls = NewSlsLogStream(*sc)
 	} else {
-		ls = NewFileLogStream(FileConfig{
-			Path:           key,
-			MaxLineSize:    DefaultFileConfig.MaxLineSize,
-			MaxIOReadBytes: DefaultFileConfig.MaxIOReadBytes,
+		isDockerJsonLog := false
+		if attrs != nil && "true" == attrs[dockerutils.AttrIsDockerJsonLog] {
+			isDockerJsonLog = true
+		}
+		ls = NewFileLogStream(lsKey, FileConfig{
+			Path:            path,
+			MaxLineSize:     DefaultFileConfig.MaxLineSize,
+			MaxIOReadBytes:  DefaultFileConfig.MaxIOReadBytes,
+			IsDockerJsonLog: isDockerJsonLog,
 		})
 	}
 	ls.Start()
 	i = &managerCachedItem{
-		ref: 1,
-		ls:  ls,
+		ref:   1,
+		ls:    ls,
+		path:  path,
+		attrs: attrs,
 	}
-	m.cache[key] = i
+	m.cache[lsKey] = i
 	return i.ls
 }
 
-func (m *Manager) Release(path string, ls LogStream) {
+func (m *Manager) Release(ls LogStream) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.release0(path, ls)
+	m.release0(ls)
 }
 
-func (m *Manager) release0(path string, ls LogStream) {
-	i := m.cache[path]
+func (m *Manager) release0(ls LogStream) {
+	lsKey := ls.GetKey()
+	i := m.cache[lsKey]
 	i.ref--
 	if i.ref == 0 {
-		delete(m.cache, path)
+		delete(m.cache, lsKey)
 		i.ls.Stop()
 	}
 }

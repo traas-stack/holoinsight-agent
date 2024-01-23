@@ -41,6 +41,10 @@ var (
 	_ LogStream = &GLogStream{}
 )
 
+func (f *GLogStream) GetKey() string {
+	return f.Key
+}
+
 func (f *GLogStream) Start() {
 	f.sub.Start()
 }

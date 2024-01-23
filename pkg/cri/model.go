@@ -101,6 +101,9 @@ type (
 		// NetworkMode
 		NetworkMode string
 
+		// docker json log: https://docs.docker.com/config/containers/logging/json-file/
+		LogPath string
+
 		// Attributes can be used to prevent arbitrary extension fields
 		Attributes sync.Map
 	}
