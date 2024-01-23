@@ -151,14 +151,14 @@ func (c *logStatSubConsumer) Emit(expectedTs int64) bool {
 
 	var datum []*model.DetailData
 	c.parent.timeline.Update(func(timeline *storage.Timeline) {
-		shard := timeline.GetShard(expectedTs, true)
+		shard := timeline.GetShard(expectedTs)
 		if shard == nil {
 			logger.Infoz("[consumer] [log] emit nil", //
 				zap.String("key", c.parent.key),            //
 				zap.Time("ts", time.UnixMilli(expectedTs))) //
 			return
 		}
-		shard.Frozen = true
+		defer shard.Freeze()
 		points := shard.InternalGetAllPoints()
 		for _, v := range points {
 			tags := make(map[string]string, len(v.Keys))

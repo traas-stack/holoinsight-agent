@@ -140,11 +140,11 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 	var state *logAnalysisSubConsumerState
 	c.parent.timeline.Update(func(timeline *storage.Timeline) {
-		shard := c.parent.timeline.GetShard(expectedTs, true)
+		shard := c.parent.timeline.GetShard(expectedTs)
 		if shard == nil {
 			return
 		}
-		shard.Frozen = true
+		defer shard.Freeze()
 		if shard.Data == nil {
 			return
 		}

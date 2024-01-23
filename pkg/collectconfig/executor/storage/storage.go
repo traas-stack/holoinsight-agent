@@ -158,7 +158,7 @@ func (t *Timeline) Unlock() {
 }
 
 func (t *Timeline) GetOrCreateShard(ts int64) *Shard {
-	shard := t.GetShard(ts, false)
+	shard := t.GetShard(ts)
 	if shard == nil {
 		shard = t.CreateShard(ts)
 	}
@@ -169,7 +169,7 @@ func (t *Timeline) InternalGetShard() []*Shard {
 	return t.shards
 }
 
-func (t *Timeline) GetShard(ts int64, clear bool) *Shard {
+func (t *Timeline) GetShard(ts int64) *Shard {
 	if t.shards == nil {
 		return nil
 	}
@@ -181,12 +181,6 @@ func (t *Timeline) GetShard(ts int64, clear bool) *Shard {
 	}
 	if s.no != no {
 		return nil
-	}
-	// release memory quickly
-	if clear {
-		s.points = nil
-		s.Data = nil
-		s.Data2 = nil
 	}
 	return s
 }
@@ -234,4 +228,11 @@ func (s *Shard) InternalGetAllPoints() map[string]*Point {
 
 func (s *Shard) PointCount() int {
 	return len(s.points)
+}
+
+func (s *Shard) Freeze() {
+	s.Frozen = true
+	s.points = nil
+	s.Data = nil
+	s.Data2 = nil
 }
