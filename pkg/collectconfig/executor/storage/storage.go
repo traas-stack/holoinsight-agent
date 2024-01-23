@@ -78,6 +78,10 @@ func (s *Storage) GetTimeline(key string) *Timeline {
 	return s.timelines[key]
 }
 
+func (s *Storage) InternalGetTimeline() map[string]*Timeline {
+	return s.timelines
+}
+
 func (s *Storage) SetTimeline(key string, t *Timeline) {
 	s.timelines[key] = t
 }
@@ -154,7 +158,7 @@ func (t *Timeline) Unlock() {
 }
 
 func (t *Timeline) GetOrCreateShard(ts int64) *Shard {
-	shard := t.GetShard(ts)
+	shard := t.GetShard(ts, false)
 	if shard == nil {
 		shard = t.CreateShard(ts)
 	}
@@ -165,7 +169,7 @@ func (t *Timeline) InternalGetShard() []*Shard {
 	return t.shards
 }
 
-func (t *Timeline) GetShard(ts int64) *Shard {
+func (t *Timeline) GetShard(ts int64, clear bool) *Shard {
 	if t.shards == nil {
 		return nil
 	}
@@ -177,6 +181,12 @@ func (t *Timeline) GetShard(ts int64) *Shard {
 	}
 	if s.no != no {
 		return nil
+	}
+	// release memory quickly
+	if clear {
+		s.points = nil
+		s.Data = nil
+		s.Data2 = nil
 	}
 	return s
 }

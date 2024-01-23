@@ -1,6 +1,6 @@
-curl localhost:9117/debug/pprof/profile?seconds=60 > profile
+curl localhost:9117/debug/pprof/profile?seconds=60 > /tmp/profile
 echo
 
 echo Use the following command to download the profile and view the flame graph.
-echo kubectl -n $POD_NAMESPACE cp $POD_NAME:$PWD/profile ./profile
-echo go tool pprof -http=":$RANDOM" profile
+echo kubectl -n $POD_NAMESPACE cp $POD_NAME:/tmp/profile /tmp/profile
+echo go tool pprof -http=":$RANDOM" /tmp/profile
