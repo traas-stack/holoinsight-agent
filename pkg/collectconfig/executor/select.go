@@ -113,12 +113,7 @@ func parseSelect(s *collectconfig.Select) (XSelect, error) {
 			where: where,
 		}
 	}
-	// Currently We only supports one metric in the server side.
-	// And its value name must be 'value'.
-	// There are some wrong configs with valueNames[0] != "value". So we fix it here.
-	if len(valueNames) == 1 {
-		valueNames[0] = "value"
-	}
+
 	var logSamples *xLogSamples
 	if s.LogSamples != nil && s.LogSamples.Enabled {
 		if ls, err := parseLogSamples(s.LogSamples); err != nil {

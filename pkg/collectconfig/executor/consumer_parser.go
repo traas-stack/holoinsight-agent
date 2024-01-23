@@ -35,6 +35,16 @@ func parseConsumer(st *api.SubTask) (*Consumer, error) {
 		return nil, err
 	}
 
+	if task.GroupBy.Details == nil || !task.GroupBy.Details.Enabled {
+		valueNames := xselect.(*xSelect).valueNames
+		// Currently We only supports one metric in the server side.
+		// And its value name must be 'value'.
+		// There are some wrong configs with valueNames[0] != "value". So we fix it here.
+		if len(valueNames) == 1 {
+			valueNames[0] = "value"
+		}
+	}
+
 	xgroupBy, err := parseGroupBy(task.GroupBy)
 	if err != nil {
 		return nil, err
