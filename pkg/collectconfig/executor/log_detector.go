@@ -10,6 +10,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/filematch"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -38,11 +39,19 @@ func NewLogDetector(key string, from *collectconfig.From, target *collecttask.Co
 		switch path.Type {
 		case filematch.TypePath:
 			if target.IsTypePod() {
+				if path.Pattern == dockerutils.DockerJsonLogFile {
+					matchers = append(matchers, filematch.NewContainerFileMatcher(target))
+					continue
+				}
 				matchers = append(matchers, filematch.NewPodAbsFileMatcher(target, path.Pattern))
 			} else {
 				matchers = append(matchers, filematch.NewAbsFileMatcher(path.Pattern))
 			}
 		case filematch.TypeGlob:
+			if target.IsTypePod() && path.Pattern == dockerutils.DockerJsonLogFile {
+				matchers = append(matchers, filematch.NewContainerFileMatcher(target))
+				continue
+			}
 			m, err := filematch.NewGlobFileMatcher(path.Pattern)
 			if err != nil {
 				logger.Errorz("NewRegexpFileMatcher error", zap.Error(err))
@@ -50,7 +59,6 @@ func NewLogDetector(key string, from *collectconfig.From, target *collecttask.Co
 			}
 			matchers = append(matchers, m)
 		case filematch.TypeRegexp:
-
 			var m filematch.FileMatcher
 			var err error
 			if target.IsTypePod() {
@@ -83,6 +91,10 @@ func NewLogDetector(key string, from *collectconfig.From, target *collecttask.Co
 					Shard:    cast.ToInt(shardStr),
 				},
 			}})
+		case filematch.TypeContainer:
+			if target.IsTypePod() {
+				matchers = append(matchers, filematch.NewContainerFileMatcher(target))
+			}
 		}
 	}
 	return &LogPathDetector{

@@ -28,7 +28,7 @@ import (
 
 const (
 	stateFileFreshDuration = 2 * time.Minute
-	storeVersion           = "1"
+	storeVersion           = "2"
 )
 
 type (

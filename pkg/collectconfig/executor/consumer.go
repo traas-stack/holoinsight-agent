@@ -317,7 +317,7 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 		c.stat.Miss = true
 		logger.Debugz("[consumer] [log] digest, file not exist", //
 			zap.String("key", c.key),    //
-			zap.String("path", iw.Path), //
+			zap.String("path", iw.FatPath.Path), //
 		)
 		return
 	}
@@ -624,8 +624,8 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 					continue
 				}
 				ctx.log = oneLine
-				ctx.path = iw.Path
-				ctx.pathTags = iw.PathTags
+				ctx.path = iw.FatPath.Path
+				ctx.pathTags = iw.FatPath.Tags
 				c.stat.Groups++
 				ctx.tz = tz
 				consumer(ctx)
@@ -674,8 +674,8 @@ func (c *Consumer) processMultiline(iw *inputWrapper, resp *logstream.ReadRespon
 			}
 		}
 		ctx.log = fullGroup
-		ctx.path = iw.Path
-		ctx.pathTags = iw.PathTags
+		ctx.path = iw.FatPath.Path
+		ctx.pathTags = iw.FatPath.Tags
 		c.stat.Groups++
 		ctx.tz = tz
 		consumer(ctx)

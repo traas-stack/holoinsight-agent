@@ -5,6 +5,7 @@
 package executor
 
 import (
+	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/filematch"
 	"github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
@@ -18,9 +19,8 @@ type (
 		inputStateObj
 	}
 	inputStateObj struct {
-		Path     string
-		PathTags map[string]string
-		Cursor   int64
+		FatPath filematch.FatPath
+		Cursor  int64
 		// lastState and state are used to detect state change
 		LastState inputWrapperStatus
 		State     inputWrapperStatus
@@ -62,14 +62,13 @@ func (im *inputsManager) checkInputsChange() {
 			if fatPath.IsSls {
 				ls = im.lsm.AcquireSls(fatPath.SlsConfig)
 			} else {
-				ls = im.lsm.AcquireFile(path)
+				ls = im.lsm.AcquireFile(path, fatPath.Attrs)
 			}
 
 			newInputs[path] = &inputWrapper{
 				ls: ls,
 				inputStateObj: inputStateObj{
-					Path:      path,
-					PathTags:  fatPath.Tags,
+					FatPath:   fatPath,
 					Cursor:    ls.AddListener(im.listener),
 					State:     inputWrapperStateFirst,
 					LastState: inputWrapperStateFirst,
@@ -93,7 +92,7 @@ func (im *inputsManager) checkInputsChange() {
 
 func (im *inputsManager) releaseStream(iw *inputWrapper) {
 	iw.ls.RemoveListener(im.listener, iw.Cursor)
-	im.lsm.Release(iw.Path, iw.ls)
+	im.lsm.Release(iw.ls)
 }
 
 func (im *inputsManager) stop() {

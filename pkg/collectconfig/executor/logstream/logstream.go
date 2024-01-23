@@ -21,6 +21,8 @@ const (
 type (
 	Mode      string
 	LogStream interface {
+		// GetKey returns the key of LogStream
+		GetKey() string
 		Start()
 		Stop()
 		Read(int64) (*ReadResponse, int64, error)

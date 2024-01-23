@@ -7,11 +7,12 @@ package filematch
 import "github.com/traas-stack/holoinsight-agent/pkg/collectconfig/executor/logstream"
 
 const (
-	TypePath   = "path"
-	TypeGlob   = "glob"
-	TypeRegexp = "regexp"
-	TypeFormat = "format"
-	TypeSls    = "sls"
+	TypePath      = "path"
+	TypeGlob      = "glob"
+	TypeRegexp    = "regexp"
+	TypeFormat    = "format"
+	TypeSls       = "sls"
+	TypeContainer = "container"
 )
 
 type (
@@ -28,6 +29,7 @@ type (
 		Tags      map[string]string
 		IsSls     bool
 		SlsConfig logstream.SlsConfig
+		Attrs     map[string]string
 	}
 )
 

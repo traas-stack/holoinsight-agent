@@ -558,6 +558,10 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 		Hacked:           cri.HackInit,
 	}
 
+	if dc.LogPath != "" {
+		criContainer.LogPath = filepath.Join(core.GetHostfs(), dc.LogPath)
+	}
+
 	if criContainer.Hostname == "" {
 		criContainer.Hostname = criPod.Pod.Spec.Hostname
 	}

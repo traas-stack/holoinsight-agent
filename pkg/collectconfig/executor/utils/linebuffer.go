@@ -168,3 +168,15 @@ func trim(b []byte) []byte {
 	}
 	return b
 }
+
+func TrimCRLFString(s string) string {
+	slen := len(s)
+	if slen > 0 && s[slen-1] == line_separator_n {
+		s = s[:slen-1]
+	}
+	slen = len(s)
+	if slen > 0 && s[slen-1] == line_separator_r {
+		s = s[:slen-1]
+	}
+	return s
+}

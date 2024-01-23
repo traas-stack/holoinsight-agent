@@ -141,14 +141,14 @@ func (p *LogPipeline) LoadState(store transfer.StateStore) error {
 	p.lastEmitWindow = state.LastEmitWindow
 
 	for _, s := range state.Inputs {
-		ls := p.inputsManager.lsm.AcquireFile(s.Path)
+		ls := p.inputsManager.lsm.AcquireFile(s.FatPath.Path, s.FatPath.Attrs)
 		if err := ls.LoadReadState(s.Cursor); err != nil {
-			logger.Infoz("[transfer] [pipeline] log input load state error", zap.String("key", p.Key()), zap.String("path", s.Path), zap.Error(err))
-			p.inputsManager.lsm.Release(s.Path, ls)
+			logger.Infoz("[transfer] [pipeline] log input load state error", zap.String("key", p.Key()), zap.String("path", ls.GetKey()), zap.Error(err))
+			p.inputsManager.lsm.Release(ls)
 		} else {
-			logger.Infoz("[transfer] [pipeline] log input load state success", zap.String("key", p.Key()), zap.String("path", s.Path))
+			logger.Infoz("[transfer] [pipeline] log input load state success", zap.String("key", p.Key()), zap.String("path", ls.GetKey()))
 			_ = ls.AddListener(p.inputsManager.listener)
-			p.inputsManager.inputs[s.Path] = &inputWrapper{
+			p.inputsManager.inputs[ls.GetKey()] = &inputWrapper{
 				ls:            ls,
 				inputStateObj: s,
 			}

@@ -14,7 +14,10 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/cio"
+	runc_options "github.com/containerd/containerd/runtime/v2/runc/options"
+	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
+	"go.uber.org/zap"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,6 +51,7 @@ var (
 )
 
 func init() {
+
 	typeurl.Register(&containerstore.Metadata{},
 		"github.com/containerd/cri/pkg/store/container", "Metadata")
 	typeurl.Register(&sandboxstore.Metadata{},
@@ -130,21 +134,22 @@ func (e *ContainerdContainerEngine) GetContainerDetail(ctx context.Context, cid 
 		return nil, err
 	}
 
-	cm := containerstore.Metadata{}
-	sm := sandboxstore.Metadata{}
+	containerMeta := containerstore.Metadata{}
+	sandboxMeta := sandboxstore.Metadata{}
 
 	for key, ext := range container.Extensions {
 		switch key {
 		case "io.cri-containerd.container.metadata":
-			if err = typeurl.UnmarshalToByTypeURL(ext.GetTypeUrl(), ext.GetValue(), &cm); err != nil {
+			if err = typeurl.UnmarshalToByTypeURL(ext.GetTypeUrl(), ext.GetValue(), &containerMeta); err != nil {
 				return nil, err
 			}
 		case "io.cri-containerd.sandbox.metadata":
-			if err = typeurl.UnmarshalToByTypeURL(ext.GetTypeUrl(), ext.GetValue(), &sm); err != nil {
+			if err = typeurl.UnmarshalToByTypeURL(ext.GetTypeUrl(), ext.GetValue(), &sandboxMeta); err != nil {
 				return nil, err
 			}
 		}
 	}
+
 	detail := &cri.EngineDetailContainer{
 		ID:       container.ID,
 		Labels:   container.Labels,
@@ -162,6 +167,7 @@ func (e *ContainerdContainerEngine) GetContainerDetail(ctx context.Context, cid 
 
 		MergedDir:   "",
 		NetworkMode: "",
+		LogPath:     containerMeta.LogPath,
 		State: cri.ContainerState{
 			Pid: 0,
 		},
@@ -177,22 +183,26 @@ func (e *ContainerdContainerEngine) GetContainerDetail(ctx context.Context, cid 
 	}
 
 	if detail.IsSandbox {
-		detail.Name = sm.Name
+		detail.Name = sandboxMeta.Name
 	} else {
-		detail.Name = cm.Name
-		detail.SandboxId = cm.SandboxID
+		detail.Name = containerMeta.Name
+		detail.SandboxId = containerMeta.SandboxID
 	}
 
+	var runtime interface{}
 	switch container.Runtime.Name {
 	case "io.containerd.runc.v2":
 		detail.Runtime = "runc"
+		runcOptions := runc_options.Options{}
+		err = typeurl.UnmarshalToByTypeURL(container.Runtime.Options.GetTypeUrl(), container.Runtime.Options.GetValue(), &runcOptions)
+		runtime = &runcOptions
 	default:
 		// TODO other runtime
 		detail.Runtime = "unknown"
 	}
 
 	if !detail.IsSandbox {
-		for _, mount := range cm.Config.Mounts {
+		for _, mount := range containerMeta.Config.Mounts {
 			detail.Mounts = append(detail.Mounts, &cri.MountPoint{
 				Source:      mount.HostPath,
 				Destination: mount.ContainerPath,
@@ -202,8 +212,17 @@ func (e *ContainerdContainerEngine) GetContainerDetail(ctx context.Context, cid 
 	}
 
 	if detail.IsSandbox {
-		detail.NetworkMode = "netns:" + sm.NetNSPath
+		detail.NetworkMode = "netns:" + sandboxMeta.NetNSPath
 	}
+
+	logger.Debugz("[containerd] details",
+		zap.String("cid", cid),
+		zap.Any("container", &container),
+		zap.Any("runtime", runtime),
+		zap.Any("containerMeta", &containerMeta),
+		zap.Any("sandboxMeta", &sandboxMeta),
+	)
+
 	return detail, nil
 }
 

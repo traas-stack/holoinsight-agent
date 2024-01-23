@@ -11,7 +11,7 @@ import (
 
 // zero cost string conversion
 // this may cause unexpected behavior, use this carefully
-func String(b []byte) (s string) {
+func String(b []byte) string {
 	if len(b) == 0 {
 		return ""
 	}
@@ -21,6 +21,15 @@ func String(b []byte) (s string) {
 	//pstring.Data = pbytes.Data
 	//pstring.Len = pbytes.Len
 	//return
+}
+
+func ZeroCopyStringToBytes(s string) (b []byte) {
+	pbytes := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	pstring := (*reflect.StringHeader)(unsafe.Pointer(&s))
+	pbytes.Data = pstring.Data
+	pbytes.Len = pstring.Len
+	pbytes.Cap = pstring.Len
+	return
 }
 
 // DeepCopyString deep copy string
