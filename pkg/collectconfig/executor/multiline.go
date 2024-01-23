@@ -55,6 +55,6 @@ func parseMultiline(cfg *collectconfig.FromLogMultiline) (*xMultiline, error) {
 	return &xMultiline{
 		where:    w,
 		what:     what,
-		maxLines: cfg.MaxLines,
+		maxLines: maxLines,
 	}, nil
 }
