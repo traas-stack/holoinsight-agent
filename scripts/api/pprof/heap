@@ -1,1 +1,6 @@
-curl localhost:9117/debug/pprof/heap > heap
+curl localhost:9117/debug/pprof/heap > /tmp/heap
+echo
+
+echo Use the following command to download the heap and view the flame graph.
+echo kubectl -n $POD_NAMESPACE cp $POD_NAME:/tmp/heap /tmp/heap
+echo go tool pprof -http=":$RANDOM" /tmp/heap

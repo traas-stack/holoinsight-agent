@@ -29,6 +29,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/recoverutils"
 	"go.uber.org/zap"
+	"net/http"
 	"runtime"
 	"strings"
 	"sync"
@@ -110,6 +111,33 @@ func (m *Manager) Start() {
 	}
 
 	m.ctm.Listen(m.listener)
+
+	http.HandleFunc("/api/storage/list", func(writer http.ResponseWriter, request *http.Request) {
+		m.s.View(func(s *storage.Storage) {
+			timelines := s.InternalGetTimeline()
+			for key, timeline := range timelines {
+				bytes := 0
+				points := 0
+				timeline.View(func(timeline *storage.Timeline) {
+					shards := timeline.InternalGetShard()
+					for _, shard := range shards {
+						if shard == nil {
+							continue
+						}
+						points2 := shard.InternalGetAllPoints()
+						points += len(points2)
+						for pkey, p := range points2 {
+							bytes += len(pkey)
+							for _, key := range p.Keys {
+								bytes += len(key)
+							}
+						}
+					}
+				})
+				fmt.Fprintf(writer, "%s %d %d\n", key, points, bytes)
+			}
+		})
+	})
 }
 
 func (m *Manager) processTask(task *collecttask.CollectTask, add bool, init bool) {

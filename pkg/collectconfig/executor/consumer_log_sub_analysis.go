@@ -139,8 +139,8 @@ func (c *logAnalysisSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext,
 
 func (c *logAnalysisSubConsumer) Emit(expectedTs int64) bool {
 	var state *logAnalysisSubConsumerState
-	c.parent.timeline.View(func(timeline *storage.Timeline) {
-		shard := c.parent.timeline.GetShard(expectedTs)
+	c.parent.timeline.Update(func(timeline *storage.Timeline) {
+		shard := c.parent.timeline.GetShard(expectedTs, true)
 		if shard == nil {
 			return
 		}

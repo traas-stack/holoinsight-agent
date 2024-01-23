@@ -145,14 +145,13 @@ func (c *logStatSubConsumer) ProcessGroup(iw *inputWrapper, ctx *LogContext, max
 }
 
 func (c *logStatSubConsumer) Emit(expectedTs int64) bool {
-
 	// TODO 取走数据后给shard打一个标记, 表示已经取走数据了
 	// 下次如果还往该shard写数据, 这这些数据是旧的
 	// TODO 我们的case里是可以幂等写的!!!
 
 	var datum []*model.DetailData
-	c.parent.timeline.View(func(timeline *storage.Timeline) {
-		shard := timeline.GetShard(expectedTs)
+	c.parent.timeline.Update(func(timeline *storage.Timeline) {
+		shard := timeline.GetShard(expectedTs, true)
 		if shard == nil {
 			logger.Infoz("[consumer] [log] emit nil", //
 				zap.String("key", c.parent.key),            //
