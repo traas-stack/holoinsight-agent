@@ -381,6 +381,14 @@ func (c *Consumer) Consume(resp *logstream.ReadResponse, iw *inputWrapper, err e
 			zap.Int("cost", int(resp.IOCost()/time.Millisecond)), //
 			zap.Error(err),                                       //
 		)
+		for _, line := range resp.Lines {
+			logger.Debugz("[consumer] [log] debug input", zap.String("key", c.key), zap.String("line", line))
+		}
+		for _, g := range resp.LogGroups {
+			for _, log := range g.Logs {
+				logger.Debugz("[consumer] [log] debug input", zap.String("key", c.key), zap.Any("contents", log.Contents))
+			}
+		}
 	}
 }
 
