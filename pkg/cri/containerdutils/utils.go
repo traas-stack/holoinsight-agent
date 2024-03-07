@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/defaults"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"time"
 )
@@ -15,7 +16,7 @@ import (
 // NewClientFromEnv create a containerd client based on the agreed environment configuration information.
 func NewClientFromEnv(addrs ...string) (*containerd.Client, containerd.Version, error) {
 	// Default to two well known containerd sock
-	defaultAddrs := append(addrs, "/run/containerd/containerd.sock", "/run/k3s/containerd/containerd.sock")
+	defaultAddrs := append(addrs, defaults.DefaultAddress, K3sDefaultAddress)
 
 	addr := core.FindFirstSockInHostfs("CONTAINERD_SOCK", defaultAddrs...)
 	if addr == "" {

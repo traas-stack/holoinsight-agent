@@ -14,7 +14,10 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/cio"
+	"github.com/containerd/containerd/defaults"
 	runc_options "github.com/containerd/containerd/runtime/v2/runc/options"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri/containerdutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
@@ -215,10 +218,24 @@ func (e *ContainerdContainerEngine) GetContainerDetail(ctx context.Context, cid 
 		detail.NetworkMode = "netns:" + sandboxMeta.NetNSPath
 	}
 
+	// I don't know how to get containerd's state dir.
+	// But I know its default value.
+	// Tested OK on containerd v1.6.8.
+	maybeContainerdStateDirs := []string{defaults.DefaultStateDir, containerdutils.K3sDefaultStateDir}
+	for _, stateDir := range maybeContainerdStateDirs {
+		// TODO It seems that for the old version of containerd, the rootfs of the container is not this.
+		containerRootfs := filepath.Join(stateDir, "io.containerd.runtime.v2.task", "k8s.io", cid, "rootfs")
+		if st, err := os.Stat(filepath.Join(core.GetHostfs(), containerRootfs)); err == nil && st.IsDir() {
+			detail.MergedDir = containerRootfs
+			break
+		}
+	}
+
 	logger.Debugz("[containerd] details",
 		zap.String("cid", cid),
 		zap.Any("container", &container),
-		zap.Any("runtime", runtime),
+		zap.Any("runtime", &runtime),
+		zap.Any("spec", &spec),
 		zap.Any("containerMeta", &containerMeta),
 		zap.Any("sandboxMeta", &sandboxMeta),
 	)
