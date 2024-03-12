@@ -201,3 +201,11 @@ func (h *DnsCacheHelper) NewHttpClient() *http.Client {
 func dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	return NewDnsCacheHelper().Dial(ctx, network, addr)
 }
+
+func ReplaceHost(hostport string, host string) string {
+	_, port, err := net.SplitHostPort(hostport)
+	if err == nil {
+		return net.JoinHostPort(host, port)
+	}
+	return host
+}

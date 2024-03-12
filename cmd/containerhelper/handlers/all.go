@@ -18,4 +18,5 @@ func init() {
 	model.RegisterHandler("inputProxy", inputProxyHandler)
 	model.RegisterHandler("httpProxy", httpProxyHandler)
 	model.RegisterHandler("tcpProxy", tcpProxyHandler)
+	model.RegisterHandler("fixout", fixOutHandler)
 }

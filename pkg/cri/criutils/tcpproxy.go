@@ -22,23 +22,26 @@ func TcpProxy(ctx context.Context, i cri.Interface, c *cri.Container, addr strin
 	if c.Runtime == cri.Runc {
 		sandbox := c.Pod.Sandbox
 		if sandbox != nil {
-			return cricore.NsEnterDial(c, "tcp", addr, dialTimeout)
+			conn, err := cricore.NsEnterDial(c, "tcp", addr, dialTimeout)
+			logger.Infozc(ctx, "[netproxy] runtime is runc, use nsenter", zap.Error(err))
+			return conn, err
 		}
 	}
 
 	pin, pout := io.Pipe()
 	ctx2, cancel := context.WithCancel(ctx)
+	logger.Infozc(ctx, "[netproxy] use cri exec")
 	ear, err := i.ExecAsync(ctx2, c, cri.ExecRequest{
-		Cmd:   []string{core.HelperToolPath, "tcpProxy"},
-		Env:   []string{"TCPPROXY_ADDR=" + addr, "TCPPROXY_IDLE_TIMEOUT=180s", "NO_JSON_OUTPUT=true"},
-		Input: pin,
+		Cmd:    []string{core.HelperToolPath, "tcpProxy"},
+		Env:    []string{"TCPPROXY_ADDR=" + addr, "TCPPROXY_IDLE_TIMEOUT=180s", "NO_JSON_OUTPUT=true"},
+		Input:  pin,
+		FixOut: true,
 	})
 	if err != nil {
 		cancel()
 		pout.CloseWithError(err)
 		return nil, err
 	}
-
 	stderrCh := make(chan string, 1)
 	go func() {
 		bs, _ := io.ReadAll(ear.Stderr)
@@ -47,19 +50,19 @@ func TcpProxy(ctx context.Context, i cri.Interface, c *cri.Container, addr strin
 
 	go func() {
 		defer cancel()
-
 		var rc cri.ExecAsyncResultCode
 		hasResult := false
 		select {
-		case <-ctx.Done():
+		case <-ctx2.Done():
 		case rc = <-ear.Result:
 			hasResult = true
 		}
+
 		if !hasResult {
 			rc = <-ear.Result
 		}
 		stderr := <-stderrCh
-		logger.Infozc(ctx, "[netproxy] tcpproxy exec finished", zap.Int("code", rc.Code), zap.String("stderr", stderr), zap.Error(rc.Err))
+		logger.Infozc(ctx, "[netproxy] cri exec finished", zap.Int("code", rc.Code), zap.String("stderr", stderr), zap.Error(rc.Err))
 		pout.CloseWithError(rc.Err)
 	}()
 
@@ -67,8 +70,10 @@ func TcpProxy(ctx context.Context, i cri.Interface, c *cri.Container, addr strin
 		Reader: ear.Stdout,
 		Writer: pout,
 		CloseFunc: func() {
+			// TODO uses a more deterministic strategy
 			// If we cancel ctx immediately, then the bottom layer has a certain probability to return <-ctx.Done() instead of <-ear.Result, and there is competition here.
 			//We prefer to leave the opportunity to <-ear.Result, so here is an appropriate delay of 100ms.
+			// cancel happens before ear.Result
 			time.AfterFunc(100*time.Millisecond, cancel)
 		},
 	}, nil
