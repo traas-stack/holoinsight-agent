@@ -956,5 +956,11 @@ func (e *defaultCri) ExecAsync(ctx context.Context, c *cri.Container, req cri.Ex
 	if req.User == "" {
 		req.User = defaultExecUser
 	}
+	logger.Criz("[digest] exec async",
+		zap.String("engine", e.engine.Type()),
+		zap.String("cid", c.ShortContainerID()),
+		zap.String("runtime", c.Runtime),
+		zap.Strings("cmd", req.Cmd),
+		zap.Strings("env", req.Env))
 	return e.engine.ExecAsync(ctx, c, req)
 }

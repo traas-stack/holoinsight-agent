@@ -7,6 +7,7 @@ package netproxy
 import (
 	"context"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
+	"net"
 	"net/http"
 	"time"
 )
@@ -17,13 +18,19 @@ const (
 )
 
 type (
-	Handler func(ctx context.Context, pod *cri.Pod, req *http.Request) (*http.Request, *http.Response, error)
+	HttpHandler func(ctx context.Context, pod *cri.Pod, req *http.Request) (*http.Request, *http.Response, error)
+	TcpHandler  func(ctx context.Context, i cri.Interface, c *cri.Container, addr string, dialTimeout time.Duration) (net.Conn, error)
 )
 
 var (
-	handlers []Handler
+	handlers    []HttpHandler
+	tcpHandlers []TcpHandler
 )
 
-func AddHttpProxyHandler(handler Handler) {
+func AddHttpProxyHandler(handler HttpHandler) {
 	handlers = append(handlers, handler)
+}
+
+func AddTcpProxyHandler(handler TcpHandler) {
+	tcpHandlers = append(tcpHandlers, handler)
 }

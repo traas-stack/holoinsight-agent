@@ -11,6 +11,8 @@ import (
 	"github.com/docker/docker/api/types"
 	dockersdk "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/handlers/fixout"
+	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/dockerutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8slabels"
@@ -223,6 +225,10 @@ func (e *DockerContainerEngine) Supports(feature cri.ContainerEngineFeature) boo
 
 func (e *DockerContainerEngine) ExecAsync(ctx context.Context, c *cri.Container, req cri.ExecRequest) (cri.ExecAsyncResult, error) {
 	resultCh := make(chan cri.ExecAsyncResultCode)
+	hackedCmd := req.Cmd
+	if req.FixOut {
+		hackedCmd = append([]string{core.HelperToolPath, "fixout"}, req.Cmd...)
+	}
 	invalidResult := cri.ExecAsyncResult{Cmd: strings.Join(req.Cmd, " "), Result: resultCh}
 	create, err := e.Client.ContainerExecCreate(ctx, c.Id, types.ExecConfig{
 		User:         req.User,
@@ -235,7 +241,7 @@ func (e *DockerContainerEngine) ExecAsync(ctx context.Context, c *cri.Container,
 		DetachKeys:   "",
 		Env:          req.Env,
 		WorkingDir:   req.WorkingDir,
-		Cmd:          req.Cmd,
+		Cmd:          hackedCmd,
 	})
 	if err != nil {
 		return invalidResult, err
@@ -263,14 +269,32 @@ func (e *DockerContainerEngine) ExecAsync(ctx context.Context, c *cri.Container,
 
 	respReaderDone := false
 	go func() {
-		_, err := stdcopy.StdCopy(stdoutW, stderrW, resp.Reader)
-		respReaderDone = true
-		if err != nil && err != io.EOF {
-			stdoutW.CloseWithError(err)
-			stderrW.CloseWithError(err)
+		if req.FixOut {
+			hr, hw := io.Pipe()
+			go func() {
+				// decode docker resp to stdout and stderr
+				// stderr is useless wo put it into Discard
+				stdcopy.StdCopy(hw, io.Discard, resp.Reader)
+				hw.Close()
+			}()
+			err := fixout.Decode(hr, stdoutW, stderrW)
+			respReaderDone = true
+			if err != nil && err != io.EOF {
+				stdoutW.CloseWithError(err)
+				stderrW.CloseWithError(err)
+			}
+			errCh <- err
+			io.Copy(io.Discard, hr)
+		} else {
+			_, err := stdcopy.StdCopy(stdoutW, stderrW, resp.Reader)
+			respReaderDone = true
+			if err != nil && err != io.EOF {
+				stdoutW.CloseWithError(err)
+				stderrW.CloseWithError(err)
+			}
+			errCh <- err
+			io.Copy(io.Discard, resp.Reader)
 		}
-		errCh <- err
-		io.Copy(io.Discard, resp.Reader)
 	}()
 
 	wait := 2

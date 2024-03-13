@@ -80,6 +80,10 @@ func (h *CriHandle) tcpHandle(s *socks5.Server, c *net.TCPConn, r *socks5.Reques
 		}
 		pod := criutils.FindFirstPodByIp(h.Cri, host)
 		if pod == nil {
+			a, addr, port, _ := socks5.ParseAddress(Socks5ProxyAddr)
+			rep := socks5.RepHostUnreachable
+			socks5.NewReply(rep, a, addr, port).WriteTo(c)
+			logger.Errorz("no pod when proxy", zap.String("ip", host))
 			return errors.New("no pod")
 		}
 		if len(pod.Biz) == 0 {
@@ -93,7 +97,7 @@ func (h *CriHandle) tcpHandle(s *socks5.Server, c *net.TCPConn, r *socks5.Reques
 
 	logCtx := zap.Fields(zap.String("uuid", uuid2), zap.String("protocol", "socks5"), zap.String("cid", biz.ShortContainerID()), zap.String("addr", addr))
 
-	proxied, err := criutils.TcpProxy(logger.WithLogCtx(context.Background(), logCtx), h.Cri, biz, addr, DefaultDialTimeout)
+	proxied, err := tcpProxy(logger.WithLogCtx(context.Background(), logCtx), h.Cri, biz, addr, DefaultDialTimeout)
 	if err != nil {
 		logger.Infozo(logCtx, "[netproxy] create tcperror error", zap.Error(err))
 		a, addr, port, _ := socks5.ParseAddress(Socks5ProxyAddr)
@@ -107,8 +111,6 @@ func (h *CriHandle) tcpHandle(s *socks5.Server, c *net.TCPConn, r *socks5.Reques
 		}
 		return err
 	}
-	logger.Infozo(logCtx, "[netproxy] create")
-	defer proxied.Close()
 
 	// handshake
 	{
@@ -118,6 +120,8 @@ func (h *CriHandle) tcpHandle(s *socks5.Server, c *net.TCPConn, r *socks5.Reques
 			return err
 		}
 	}
+	logger.Infozo(logCtx, "[netproxy] stream created")
+	defer proxied.Close()
 
 	// copy streams
 	errCh := make(chan error, 2)
@@ -165,4 +169,13 @@ func (h *CriHandle) tcpHandle(s *socks5.Server, c *net.TCPConn, r *socks5.Reques
 // UDPHandle auto handle packet. You may prefer to do yourself.
 func (h *CriHandle) UDPHandle(s *socks5.Server, addr *net.UDPAddr, d *socks5.Datagram) error {
 	return errors.New("unsupported")
+}
+
+func tcpProxy(ctx context.Context, i cri.Interface, c *cri.Container, addr string, dialTimeout time.Duration) (net.Conn, error) {
+	for _, handler := range tcpHandlers {
+		if conn, err := handler(ctx, i, c, addr, dialTimeout); conn != nil && err == nil {
+			return conn, err
+		}
+	}
+	return criutils.TcpProxy(ctx, i, c, addr, dialTimeout)
 }
