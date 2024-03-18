@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -27,7 +28,13 @@ func tcpProxyHandler(_ string, _ *model.Resp) error {
 }
 
 func tcpProxyHandler0(ctx context.Context, addr string, idleTimeout time.Duration, in io.Reader, out io.Writer) error {
-	conn, err := net.DialTimeout("tcp", addr, defaultDialTimeout)
+	var conn net.Conn
+	var err error
+	if strings.HasSuffix(addr, ".sock") {
+		conn, err = net.DialTimeout("unix", addr, defaultDialTimeout)
+	} else {
+		conn, err = net.DialTimeout("tcp", addr, defaultDialTimeout)
+	}
 	if err != nil {
 		return err
 	}

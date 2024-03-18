@@ -7,7 +7,7 @@
 package cricore
 
 import (
-	"errors"
+	"context"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"golang.org/x/sys/unix"
@@ -49,23 +49,24 @@ func NsEnterAndRunCodes(nsFile string, callback func()) error {
 	return err2
 }
 
-func NsEnterDial(c *cri.Container, network, addr string, dialTimeout time.Duration) (net.Conn, error) {
-	if c.NetworkMode == "host" {
-		return net.DialTimeout(network, addr, dialTimeout)
-	}
-
+func NsEnterContainerAndRunCodes(c *cri.Container, callback func()) error {
 	if strings.HasPrefix(c.NetworkMode, "netns:") {
 		netNsFile := filepath.Join(core.GetHostfs(), c.NetworkMode[len("netns:"):])
-		var conn net.Conn
-		var err error
-		err2 := NsEnterAndRunCodes(netNsFile, func() {
-			conn, err = net.DialTimeout(network, addr, dialTimeout)
-		})
-		if err == nil {
-			err = err2
-		}
-		return conn, err
+		return NsEnterAndRunCodes(netNsFile, callback)
 	}
 
-	return nil, errors.New("invalid NetworkMode: " + c.NetworkMode)
+	callback()
+	return nil
+}
+
+func NsEnterDial(ctx context.Context, c *cri.Container, network, addr string, dialTimeout time.Duration) (net.Conn, error) {
+	var conn net.Conn
+	var err error
+	err2 := NsEnterContainerAndRunCodes(c, func() {
+		conn, err = (&net.Dialer{Timeout: dialTimeout}).DialContext(ctx, network, addr)
+	})
+	if err == nil {
+		err = err2
+	}
+	return conn, err
 }

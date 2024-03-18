@@ -209,3 +209,7 @@ func ReplaceHost(hostport string, host string) string {
 	}
 	return host
 }
+
+func ReplaceHostToLocalhost(hostport string) string {
+	return ReplaceHost(hostport, "127.0.0.1")
+}

@@ -97,7 +97,7 @@ func (h *CriHandle) tcpHandle(s *socks5.Server, c *net.TCPConn, r *socks5.Reques
 
 	logCtx := zap.Fields(zap.String("uuid", uuid2), zap.String("protocol", "socks5"), zap.String("cid", biz.ShortContainerID()), zap.String("addr", addr))
 
-	proxied, err := tcpProxy(logger.WithLogCtx(context.Background(), logCtx), h.Cri, biz, addr, DefaultDialTimeout)
+	proxied, err := TcpProxy(logger.WithLogCtx(context.Background(), logCtx), h.Cri, biz, addr, DefaultDialTimeout)
 	if err != nil {
 		logger.Infozo(logCtx, "[netproxy] create tcperror error", zap.Error(err))
 		a, addr, port, _ := socks5.ParseAddress(Socks5ProxyAddr)
@@ -171,7 +171,7 @@ func (h *CriHandle) UDPHandle(s *socks5.Server, addr *net.UDPAddr, d *socks5.Dat
 	return errors.New("unsupported")
 }
 
-func tcpProxy(ctx context.Context, i cri.Interface, c *cri.Container, addr string, dialTimeout time.Duration) (net.Conn, error) {
+func TcpProxy(ctx context.Context, i cri.Interface, c *cri.Container, addr string, dialTimeout time.Duration) (net.Conn, error) {
 	for _, handler := range tcpHandlers {
 		if conn, err := handler(ctx, i, c, addr, dialTimeout); conn != nil && err == nil {
 			return conn, err
