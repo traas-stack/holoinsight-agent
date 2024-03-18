@@ -81,7 +81,7 @@ func createNsEnterHttpClient(pod *cri.Pod) (*http.Transport, *http.Client, error
 		if d, ok := ctx.Deadline(); ok {
 			timeout = d.Sub(time.Now())
 		}
-		return cricore.NsEnterDial(pod.Sandbox, network, addr, timeout)
+		return cricore.NsEnterDial(ctx, pod.Sandbox, network, addr, timeout)
 	})
 }
 

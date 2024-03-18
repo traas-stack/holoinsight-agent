@@ -80,7 +80,7 @@ func (t *PortForwardTask) Start(ctx context.Context) (string, error) {
 func handlePortForwardRequest(logCtx zap.Option, biz *cri.Container, conn net.Conn, addr string) {
 	defer conn.Close()
 
-	subConn, err := tcpProxy(logger.WithLogCtx(context.Background(), logCtx), ioc.Crii, biz, addr, DefaultDialTimeout)
+	subConn, err := TcpProxy(logger.WithLogCtx(context.Background(), logCtx), ioc.Crii, biz, addr, DefaultDialTimeout)
 	if err != nil {
 		panic(err)
 	}
