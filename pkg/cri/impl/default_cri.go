@@ -872,6 +872,11 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 	} else {
 
 		for _, container := range detailContainers {
+			// Ignore init containers
+			if k8sutils.IsInitContainer(pod, container.Labels) {
+				continue
+			}
+
 			if !container.State.IsRunning() || container.ID != sandboxContainer.ID && container.SandboxId != sandboxContainer.ID {
 				logger.Metaz("[local] ignore expired container",
 					zap.String("ns", pod.Namespace),
@@ -880,11 +885,6 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 					zap.String("cid", cri.ShortContainerId(container.ID)))
 				podExpiredContainers++
 				expiredContainers++
-				continue
-			}
-
-			// Ignore init containers
-			if k8sutils.IsInitContainer(pod, container.Labels) {
 				continue
 			}
 
