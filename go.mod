@@ -14,6 +14,7 @@ require (
 	github.com/bep/debounce v1.2.1
 	github.com/containerd/containerd v1.5.13
 	github.com/containerd/typeurl v1.0.2
+	github.com/d5/tengo/v2 v2.17.0
 	github.com/docker/docker v20.10.14+incompatible
 	github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153
 	github.com/go-kit/log v0.2.1

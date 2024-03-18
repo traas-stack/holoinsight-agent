@@ -31,6 +31,7 @@ type (
 		// Metric black list
 		MetricBlacklist []string                 `json:"metricBlacklist,omitempty"`
 		MetricConfigs   map[string]*MetricConfig `json:"metricConfigs,omitempty"`
+		Scripts         []string                 `json:"scripts"`
 	}
 	MetricConfig struct {
 		// DELTA = currentValue - lastValue

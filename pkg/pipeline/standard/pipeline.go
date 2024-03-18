@@ -56,6 +56,7 @@ type (
 		mutex sync.RWMutex
 
 		lastMetricValueCache map[string]float64
+		scriptManager        *scriptManager
 	}
 	internalState struct {
 		timer *util.AlignedTimer
@@ -149,7 +150,8 @@ func NewPipeline(task *collecttask.CollectTask, baseConf *base.Conf, input inter
 		state: &internalState{
 			timer: timer,
 		},
-		transform: baseConf.Transform,
+		transform:     baseConf.Transform,
+		scriptManager: newScriptManager(task.Key, baseConf.Transform.Scripts, task.Target.Meta),
 	}, nil
 }
 func (p *Pipeline) Start() error {
@@ -412,6 +414,8 @@ func (p *Pipeline) transformMetrics(metricTime time.Time, m *accumulator.Memory)
 		keep = append(keep, metric)
 	}
 	m.Metrics = keep
+
+	m.Metrics = p.scriptManager.run(m.Metrics)
 
 	if x := p.transform.MetricPrefix; x != "" {
 		for _, metric := range m.Metrics {
