@@ -5,6 +5,7 @@
 package impl
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -17,7 +18,6 @@ import (
 	k8smetaextractor "github.com/traas-stack/holoinsight-agent/pkg/k8s/k8smeta/extractor"
 	"github.com/traas-stack/holoinsight-agent/pkg/k8s/k8sutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
-	pb2 "github.com/traas-stack/holoinsight-agent/pkg/server/registry/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/throttle"
 	"github.com/txthinking/socks5"
@@ -58,6 +58,8 @@ type (
 		chunkCpCh             chan *cri.Container
 		httpProxyServer       *http.Server
 		socks5ProxyServer     *socks5.Server
+		localFileMd5          sync.Map
+		lastForceUpdateTime   time.Time
 	}
 )
 
@@ -83,13 +85,7 @@ func (e *defaultCri) Engine() cri.ContainerEngine {
 }
 
 func (e *defaultCri) Start() error {
-	if file, err := os.Open(core.HelperToolLocalPath); err == nil {
-		defer file.Close()
-		md5 := md5.New()
-		if _, err := io.Copy(md5, file); err == nil {
-			e.helperToolLocalMd5sum = hex.EncodeToString(md5.Sum(nil))
-		}
-	}
+	e.helperToolLocalMd5sum, _ = calcMd5(core.HelperToolLocalPath)
 
 	if err := e.defaultMetaStore.Start(); err != nil {
 		return err
@@ -556,6 +552,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 		Runtime:          dc.Runtime,
 		NetworkMode:      dc.NetworkMode,
 		Hacked:           cri.HackInit,
+		IsAlpine:         cri.AlpineStatusUnknown,
 	}
 
 	if dc.LogPath != "" {
@@ -603,12 +600,10 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 	criPod.All = append(criPod.All, criContainer)
 
-	if criContainer.IsRunning() && criContainer.Hacked == cri.HackInit && criContainer.MainBiz {
+	if criContainer.IsRunning() && criContainer.Hacked == cri.HackInit && !criContainer.Sandbox {
 		criContainer.Hacked = cri.HackIng
 
 		var err error
-
-		e.setupTimezone(ctx, criContainer)
 
 		if criContainer.Hostname == "" {
 			criContainer.Hostname, err = e.getHostname(criContainer)
@@ -623,60 +618,98 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 		// skip kube-system containers
 		if !strings.HasPrefix(criPod.Namespace, "kube-") {
+			// check alpine based container
+			if bs, err := criutils.ReadContainerFileUsingExecCat(ctx, e, criContainer, "/etc/alpine-release"); err == nil && len(bs) > 0 {
+				criContainer.IsAlpine = cri.AlpineStatusYes
+				logger.Metaz("find alpine based container", zap.String("cid", criContainer.ShortContainerID()))
+			} else {
+				if strings.Contains(err.Error(), "No such file or directory") {
+					criContainer.IsAlpine = cri.AlpineStatusNo
+				}
+			}
+
+			// check pid 1 process
+			if bs, err := criutils.ReadContainerFileUsingExecCat(ctx, e, criContainer, "/proc/1/cmdline"); err == nil && len(bs) > 0 {
+				// seperated by \0
+				criContainer.Pid1Name = filepath.Base(string(bytes.Split(bs, []byte{0})[0]))
+			}
+
 			alreadyExists := false
-			if e.checkHelperMd5(ctx, criContainer) {
+			copyCount := 0
+
+			if err := e.ensureHelperCopied(ctx, criContainer, core.HelperToolLocalPath, core.HelperToolPath); err == nil {
+				copyCount++
+			}
+
+			if err := e.ensureHelperCopied(ctx, criContainer, core.BusyboxLocalPath, core.BusyboxPath); err == nil {
+				copyCount++
+			}
+
+			criContainer.ZombiesCount, _ = criutils.CountZombies(e, ctx, criContainer)
+
+			if copyCount == 2 {
 				alreadyExists = true
 				criContainer.Hacked = cri.HackOk
 			}
 
-			if !alreadyExists {
-				err = e.copyHelper(ctx, criContainer)
-				if err == nil {
-					criContainer.Hacked = cri.HackOk
-					logger.Metaz("[local] hack success",
-						zap.String("cid", criContainer.ShortContainerID()),
-						zap.String("ns", criPod.Namespace),
-						zap.String("pod", criPod.Name),
-						zap.Error(err))
-				} else {
-					logger.Metaz("[local] hack error",
-						zap.String("cid", criContainer.ShortContainerID()),
-						zap.String("ns", criPod.Namespace),
-						zap.String("pod", criPod.Name),
-						zap.Error(err))
-
-					ioc.RegistryService.ReportEventAsync(&pb2.ReportEventRequest_Event{
-						EventTimestamp: time.Now().UnixMilli(),
-						EventType:      "DIGEST",
-						PayloadType:    "init_container_error",
-						Tags: map[string]string{
-							"namespace": criPod.Namespace,
-							"pod":       criPod.Name,
-							"cid":       criContainer.ShortContainerID(),
-							"agent":     e.localAgentMeta.PodName(),
-						},
-						Numbers: nil,
-						Strings: map[string]string{
-							"err": err.Error(),
-						},
-						Logs: nil,
-						Json: "",
-					})
-
-					// It makes sense to retry with a timeout
-					if context.DeadlineExceeded == err {
-						time.AfterFunc(3*time.Second, func() {
-							select {
-							case e.chunkCpCh <- criContainer:
-							default:
-							}
-						})
-					}
-				}
+			if alreadyExists {
+				logger.Metaz("[local] hack success",
+					zap.String("cid", criContainer.ShortContainerID()),
+					zap.String("ns", criPod.Namespace),
+					zap.String("pod", criPod.Name),
+					zap.Error(err))
 			}
+
+			//if !alreadyExists {
+			//	err = e.copyHelper(ctx, criContainer)
+			//	if err == nil {
+			//		criContainer.Hacked = cri.HackOk
+			//		logger.Metaz("[local] hack success",
+			//			zap.String("cid", criContainer.ShortContainerID()),
+			//			zap.String("ns", criPod.Namespace),
+			//			zap.String("pod", criPod.Name),
+			//			zap.Error(err))
+			//	} else {
+			//		logger.Metaz("[local] hack error",
+			//			zap.String("cid", criContainer.ShortContainerID()),
+			//			zap.String("ns", criPod.Namespace),
+			//			zap.String("pod", criPod.Name),
+			//			zap.Error(err))
+			//
+			//		ioc.RegistryService.ReportEventAsync(&pb2.ReportEventRequest_Event{
+			//			EventTimestamp: time.Now().UnixMilli(),
+			//			EventType:      "DIGEST",
+			//			PayloadType:    "init_container_error",
+			//			Tags: map[string]string{
+			//				"namespace": criPod.Namespace,
+			//				"pod":       criPod.Name,
+			//				"cid":       criContainer.ShortContainerID(),
+			//				"agent":     e.localAgentMeta.PodName(),
+			//			},
+			//			Numbers: nil,
+			//			Strings: map[string]string{
+			//				"err": err.Error(),
+			//			},
+			//			Logs: nil,
+			//			Json: "",
+			//		})
+			//
+			//		// It makes sense to retry with a timeout
+			//		if context.DeadlineExceeded == err {
+			//			time.AfterFunc(3*time.Second, func() {
+			//				select {
+			//				case e.chunkCpCh <- criContainer:
+			//				default:
+			//				}
+			//			})
+			//		}
+			//	}
+			//}
 		} else {
 			criContainer.Hacked = cri.HackSkipped
 		}
+
+		e.setupTimezone(ctx, criContainer)
 	}
 
 	return criContainer
@@ -721,6 +754,12 @@ func (e *defaultCri) syncOnce() {
 	}
 
 	begin := time.Now()
+
+	forceUpdateContainerInfo := false
+	if e.lastForceUpdateTime.IsZero() || begin.Sub(e.lastForceUpdateTime) > time.Minute {
+		forceUpdateContainerInfo = true
+		e.lastForceUpdateTime = begin
+	}
 
 	containers, err := e.listContainers()
 	if err != nil {
@@ -780,7 +819,7 @@ func (e *defaultCri) syncOnce() {
 				wg.Done()
 			}()
 
-			criPod, podExpiredContainers, podChanged, _ := e.buildPod(pod, oldState, newState, newStateLock, containersByPod)
+			criPod, podExpiredContainers, podChanged, _ := e.buildPod(pod, oldState, newState, newStateLock, containersByPod, forceUpdateContainerInfo)
 			if podChanged {
 				anyChanged = true
 			}
@@ -837,7 +876,7 @@ func (e *defaultCri) firePodChange() {
 	}
 }
 
-func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *internalState, newStateLock *sync.Mutex, containersByPod map[string][]*cri.EngineDetailContainer) (*cri.Pod, int, bool, error) {
+func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *internalState, newStateLock *sync.Mutex, containersByPod map[string][]*cri.EngineDetailContainer, forceUpdateContainerInfo bool) (*cri.Pod, int, bool, error) {
 
 	criPod := &cri.Pod{
 		Pod:      pod,
@@ -892,6 +931,12 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 
 			if cached != nil && !isContainerChanged(cached.engineContainer, container) {
 				cached.criContainer.Pod = criPod
+
+				if forceUpdateContainerInfo {
+					ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
+					cached.criContainer.ZombiesCount, _ = criutils.CountZombies(e, ctx, cached.criContainer)
+					cancel()
+				}
 
 				newStateLock.Lock()
 				newState.containerMap[container.ID] = &cachedContainer{
@@ -963,4 +1008,61 @@ func (e *defaultCri) ExecAsync(ctx context.Context, c *cri.Container, req cri.Ex
 		zap.Strings("cmd", req.Cmd),
 		zap.Strings("env", req.Env))
 	return e.engine.ExecAsync(ctx, c, req)
+}
+
+func (e *defaultCri) ensureHelperCopied(ctx context.Context, c *cri.Container, from string, to string) (ret error) {
+	begin := time.Now()
+	hitCache := false
+	defer func() {
+		logger.Metaz("copy helper",
+			zap.String("cid", c.ShortContainerID()),
+			zap.String("from", from),
+			zap.String("to", to),
+			zap.Bool("hitCache", hitCache),
+			zap.Duration("cost", time.Since(begin)),
+			zap.Error(ret),
+		)
+	}()
+
+	i, ok := e.localFileMd5.Load(from)
+
+	var fromMd5 string
+	if !ok {
+		if calc, err := calcMd5(from); err == nil {
+			fromMd5 = calc
+			e.localFileMd5.Store(from, fromMd5)
+		} else {
+			e.localFileMd5.Store(from, "")
+			return err
+		}
+	} else {
+		fromMd5 = i.(string)
+	}
+
+	if fromMd5 == "" {
+		return nil
+	}
+
+	if cmd5, err := criutils.Md5sum(ctx, e, c, core.HelperToolPath); err == nil {
+		if fromMd5 == cmd5 {
+			hitCache = true
+			return nil
+		}
+	}
+
+	return e.CopyToContainer(ctx, c, from, to)
+}
+
+func calcMd5(path string) (string, error) {
+	if file, err := os.Open(path); err == nil {
+		defer file.Close()
+		md5 := md5.New()
+		if _, err := io.Copy(md5, file); err == nil {
+			return hex.EncodeToString(md5.Sum(nil)), nil
+		} else {
+			return "", err
+		}
+	} else {
+		return "", err
+	}
 }

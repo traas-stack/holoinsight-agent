@@ -10,7 +10,9 @@ import (
 )
 
 var HelperToolLocalPath = "/usr/local/holoinsight/agent/bin/helper"
+var BusyboxLocalPath = "/usr/local/holoinsight/agent/bin/busybox"
 var HelperToolPath = "/tmp/holoinsight/helper"
+var BusyboxPath = "/tmp/holoinsight/busybox"
 
 type (
 	HelperBaseResp struct {

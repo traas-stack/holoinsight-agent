@@ -27,6 +27,14 @@ const (
 	HackRetryError
 )
 
+const (
+	AlpineStatusUnknown AlpineStatus = iota
+	// AlpineStatusYes indicates that the container is an alpine-based container
+	AlpineStatusYes
+	// AlpineStatusNo indicates that the container is not an alpine-based container
+	AlpineStatusNo
+)
+
 // TODO 我们推出一个规范 让用户按我们规范做 就认为它是主容器
 var (
 	ErrMultiBiz        = errors.New("multi biz containers")
@@ -106,6 +114,16 @@ type (
 
 		// Attributes can be used to prevent arbitrary extension fields
 		Attributes sync.Map
+
+		// name of pid 1
+		// tini systemd java python
+		Pid1Name string
+
+		// Is this container based on alpine?
+		IsAlpine AlpineStatus
+
+		// The number of zombie processes inside the container
+		ZombiesCount int
 	}
 	ContainerState struct {
 		Pid    int
@@ -146,6 +164,7 @@ type (
 		// EnvTz is timezone name read from Env 'TZ'
 		EnvTz string
 	}
+	AlpineStatus uint8
 )
 
 // 如果有且只有一个 main biz 就直接返回 否则返回 nil 让用户自己检查去
@@ -225,4 +244,17 @@ func (r *ExecResult) SampleOutputLength(length int) (stdout string, stderr strin
 		stderr = util.SubstringMax(r.Stderr.String(), DefaultSampleOutputLength)
 	}
 	return
+}
+
+func (a AlpineStatus) MarshalText() ([]byte, error) {
+	switch a {
+	case AlpineStatusYes:
+		return []byte("yes"), nil
+	case AlpineStatusNo:
+		return []byte("no"), nil
+	case AlpineStatusUnknown:
+		fallthrough
+	default:
+		return []byte("unknown"), nil
+	}
 }
