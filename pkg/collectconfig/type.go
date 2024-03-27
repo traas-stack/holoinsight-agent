@@ -16,6 +16,11 @@ const (
 	EElectRefVar    = "refVar"
 )
 
+const (
+	ElectRefMetaTypePodLabels      = "labels"
+	ElectRefMetaTypePodAnnotations = "annotations"
+)
+
 type (
 	// 1. pre-where: 可选, 只能支持左起右至的elect
 	// 2. structure: 可选, 使得数据结构化

@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cast"
 	containerhelpermodel "github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/accumulator"
-	"github.com/traas-stack/holoinsight-agent/pkg/appconfig"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask"
 	"github.com/traas-stack/holoinsight-agent/pkg/collecttask/collecttaskcri"
 	"github.com/traas-stack/holoinsight-agent/pkg/core"
@@ -50,7 +49,7 @@ type (
 		stopCh    chan struct{}
 		stoppedCh chan struct{}
 
-		transform base.Transform
+		baseConf *base.Conf
 
 		state *internalState
 		mutex sync.RWMutex
@@ -90,26 +89,7 @@ func (p *Pipeline) View(f func(api2.Pipeline)) {
 }
 
 func NewPipeline(task *collecttask.CollectTask, baseConf *base.Conf, input interface{}, output *Output) (*Pipeline, error) {
-	tags := make(map[string]string, len(baseConf.RefMetas))
-	for key, item := range baseConf.RefMetas {
-		value := task.Target.Meta[item.Name]
-		if value == "" && task.Target.Type == collecttask.TargetLocalhost {
-			switch item.Name {
-			case "app":
-				value = appconfig.StdAgentConfig.App
-			case "ip":
-				value = util.GetLocalIp()
-			case "host":
-				fallthrough
-			case "hostname":
-				value = util.GetHostname()
-			}
-		}
-		if value != "" {
-			tags[key] = value
-		}
-	}
-	meta.SuppressCommonTags(tags)
+	tags := createCommonTags(task, baseConf)
 
 	intervalMills := 0
 	offsetMills := 0
@@ -150,7 +130,7 @@ func NewPipeline(task *collecttask.CollectTask, baseConf *base.Conf, input inter
 		state: &internalState{
 			timer: timer,
 		},
-		transform:     baseConf.Transform,
+		baseConf:      baseConf,
 		scriptManager: newScriptManager(task.Key, baseConf.Transform.Scripts, task.Target.Meta),
 	}, nil
 }
@@ -378,7 +358,7 @@ func (p *Pipeline) transformMetrics(metricTime time.Time, m *accumulator.Memory)
 
 		metric.Timestamp = ts
 
-		if mc, ok := p.transform.MetricConfigs[metric.Name]; ok {
+		if mc, ok := p.baseConf.Transform.MetricConfigs[metric.Name]; ok {
 			metricKey := model.BuildMetricKey(metric)
 			metricValueCache[metricKey] = metric.Value
 
@@ -417,11 +397,11 @@ func (p *Pipeline) transformMetrics(metricTime time.Time, m *accumulator.Memory)
 
 	m.Metrics = p.scriptManager.run(m.Metrics)
 
-	if x := p.transform.MetricPrefix; x != "" {
+	if x := p.baseConf.Transform.MetricPrefix; x != "" {
 		for _, metric := range m.Metrics {
 			metric.Name = x + metric.Name
 		}
-	} else if x := p.transform.MetricFormat; x != "" {
+	} else if x := p.baseConf.Transform.MetricFormat; x != "" {
 		for _, metric := range m.Metrics {
 			metric.Name = fmt.Sprintf(x, metric.Name)
 		}
