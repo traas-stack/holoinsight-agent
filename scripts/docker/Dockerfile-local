@@ -1,3 +1,4 @@
+FROM --platform=$BUILDPLATFORM busybox:musl as busybox
 FROM --platform=$BUILDPLATFORM holoinsight/agent-base:1.0.0
 
 COPY scripts/docker/sc /usr/local/bin/
@@ -16,6 +17,7 @@ COPY scripts/api /usr/local/holoinsight/agent/api
 COPY scripts/docker/init.sh /usr/local/holoinsight/agent/bin/init.sh
 COPY ./build/linux-amd64/bin/agent /usr/local/holoinsight/agent/bin/agent
 COPY ./build/linux-amd64/bin/helper /usr/local/holoinsight/agent/bin/helper
+COPY --from=busybox /bin/busybox /usr/local/holoinsight/agent/bin/busybox
 
 VOLUME /usr/local/holoinsight/agent/data
 VOLUME /usr/local/holoinsight/agent/logs

@@ -1,4 +1,6 @@
-FROM holoinsight/agent-builder:1.0.1 as builder
+FROM --platform=$BUILDPLATFORM busybox:musl as busybox
+
+FROM --platform=$BUILDPLATFORM holoinsight/agent-builder:1.0.1 as builder
 ARG GO111MODULE=on
 ARG GOPROXY=direct
 # Users in China can use GOPROXY to speed up building.
@@ -30,6 +32,7 @@ COPY scripts/api /usr/local/holoinsight/agent/api
 COPY scripts/docker/init.sh /usr/local/holoinsight/agent/bin/init.sh
 COPY --from=builder /agent /usr/local/holoinsight/agent/bin/agent
 COPY --from=builder /helper /usr/local/holoinsight/agent/bin/helper
+COPY --from=busybox /bin/busybox /usr/local/holoinsight/agent/bin/busybox
 
 VOLUME /usr/local/holoinsight/agent/data
 VOLUME /usr/local/holoinsight/agent/logs
