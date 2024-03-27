@@ -14,13 +14,15 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util/batch"
+	"github.com/traas-stack/holoinsight-agent/pkg/util/stat"
 	"sync"
 	"time"
 )
 
 const (
 	defaultWriteBatchPointSize = 4096
-	defaultWriteQueueSize      = 65536
+	defaultWriteQueueSize      = 4096
+	defaultSemaphore           = 64
 	defaultWriteBatchWait      = 500 * time.Millisecond
 )
 
@@ -77,7 +79,7 @@ func (w *writeServiceImpl) ensureGatewayInited0() {
 		}, defaultWriteBatchPointSize))
 	bpV1.Run()
 
-	bpV4 := batch.NewBatchProcessor(defaultWriteQueueSize, &batchConsumerV4{gw: gateway},
+	bpV4 := batch.NewBatchProcessor(defaultWriteQueueSize, &batchConsumerV4{gw: gateway, semaphore: make(chan struct{}, defaultSemaphore)},
 		batch.WithMaxWaitStrategy(defaultWriteBatchWait),
 		batch.WithItemsWeightStrategy(func(i interface{}) int {
 			switch x := i.(type) {
@@ -96,6 +98,21 @@ func (w *writeServiceImpl) ensureGatewayInited0() {
 	w.gateway = gateway
 	w.bpV1 = bpV1
 	w.bpV4 = bpV4
+
+	stat.DefaultManager1S.Gauge("bpv1.pending", func() []stat.GaugeSubItem {
+		return []stat.GaugeSubItem{
+			{
+				Values: []int64{int64(bpV1.Num())},
+			},
+		}
+	})
+	stat.DefaultManager1S.Gauge("bpv4.pending", func() []stat.GaugeSubItem {
+		return []stat.GaugeSubItem{
+			{
+				Values: []int64{int64(bpV4.Num())},
+			},
+		}
+	})
 }
 
 func (w *writeServiceImpl) WriteV1(ctx context.Context, req *WriteV1Request) error {

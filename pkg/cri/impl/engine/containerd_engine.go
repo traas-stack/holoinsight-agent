@@ -283,7 +283,7 @@ func (e *ContainerdContainerEngine) Exec(ctx context.Context, c *cri.Container, 
 
 	pspec := spec.Process
 	pspec.Terminal = false
-	pspec.Args = wrapTimeout(req.Cmd)
+	pspec.Args = wrapTimeout(c, req.Cmd)
 	if req.WorkingDir != "" {
 		pspec.Cwd = req.WorkingDir
 	}
@@ -424,7 +424,7 @@ func (e *ContainerdContainerEngine) ExecAsync(ctx context.Context, c *cri.Contai
 
 	pspec := spec.Process
 	pspec.Terminal = false
-	pspec.Args = wrapTimeout(req.Cmd)
+	pspec.Args = wrapTimeout(c, req.Cmd)
 	if req.WorkingDir != "" {
 		pspec.Cwd = req.WorkingDir
 	}

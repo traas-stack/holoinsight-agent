@@ -22,7 +22,8 @@ type (
 		gw *gateway.Service
 	}
 	batchConsumerV4 struct {
-		gw *gateway.Service
+		gw        *gateway.Service
+		semaphore chan struct{}
 	}
 	result struct {
 		Resp *pb.WriteMetricsResponse
@@ -45,8 +46,8 @@ type (
 )
 
 var (
-	gatewayDiscardStat = stat.DefaultManager.Counter("gateway.discard")
-	gatewaySendStat    = stat.DefaultManager.Counter("gateway.send")
+	gatewayDiscardStat = stat.DefaultManager1S.Counter("gateway.discard")
+	gatewaySendStat    = stat.DefaultManager1S.Counter("gateway.send")
 )
 
 func (b *batchConsumerV1) Consume(a []interface{}) {
@@ -88,8 +89,11 @@ func (b *batchConsumerV1) Consume(a []interface{}) {
 }
 
 func (b *batchConsumerV4) Consume(a []interface{}) {
+	// copy one
+	a = append([]interface{}(nil), a...)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+
 	var taskResults []*pb.WriteMetricsRequestV4_TaskResult
 	points := 0
 	for _, i := range a {
@@ -103,45 +107,52 @@ func (b *batchConsumerV4) Consume(a []interface{}) {
 	}
 	begin := time.Now()
 
-	var err error
-	var resp *pb.WriteMetricsResponse
+	b.semaphore <- struct{}{}
+	go func() {
+		defer func() {
+			cancel()
+			<-b.semaphore
+		}()
+		var err error
+		var resp *pb.WriteMetricsResponse
 
-	for i := 0; i < 3; i++ {
-		resp, err = b.gw.WriteMetrics(ctx, taskResults)
-		if err != nil && strings.Contains(err.Error(), "connection refused") {
-			time.Sleep(300 * time.Millisecond)
-			continue
+		for i := 0; i < 3; i++ {
+			resp, err = b.gw.WriteMetrics(ctx, taskResults)
+			if err != nil && strings.Contains(err.Error(), "connection refused") {
+				time.Sleep(300 * time.Millisecond)
+				continue
+			}
+			break
 		}
-		break
-	}
 
-	cost := time.Now().Sub(begin)
-	if err == nil && resp.Header.Code != 0 {
-		err = fmt.Errorf("server error %+v", resp.Header)
-	}
+		cost := time.Now().Sub(begin)
+		if err == nil && resp.Header.Code != 0 {
+			err = fmt.Errorf("server error %+v", resp.Header)
+		}
 
-	if err != nil {
-		logger.Errorz("[gateway] write error", zap.Error(err))
-		// 统计丢数据数量
-		gatewayDiscardStat.Add(nil, []int64{ //
-			int64(len(a)), //
-		})
-		gatewaySendStat.Add([]string{"v4", "N"}, []int64{1, int64(len(a)), int64(points), cost.Milliseconds()})
-	} else {
-		gatewaySendStat.Add([]string{"v4", "Y"}, []int64{1, int64(len(a)), int64(points), cost.Milliseconds()})
-	}
+		if err != nil {
+			logger.Errorz("[gateway] write error", zap.Error(err))
+			// 统计丢数据数量
+			gatewayDiscardStat.Add(nil, []int64{ //
+				int64(len(a)), //
+			})
+			gatewaySendStat.Add([]string{"v4", "N"}, []int64{1, int64(len(a)), int64(points), cost.Milliseconds()})
+		} else {
+			gatewaySendStat.Add([]string{"v4", "Y"}, []int64{1, int64(len(a)), int64(points), cost.Milliseconds()})
+		}
 
-	taskResult := &result{
-		Resp: resp,
-		Err:  err,
-	}
-	for _, i := range a {
-		switch x := i.(type) {
-		case *taskV4:
-			if x.resultCh != nil {
-				x.resultCh <- taskResult
-				close(x.resultCh)
+		taskResult := &result{
+			Resp: resp,
+			Err:  err,
+		}
+		for _, i := range a {
+			switch x := i.(type) {
+			case *taskV4:
+				if x.resultCh != nil {
+					x.resultCh <- taskResult
+					close(x.resultCh)
+				}
 			}
 		}
-	}
+	}()
 }

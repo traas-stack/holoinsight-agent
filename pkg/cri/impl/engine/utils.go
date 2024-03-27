@@ -6,6 +6,7 @@ package engine
 
 import (
 	"github.com/spf13/cast"
+	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"os"
 )
 
@@ -21,9 +22,12 @@ func init() {
 }
 
 // wrapTimeout wraps cmd with timeout -s KILL <seconds> to prevent the process from hanging and not exiting for any reason.
-func wrapTimeout(cmd []string) []string {
+func wrapTimeout(c *cri.Container, cmd []string) []string {
+	// TODO Different busybox versions have different timeout command formats
+	// TODO In alpined based container, timeout will generate zombie processes
 	// timeout -s KILL <seconds> cmd...
-	return append([]string{"timeout", "-s", "KILL", timeout}, cmd...)
+	// return append([]string{"timeout", "-s", "KILL", timeout}, cmd...)
+	return cmd
 }
 
 // wrapEnv wraps envs with _FROM=holoinsight-agent. This env is used to mark the source of the call.
