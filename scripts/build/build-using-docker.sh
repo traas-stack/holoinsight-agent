@@ -11,7 +11,7 @@ GOOS=`go env GOOS`
 GOARCH=`go env GOARCH`
 rm -rf $project_root/build/$GOOS-$GOARCH/bin
 
-builder_image=holoinsight/agent-builder:1.0.1
+builder_image=holoinsight/agent-builder:1.0.2
 
 mkdir -p $HOME/.cache/go-build $HOME/go/pkg
 

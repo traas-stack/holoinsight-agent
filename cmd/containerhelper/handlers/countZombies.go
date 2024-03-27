@@ -5,7 +5,6 @@
 package handlers
 
 import (
-	"errors"
 	"github.com/traas-stack/holoinsight-agent/cmd/containerhelper/model"
 	"io/fs"
 	"os"
@@ -45,7 +44,7 @@ func countZombiesHandler(_ string, resp *model.Resp) error {
 			}
 		}
 		if count > countLimit {
-			return errors.New("SkipAll")
+			return filepath.SkipAll
 		}
 		return filepath.SkipDir
 	})

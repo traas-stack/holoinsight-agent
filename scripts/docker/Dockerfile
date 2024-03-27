@@ -1,6 +1,6 @@
 FROM --platform=$BUILDPLATFORM busybox:musl as busybox
 
-FROM --platform=$BUILDPLATFORM holoinsight/agent-builder:1.0.1 as builder
+FROM --platform=$BUILDPLATFORM holoinsight/agent-builder:1.0.2 as builder
 ARG GO111MODULE=on
 ARG GOPROXY=direct
 # Users in China can use GOPROXY to speed up building.

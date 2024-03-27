@@ -1,4 +1,4 @@
-FROM golang:1.19 as golang
+FROM golang:1.22 as golang
 
 FROM centos:7
 # This image is used to build agent bin. We use old version centos:7 to avoid GLIBC error in some older version OS.

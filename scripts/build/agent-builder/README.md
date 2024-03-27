@@ -4,6 +4,9 @@ Agent builder image.
 This image is used to build agent bin.
 
 # Changelog
+#### 1.0.2
+- Update Golang to 1.22 
+
 #### 1.0.1
 - Use docker buildx
 
