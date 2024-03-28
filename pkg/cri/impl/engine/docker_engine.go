@@ -132,9 +132,9 @@ func (e *DockerContainerEngine) Exec(ctx context.Context, c *cri.Container, req 
 		AttachStdout: true,
 		Detach:       false,
 		DetachKeys:   "",
-		Env:          wrapEnv(req.Env),
+		Env:          req.Env,
 		WorkingDir:   req.WorkingDir,
-		Cmd:          wrapTimeout(c, req.Cmd),
+		Cmd:          req.Cmd,
 	})
 	if err != nil {
 		return invalidResult, err
@@ -240,9 +240,9 @@ func (e *DockerContainerEngine) ExecAsync(ctx context.Context, c *cri.Container,
 		AttachStdout: true,
 		Detach:       false,
 		DetachKeys:   "",
-		Env:          wrapEnv(req.Env),
+		Env:          req.Env,
 		WorkingDir:   req.WorkingDir,
-		Cmd:          wrapTimeout(c, hackedCmd),
+		Cmd:          hackedCmd,
 	})
 	if err != nil {
 		return invalidResult, err

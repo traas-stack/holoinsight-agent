@@ -268,6 +268,11 @@ func (e *defaultCri) Exec(ctx context.Context, c *cri.Container, req cri.ExecReq
 		return invalidResult, errContainerIsNil
 	}
 
+	if !req.NoWrapCmdWithTimeout {
+		req.Cmd = wrapTimeout(c, req.Cmd)
+	}
+	req.Env = wrapEnv(req.Env)
+
 	begin := time.Now()
 	defer func() {
 		cost := time.Now().Sub(begin)
@@ -635,11 +640,11 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 			alreadyExists := false
 			copyCount := 0
 
-			if err := e.ensureHelperCopied(ctx, criContainer, core.HelperToolLocalPath, core.HelperToolPath); err == nil {
+			if err := e.ensureHelperCopied(ctx, criContainer, core.BusyboxLocalPath, core.BusyboxPath); err == nil {
 				copyCount++
 			}
 
-			if err := e.ensureHelperCopied(ctx, criContainer, core.BusyboxLocalPath, core.BusyboxPath); err == nil {
+			if err := e.ensureHelperCopied(ctx, criContainer, core.HelperToolLocalPath, core.HelperToolPath); err == nil {
 				copyCount++
 			}
 
@@ -1080,7 +1085,7 @@ func (e *defaultCri) updateZombieCheck(c *cri.Container) {
 		return
 	}
 
-	if _, err := e.Exec(ctx, c, cri.ExecRequest{Cmd: []string{core.BusyboxPath, "timeout", "1", "true"}}); err != nil {
+	if _, err := e.Exec(ctx, c, cri.ExecRequest{Cmd: []string{core.BusyboxPath, "timeout", "1", "true"}, NoWrapCmdWithTimeout: true}); err != nil {
 		logger.Errorz("check timeout error", zap.String("cid", c.ShortID()), zap.Error(err))
 		return
 	}

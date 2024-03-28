@@ -1,8 +1,4 @@
-/*
- * Copyright 2022 Holoinsight Project Authors. Licensed under Apache-2.0.
- */
-
-package engine
+package impl
 
 import (
 	"github.com/spf13/cast"
@@ -29,9 +25,9 @@ func wrapTimeout(c *cri.Container, cmd []string) []string {
 	// Different busybox versions have different timeout command formats
 	// In alpined based container, timeout will generate zombie processes
 	// timeout -s KILL <seconds> cmd...
-	// return append([]string{"timeout", "-s", "KILL", timeout}, cmd...)
+	// return append([]string{"timeout", "-s", "SIGKILL", timeout}, cmd...)
 	if c.Pid1CanRecycleZombieProcesses {
-		return append([]string{core.BusyboxPath, "timeout", "-s", "KILL", timeout}, cmd...)
+		return append([]string{core.BusyboxPath, "timeout", "-s", "SIGKILL", timeout}, cmd...)
 	}
 	return cmd
 }

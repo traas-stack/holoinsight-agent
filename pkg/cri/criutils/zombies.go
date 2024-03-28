@@ -15,7 +15,8 @@ import (
 
 func CountZombies(i cri.Interface, ctx context.Context, c *cri.Container) (int, error) {
 	r, err := i.Exec(ctx, c, cri.ExecRequest{
-		Cmd: []string{core.HelperToolPath, "countZombies"},
+		Cmd:                  []string{core.HelperToolPath, "countZombies"},
+		NoWrapCmdWithTimeout: true,
 	})
 	if err != nil {
 		return 0, err

@@ -284,13 +284,13 @@ func (e *ContainerdContainerEngine) Exec(ctx context.Context, c *cri.Container, 
 
 	pspec := spec.Process
 	pspec.Terminal = false
-	pspec.Args = wrapTimeout(c, req.Cmd)
+	pspec.Args = req.Cmd
 	if req.WorkingDir != "" {
 		pspec.Cwd = req.WorkingDir
 	}
 
 	// Append user specified env
-	pspec.Env = wrapEnv(append(pspec.Env, req.Env...))
+	pspec.Env = append(pspec.Env, req.Env...)
 
 	task, err := container.Task(ctx, nil)
 	if err != nil {
@@ -425,13 +425,13 @@ func (e *ContainerdContainerEngine) ExecAsync(ctx context.Context, c *cri.Contai
 
 	pspec := spec.Process
 	pspec.Terminal = false
-	pspec.Args = wrapTimeout(c, req.Cmd)
+	pspec.Args = req.Cmd
 	if req.WorkingDir != "" {
 		pspec.Cwd = req.WorkingDir
 	}
 
 	// Append user specified env
-	pspec.Env = wrapEnv(append(pspec.Env, req.Env...))
+	pspec.Env = req.Env
 
 	task, err := container.Task(ctx, nil)
 	if err != nil {
