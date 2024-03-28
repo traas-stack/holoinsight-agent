@@ -1089,12 +1089,11 @@ func (e *defaultCri) updateZombieCheck(c *cri.Container) {
 	// This func will be executed by a separate goroutine, so sleep does not matter.
 	time.Sleep(2 * time.Second)
 
-	zombieCount0 := c.ZombieCount
 	if count, err := criutils.CountZombies(e, ctx, c); err == nil {
 		c.ZombieCount = count
 	}
 
-	c.Pid1CanRecycleZombieProcesses = c.ZombieCount == zombieCount0
+	c.Pid1CanRecycleZombieProcesses = c.ZombieCount == 0
 }
 
 func calcMd5(path string) (string, error) {
