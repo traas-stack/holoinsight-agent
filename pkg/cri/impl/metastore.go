@@ -171,7 +171,7 @@ func newInternalState() *internalState {
 
 func (s *internalState) build() {
 	for _, c := range s.containerMap {
-		s.shortCidContainerMap[c.criContainer.ShortContainerID()] = c
+		s.shortCidContainerMap[c.criContainer.ShortID()] = c
 	}
 	for _, pod := range s.pods {
 		if pod.IsRunning() {

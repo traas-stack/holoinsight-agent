@@ -121,6 +121,7 @@ type (
 		Hostname    string
 		Runtime     string
 		NetworkMode string
+		PidMode     string
 		MergedDir   string
 		LogPath     string
 		Mounts      []*MountPoint

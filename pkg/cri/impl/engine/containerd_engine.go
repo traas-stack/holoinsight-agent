@@ -216,6 +216,7 @@ func (e *ContainerdContainerEngine) GetContainerDetail(ctx context.Context, cid 
 
 	if detail.IsSandbox {
 		detail.NetworkMode = "netns:" + sandboxMeta.NetNSPath
+		// TODO detail.PidMode
 	}
 
 	// I don't know how to get containerd's state dir.
