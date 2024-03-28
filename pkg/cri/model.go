@@ -109,21 +109,23 @@ type (
 		// NetworkMode
 		NetworkMode string
 
+		// If PidMode is "host", it means that the container uses the pid namespace of the physical machine.
+		PidMode string
+
 		// docker json log: https://docs.docker.com/config/containers/logging/json-file/
 		LogPath string
 
 		// Attributes can be used to prevent arbitrary extension fields
 		Attributes sync.Map
 
-		// name of pid 1
-		// tini systemd java python
+		// The number of zombie processes inside the container
+		ZombieCount int
+
+		// pid 1 process name
 		Pid1Name string
 
-		// Is this container based on alpine?
-		IsAlpine AlpineStatus
-
-		// The number of zombie processes inside the container
-		ZombiesCount int
+		// Whether pid 1 has the ability to recycle zombie processes
+		Pid1CanRecycleZombieProcesses bool
 	}
 	ContainerState struct {
 		Pid    int
@@ -211,7 +213,7 @@ func (c *Container) IsRunning() bool {
 	return c.State.Pid > 0 && c.State.Status == "running"
 }
 
-func (c *Container) ShortContainerID() string {
+func (c *Container) ShortID() string {
 	return ShortContainerId(c.Id)
 }
 

@@ -30,18 +30,12 @@ func countZombiesHandler(_ string, resp *model.Resp) error {
 		if _, err := strconv.ParseInt(info.Name(), 10, 32); err != nil {
 			return nil
 		}
-		content, err := os.ReadFile(filepath.Join(path, "/status"))
+		content, err := os.ReadFile(filepath.Join(path, "/stat"))
 		if err != nil {
 			return nil
 		}
-		lines := strings.Split(string(content), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "State:") {
-				if strings.Contains(line, "zombie") {
-					count++
-				}
-				break
-			}
+		if strings.Contains(string(content), ") Z 1 ") {
+			count++
 		}
 		if count > countLimit {
 			return filepath.SkipAll

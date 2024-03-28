@@ -184,10 +184,10 @@ func (e *defaultCri) chunkCpLoop() {
 				cost := time.Since(begin)
 
 				if err == nil {
-					logger.Metaz("[local] retry hack success", zap.String("cid", c.ShortContainerID()), zap.Duration("cost", cost))
+					logger.Metaz("[local] retry hack success", zap.String("cid", c.ShortID()), zap.Duration("cost", cost))
 					c.Hacked = cri.HackOk
 				} else {
-					logger.Metaz("[local] retry hack error", zap.String("cid", c.ShortContainerID()), zap.Duration("cost", cost), zap.Error(err))
+					logger.Metaz("[local] retry hack error", zap.String("cid", c.ShortID()), zap.Duration("cost", cost), zap.Error(err))
 					c.Hacked = cri.HackRetryError
 				}
 			}()
@@ -229,7 +229,7 @@ func (e *defaultCri) CopyToContainer(ctx context.Context, c *cri.Container, srcP
 		cost := time.Now().Sub(begin)
 		logger.Criz("[digest] copy to container",
 			zap.String("engine", e.engine.Type()),
-			zap.String("cid", c.ShortContainerID()),
+			zap.String("cid", c.ShortID()),
 			zap.String("runtime", c.Runtime),
 			zap.String("method", method),
 			zap.String("src", srcPath),
@@ -250,7 +250,7 @@ func (e *defaultCri) CopyFromContainer(ctx context.Context, c *cri.Container, sr
 	defer func() {
 		logger.Criz("[digest] copy from container",
 			zap.String("engine", e.engine.Type()),
-			zap.String("cid", c.ShortContainerID()),
+			zap.String("cid", c.ShortID()),
 			zap.String("runtime", c.Runtime),
 			zap.String("method", method),
 			zap.String("src", srcPath),
@@ -281,7 +281,7 @@ func (e *defaultCri) Exec(ctx context.Context, c *cri.Container, req cri.ExecReq
 
 		logger.Criz("[digest] exec",
 			zap.String("engine", e.engine.Type()),
-			zap.String("cid", c.ShortContainerID()),
+			zap.String("cid", c.ShortID()),
 			zap.String("runtime", c.Runtime),
 			zap.Strings("cmd", req.Cmd),
 			zap.Int("code", r.ExitCode),
@@ -512,13 +512,13 @@ func (e *defaultCri) checkHelperMd5(ctx context.Context, c *cri.Container) bool 
 	}
 	if md5, err := criutils.Md5sum(ctx, e, c, core.HelperToolPath); err == nil {
 		logger.Metaz("[local] helper exists",
-			zap.String("cid", c.ShortContainerID()),
+			zap.String("cid", c.ShortID()),
 			zap.String("md5", md5),
 			zap.String("local-md5", e.helperToolLocalMd5sum),
 		)
 		if md5 == e.helperToolLocalMd5sum {
 			logger.Metaz("[local] already hack",
-				zap.String("cid", c.ShortContainerID()),
+				zap.String("cid", c.ShortID()),
 				zap.String("ns", c.Pod.Namespace),
 				zap.String("pod", c.Pod.Name))
 			return true
@@ -551,8 +551,9 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 		SandboxID:        dc.SandboxId,
 		Runtime:          dc.Runtime,
 		NetworkMode:      dc.NetworkMode,
+		PidMode:          dc.PidMode,
 		Hacked:           cri.HackInit,
-		IsAlpine:         cri.AlpineStatusUnknown,
+		ZombieCount:      -1,
 	}
 
 	if dc.LogPath != "" {
@@ -611,27 +612,24 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 				logger.Metaz("[local] fail to get hostname",
 					zap.String("ns", criPod.Namespace), //
 					zap.String("pod", criPod.Name),     //
-					zap.String("cid", criContainer.ShortContainerID()),
+					zap.String("cid", criContainer.ShortID()),
 					zap.Error(err))
 			}
 		}
 
 		// skip kube-system containers
 		if !strings.HasPrefix(criPod.Namespace, "kube-") {
+
 			// check alpine based container
 			if bs, err := criutils.ReadContainerFileUsingExecCat(ctx, e, criContainer, "/etc/alpine-release"); err == nil && len(bs) > 0 {
-				criContainer.IsAlpine = cri.AlpineStatusYes
-				logger.Metaz("find alpine based container", zap.String("cid", criContainer.ShortContainerID()))
-			} else {
-				if strings.Contains(err.Error(), "No such file or directory") {
-					criContainer.IsAlpine = cri.AlpineStatusNo
-				}
+				logger.Metaz("find alpine based container", zap.String("cid", criContainer.ShortID()))
 			}
 
 			// check pid 1 process
 			if bs, err := criutils.ReadContainerFileUsingExecCat(ctx, e, criContainer, "/proc/1/cmdline"); err == nil && len(bs) > 0 {
 				// seperated by \0
 				criContainer.Pid1Name = filepath.Base(string(bytes.Split(bs, []byte{0})[0]))
+				logger.Metaz("find pid1Name", zap.String("cid", criContainer.ShortID()), zap.String("pid1Name", criContainer.Pid1Name))
 			}
 
 			alreadyExists := false
@@ -645,7 +643,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 				copyCount++
 			}
 
-			criContainer.ZombiesCount, _ = criutils.CountZombies(e, ctx, criContainer)
+			go e.updateZombieCheck(criContainer)
 
 			if copyCount == 2 {
 				alreadyExists = true
@@ -654,7 +652,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 			if alreadyExists {
 				logger.Metaz("[local] hack success",
-					zap.String("cid", criContainer.ShortContainerID()),
+					zap.String("cid", criContainer.ShortID()),
 					zap.String("ns", criPod.Namespace),
 					zap.String("pod", criPod.Name),
 					zap.Error(err))
@@ -933,9 +931,7 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 				cached.criContainer.Pod = criPod
 
 				if forceUpdateContainerInfo {
-					ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
-					cached.criContainer.ZombiesCount, _ = criutils.CountZombies(e, ctx, cached.criContainer)
-					cancel()
+					go e.updateZombieCheck(cached.criContainer)
 				}
 
 				newStateLock.Lock()
@@ -947,7 +943,7 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 
 			} else {
 				if cached != nil {
-					logger.Metaz("container changed", zap.String("cid", cached.criContainer.ShortContainerID()))
+					logger.Metaz("container changed", zap.String("cid", cached.criContainer.ShortID()))
 				}
 				changed = true
 				criContainer := e.buildCriContainer(criPod, container)
@@ -1003,7 +999,7 @@ func (e *defaultCri) ExecAsync(ctx context.Context, c *cri.Container, req cri.Ex
 	}
 	logger.Criz("[digest] exec async",
 		zap.String("engine", e.engine.Type()),
-		zap.String("cid", c.ShortContainerID()),
+		zap.String("cid", c.ShortID()),
 		zap.String("runtime", c.Runtime),
 		zap.Strings("cmd", req.Cmd),
 		zap.Strings("env", req.Env))
@@ -1013,11 +1009,15 @@ func (e *defaultCri) ExecAsync(ctx context.Context, c *cri.Container, req cri.Ex
 func (e *defaultCri) ensureHelperCopied(ctx context.Context, c *cri.Container, from string, to string) (ret error) {
 	begin := time.Now()
 	hitCache := false
+	var fromMd5 string
+	var toMd5 string
 	defer func() {
 		logger.Metaz("copy helper",
-			zap.String("cid", c.ShortContainerID()),
+			zap.String("cid", c.ShortID()),
 			zap.String("from", from),
 			zap.String("to", to),
+			//zap.String("fromMd5", fromMd5),
+			//zap.String("toMd5", toMd5),
 			zap.Bool("hitCache", hitCache),
 			zap.Duration("cost", time.Since(begin)),
 			zap.Error(ret),
@@ -1026,7 +1026,6 @@ func (e *defaultCri) ensureHelperCopied(ctx context.Context, c *cri.Container, f
 
 	i, ok := e.localFileMd5.Load(from)
 
-	var fromMd5 string
 	if !ok {
 		if calc, err := calcMd5(from); err == nil {
 			fromMd5 = calc
@@ -1043,14 +1042,59 @@ func (e *defaultCri) ensureHelperCopied(ctx context.Context, c *cri.Container, f
 		return nil
 	}
 
-	if cmd5, err := criutils.Md5sum(ctx, e, c, core.HelperToolPath); err == nil {
-		if fromMd5 == cmd5 {
+	var err error
+	if toMd5, err = criutils.Md5sum(ctx, e, c, to); err == nil {
+		if fromMd5 == toMd5 {
 			hitCache = true
 			return nil
 		}
 	}
 
 	return e.CopyToContainer(ctx, c, from, to)
+}
+
+// This method will be executed asynchronously, and there will be a little data inconsistency problem in a short period of time, but it is not critical.
+func (e *defaultCri) updateZombieCheck(c *cri.Container) {
+	// well-known pid 1 processes
+	if c.PidMode == "host" || c.Pid1Name == "systemd" || c.Pid1Name == "init" || c.Pid1Name == "tini" {
+		c.Pid1CanRecycleZombieProcesses = true
+		c.ZombieCount = 0
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOpTimeout)
+	defer cancel()
+
+	if count, err := criutils.CountZombies(e, ctx, c); err == nil {
+		c.ZombieCount = count
+		if c.ZombieCount > 0 {
+			return
+		}
+	} else {
+		logger.Errorz("count zombies error", zap.String("cid", c.ShortID()), zap.Error(err))
+		return
+	}
+
+	// already checked
+	if c.Pid1CanRecycleZombieProcesses {
+		return
+	}
+
+	if _, err := e.Exec(ctx, c, cri.ExecRequest{Cmd: []string{core.BusyboxPath, "timeout", "1", "true"}}); err != nil {
+		logger.Errorz("check timeout error", zap.String("cid", c.ShortID()), zap.Error(err))
+		return
+	}
+
+	// We have to wait long enough for zombie processes to appear
+	// This func will be executed by a separate goroutine, so sleep does not matter.
+	time.Sleep(2 * time.Second)
+
+	zombieCount0 := c.ZombieCount
+	if count, err := criutils.CountZombies(e, ctx, c); err == nil {
+		c.ZombieCount = count
+	}
+
+	c.Pid1CanRecycleZombieProcesses = c.ZombieCount == zombieCount0
 }
 
 func calcMd5(path string) (string, error) {

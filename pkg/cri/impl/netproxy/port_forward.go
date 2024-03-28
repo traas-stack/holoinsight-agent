@@ -57,7 +57,7 @@ func (t *PortForwardTask) Start(ctx context.Context) (string, error) {
 			stopCh <- struct{}{}
 		}
 	}()
-	logCtx := zap.Fields(zap.String("uuid", uuid.New().String()), zap.String("cid", biz.ShortContainerID()), zap.String("listenAddr", listener.Addr().String()), zap.String("toAddr", t.Addr))
+	logCtx := zap.Fields(zap.String("uuid", uuid.New().String()), zap.String("cid", biz.ShortID()), zap.String("listenAddr", listener.Addr().String()), zap.String("toAddr", t.Addr))
 	logger.Infozo(logCtx, "[netproxy] create port forward")
 
 	go func() {

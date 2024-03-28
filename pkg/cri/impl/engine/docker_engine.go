@@ -82,6 +82,7 @@ func (e *DockerContainerEngine) GetContainerDetail(ctx context.Context, cid stri
 		Hostname:    i.Config.Hostname,
 		Runtime:     i.HostConfig.Runtime,
 		NetworkMode: string(i.HostConfig.NetworkMode),
+		PidMode:     string(i.HostConfig.PidMode),
 		MergedDir:   "",
 		Mounts:      nil,
 		State: cri.ContainerState{

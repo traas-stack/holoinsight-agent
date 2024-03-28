@@ -52,7 +52,7 @@ func (e *defaultCri) registerHttpHandlers() {
 					continue
 				}
 				if container.Hacked == 1 || container.Hacked == 5 {
-					ret = append(ret, container.ShortContainerID())
+					ret = append(ret, container.ShortID())
 				}
 			}
 		}

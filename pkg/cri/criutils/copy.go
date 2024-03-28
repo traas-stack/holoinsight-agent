@@ -398,7 +398,7 @@ func CopyToContainerByChunk(ctx context.Context, i cri.Interface, c *cri.Contain
 			})
 
 			if err != nil {
-				logger.Criz("[digest] copy chunk error", zap.String("cid", c.ShortContainerID()), zap.Int("accSize", accSize), zap.Error(err))
+				logger.Criz("[digest] copy chunk error", zap.String("cid", c.ShortID()), zap.Int("accSize", accSize), zap.Error(err))
 				return err
 			}
 
