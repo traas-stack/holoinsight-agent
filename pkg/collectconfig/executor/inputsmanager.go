@@ -42,30 +42,29 @@ func (im *inputsManager) checkInputsChange() {
 	newInputs := make(map[string]*inputWrapper, len(paths))
 
 	for _, fatPath := range paths {
-		path := fatPath.Path
+		key := logstream.BuildFileKey(fatPath.Path, fatPath.Attrs)
 		// deduplication
-		if _, ok := usedPaths[path]; ok {
+		if _, ok := usedPaths[key]; ok {
 			continue
 		}
-		usedPaths[path] = struct{}{}
+		usedPaths[key] = struct{}{}
 
-		if iw, ok := im.inputs[path]; ok {
-			newInputs[path] = iw
+		if iw, ok := im.inputs[key]; ok {
+			newInputs[key] = iw
 		} else {
 			// create if not exist
 			logger.Infoz("[pipeline] [log] [input] add", //
 				zap.String("key", im.key), //
-				zap.String("path", path))
+				zap.String("path", key))
 
 			var ls logstream.LogStream
 
 			if fatPath.IsSls {
 				ls = im.lsm.AcquireSls(fatPath.SlsConfig)
 			} else {
-				ls = im.lsm.AcquireFile(path, fatPath.Attrs)
+				ls = im.lsm.AcquireFile(fatPath.Path, fatPath.Attrs)
 			}
-
-			newInputs[path] = &inputWrapper{
+			newInputs[key] = &inputWrapper{
 				ls: ls,
 				inputStateObj: inputStateObj{
 					FatPath:   fatPath,
@@ -77,13 +76,15 @@ func (im *inputsManager) checkInputsChange() {
 		}
 	}
 
-	for path := range im.inputs {
-		if _, ok := newInputs[path]; !ok {
+	for key := range im.inputs {
+		if _, ok := newInputs[key]; !ok {
 			// 删除那些不再匹配的
-			im.releaseStream(im.inputs[path])
-			logger.Infoz("[pipeline] [log] [input] input", //
+			im.releaseStream(im.inputs[key])
+			logger.Infoz("[pipeline] [log] [input] remove input", //
 				zap.String("key", im.key), //
-				zap.String("path", path))
+				zap.String("path", key),
+				zap.Any("new", paths),
+			)
 		}
 	}
 

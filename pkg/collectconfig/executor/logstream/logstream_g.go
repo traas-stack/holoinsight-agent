@@ -87,6 +87,12 @@ func (f *GLogStream) getFromCache(cursor int64) *ReadResponse {
 }
 
 func (f *GLogStream) Read(reqCursor int64) (*ReadResponse, int64, error) {
+	//logger.Debugz("debug read",
+	//	zap.Uintptr("f", uintptr(unsafe.Pointer(f))),
+	//	zap.String("key", f.Key),
+	//	zap.Int64("cursor", reqCursor),
+	//	zap.Int("listeners", len(f.Listeners)))
+
 	// check cache
 	if c := f.getFromCache(reqCursor); c != nil {
 		return c, c.Cursor + 1, c.error
@@ -159,7 +165,7 @@ func (f *GLogStream) RemoveListener(listener Listener, cursor int64) {
 		}
 	}
 	if x := len(f.Listeners) - len(listeners); x > 1 {
-		logger.Errorz("remove multi listeners", zap.String("key", f.Key), zap.Int("old", len(f.Listeners)), zap.Int("new", len(listeners)))
+		logger.Errorz("remove multi listeners", zap.String("key", f.Key), zap.Int("old", len(f.Listeners)), zap.Int("new", len(listeners)), zap.Stack("stack"))
 	}
 	f.Listeners = listeners
 

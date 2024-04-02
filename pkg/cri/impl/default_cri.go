@@ -606,7 +606,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 	criPod.All = append(criPod.All, criContainer)
 
-	if criContainer.IsRunning() && criContainer.Hacked == cri.HackInit && !criContainer.Sandbox {
+	if criContainer.IsRunning() && criContainer.Hacked == cri.HackInit && criContainer.MainBiz {
 		criContainer.Hacked = cri.HackIng
 
 		var err error
@@ -935,7 +935,7 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 			if cached != nil && !isContainerChanged(cached.engineContainer, container) {
 				cached.criContainer.Pod = criPod
 
-				if forceUpdateContainerInfo {
+				if forceUpdateContainerInfo && cached.criContainer.MainBiz {
 					go e.updateZombieCheck(cached.criContainer)
 				}
 
