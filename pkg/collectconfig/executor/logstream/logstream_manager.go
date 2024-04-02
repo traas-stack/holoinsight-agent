@@ -218,6 +218,10 @@ func (m *Manager) AcquireFile(path string, attrs map[string]string) LogStream {
 	return m.acquire0(path, attrs, nil)
 }
 
+func BuildFileKey(path string, attrs map[string]string) string {
+	return buildFileKey(path, attrs)
+}
+
 func buildFileKey(path string, attrs map[string]string) string {
 	if len(attrs) == 0 {
 		return path
