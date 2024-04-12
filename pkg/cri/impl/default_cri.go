@@ -572,11 +572,11 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 	criContainer.Tz.EnvTz = criContainer.Env["TZ"]
 
 	if dc.IsSandbox {
-		criContainer.Sandbox = true
+		criContainer.ContainerRole = cri.ContainerRoleSandbox
 	} else if e.isSidecar(criContainer) {
-		criContainer.Sidecar = true
+		criContainer.ContainerRole = cri.ContainerRoleSidecar
 	} else {
-		criContainer.MainBiz = true
+		criContainer.ContainerRole = cri.ContainerRoleBiz
 	}
 
 	if !dc.IsSandbox {
@@ -606,7 +606,7 @@ func (e *defaultCri) buildCriContainer(criPod *cri.Pod, dc *cri.EngineDetailCont
 
 	criPod.All = append(criPod.All, criContainer)
 
-	if criContainer.IsRunning() && criContainer.Hacked == cri.HackInit && criContainer.MainBiz {
+	if criContainer.IsRunning() && criContainer.Hacked == cri.HackInit && criContainer.IsBiz() {
 		criContainer.Hacked = cri.HackIng
 
 		var err error
@@ -935,7 +935,7 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 			if cached != nil && !isContainerChanged(cached.engineContainer, container) {
 				cached.criContainer.Pod = criPod
 
-				if forceUpdateContainerInfo && cached.criContainer.MainBiz {
+				if forceUpdateContainerInfo && cached.criContainer.IsBiz() {
 					go e.updateZombieCheck(cached.criContainer)
 				}
 
@@ -962,9 +962,9 @@ func (e *defaultCri) buildPod(pod *v1.Pod, oldState *internalState, newState *in
 			}
 
 			criPod.All = append(criPod.All, cached.criContainer)
-			if cached.criContainer.Sandbox {
+			if cached.criContainer.IsSandbox() {
 				criPod.Sandbox = cached.criContainer
-			} else if cached.criContainer.Sidecar {
+			} else if cached.criContainer.IsSidecar() {
 				criPod.Sidecar = append(criPod.Sidecar, cached.criContainer)
 			} else {
 				criPod.Biz = append(criPod.Biz, cached.criContainer)

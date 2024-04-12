@@ -35,6 +35,15 @@ const (
 	AlpineStatusNo
 )
 
+const (
+	// ContainerRoleBiz The target container is the pod's biz(main) container.
+	ContainerRoleBiz ContainerRole = "biz"
+	// ContainerRoleSidecar The target container is the pod's sidecar.
+	ContainerRoleSidecar ContainerRole = "sidecar"
+	// ContainerRoleSandbox The target container is the pod's sandbox.
+	ContainerRoleSandbox ContainerRole = "sandbox"
+)
+
 // TODO 我们推出一个规范 让用户按我们规范做 就认为它是主容器
 var (
 	ErrMultiBiz        = errors.New("multi biz containers")
@@ -55,7 +64,9 @@ type (
 		Sandbox  *Container `json:"sandbox"`
 		Hostname string     `json:"hostname"`
 	}
-	Container struct {
+	// ContainerRole biz sidecar sandbox
+	ContainerRole string
+	Container     struct {
 		// container 可能会依赖底层实现, 因此这里不让它依赖具体的实现类
 		Id string
 
@@ -85,8 +96,7 @@ type (
 		// docker 的 MergedDir 特有字段, 已经转换到hostfs
 		MergedDir string
 
-		// 是否是一个 sandbox
-		Sandbox bool
+		ContainerRole ContainerRole
 
 		// 该 container 所属的 pod 的 sandbox cid
 		SandboxID string
@@ -95,10 +105,6 @@ type (
 
 		// 该容器是否已经被我们hack过
 		Hacked int
-
-		// 是否为一个主容器
-		MainBiz bool
-		Sidecar bool
 
 		// pouch 场景, 只有登录到 container 里 才能获取 daemonset 的 hostname
 		Hostname string
@@ -224,6 +230,18 @@ func (c *Container) GetTz() *time.Location {
 
 func (c *Container) GetTzName() string {
 	return c.Tz.Name
+}
+
+func (c *Container) IsBiz() bool {
+	return c.ContainerRole == ContainerRoleBiz
+}
+
+func (c *Container) IsSidecar() bool {
+	return c.ContainerRole == ContainerRoleSidecar
+}
+
+func (c *Container) IsSandbox() bool {
+	return c.ContainerRole == ContainerRoleSandbox
 }
 
 func NoPodError(ns, pod string) error {

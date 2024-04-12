@@ -674,7 +674,7 @@ func (c *cadvisorSysCollector) calcMetrics(metricTime time.Time, cAdvisorPod *v1
 			} else if cpi, ok := podCGroupInfo[ctr.Name]; ok {
 				// pod level cgroup
 				newStatCache.Metrics = c.collectPodCGroup(ctr, cpi, newStatCache.Metrics, mi, s1, s2, deltaTime, alignTs)
-			} else if criCtr, ok := c.cri.GetContainerByCid(ctr.Id); ok && criCtr.Sandbox {
+			} else if criCtr, ok := c.cri.GetContainerByCid(ctr.Id); ok && criCtr.IsSandbox() {
 				// sandbox: it holds network traffic Metrics
 				newStatCache.Metrics = c.collectPodSandbox(ctr, newStatCache.Metrics, s1, s2, deltaTime, alignTs)
 			} else if len(ctr.Subcontainers) == 0 {

@@ -106,7 +106,7 @@ func (m *OOMManager) listenDockerLoop() {
 
 func (m *OOMManager) handleOOM(msg events.Message) {
 	ctr, ok := m.CRI.GetContainerByCid(msg.ID)
-	if !ok || ctr.Sandbox {
+	if !ok || ctr.IsSandbox() {
 		// When oom, container and its sandbox all emit oom
 		return
 	}

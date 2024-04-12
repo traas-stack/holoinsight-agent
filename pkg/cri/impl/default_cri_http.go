@@ -48,7 +48,7 @@ func (e *defaultCri) registerHttpHandlers() {
 		ret := make([]string, 0)
 		for _, pod := range state.pods {
 			for _, container := range pod.All {
-				if container.Sandbox {
+				if container.IsSandbox() {
 					continue
 				}
 				if container.Hacked == 1 || container.Hacked == 5 {
