@@ -190,6 +190,8 @@ func (e *ContainerdContainerEngine) GetContainerDetail(ctx context.Context, cid 
 	} else {
 		detail.Name = containerMeta.Name
 		detail.SandboxId = containerMeta.SandboxID
+		// or
+		// detail.SandboxId = spec.Annotations["io.kubernetes.cri.sandbox-id"]
 	}
 
 	var runtime interface{}
@@ -205,13 +207,29 @@ func (e *ContainerdContainerEngine) GetContainerDetail(ctx context.Context, cid 
 	}
 
 	if !detail.IsSandbox {
-		for _, mount := range containerMeta.Config.Mounts {
+		// According to actual measurements, spec.mounts is different from containerMeta.Config.Mounts.
+		// It's better to use spec.mounts.
+
+		// spec.mounts stores the mounts that are actually effective at the containerd level,
+		// which includes the directories declared with the VOLUME keyword in the Dockerfile.
+		for _, mount := range spec.Mounts {
+			if !util.StringSliceContains(mount.Options, "rw") {
+				continue
+			}
 			detail.Mounts = append(detail.Mounts, &cri.MountPoint{
-				Source:      mount.HostPath,
-				Destination: mount.ContainerPath,
-				RW:          !mount.Readonly,
+				Source:      mount.Source,
+				Destination: mount.Destination,
+				RW:          true,
 			})
 		}
+		// containerMeta.Config.Mounts stores mounts explicitly set by k8s.
+		//for _, mount := range containerMeta.Config.Mounts {
+		//	detail.Mounts = append(detail.Mounts, &cri.MountPoint{
+		//		Source:      mount.HostPath,
+		//		Destination: mount.ContainerPath,
+		//		RW:          !mount.Readonly,
+		//	})
+		//}
 	}
 
 	if detail.IsSandbox {
