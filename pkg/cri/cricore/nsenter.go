@@ -7,6 +7,7 @@
 package cricore
 
 import (
+	"context"
 	"errors"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"net"
@@ -17,6 +18,6 @@ func NsEnterAndRunCodes(nsFile string, callback func()) error {
 	return errors.New("unsupported")
 }
 
-func NsEnterDial(c *cri.Container, network, addr string, timeout time.Duration) (net.Conn, error) {
+func NsEnterDial(ctx context.Context, c *cri.Container, network, addr string, timeout time.Duration) (net.Conn, error) {
 	return nil, errors.New("unsupported")
 }
