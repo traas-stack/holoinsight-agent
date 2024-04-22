@@ -20,4 +20,5 @@ func init() {
 	model.RegisterHandler("tcpProxy", tcpProxyHandler)
 	model.RegisterHandler("fixout", fixOutHandler)
 	model.RegisterHandler("countZombies", countZombiesHandler)
+	model.RegisterHandler("countThread", countThreadHandler)
 }
