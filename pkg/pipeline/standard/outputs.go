@@ -11,14 +11,16 @@ import (
 
 type (
 	Output struct {
-		Tenant string
-		O      output.Output
+		Tenant    string
+		O         output.Output
+		ConfigKey string
 	}
 )
 
 func (o *Output) Write(metrics []*model.Metric) {
 	oe := output.Extension{
-		Tenant: o.Tenant,
+		Tenant:    o.Tenant,
+		ConfigKey: o.ConfigKey,
 	}
 	o.O.WriteMetricsV1(metrics, oe)
 }

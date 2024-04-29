@@ -39,8 +39,9 @@ func ParsePipeline(task *collecttask.CollectTask) (*Pipeline, error) {
 
 	tenant := task.Target.GetTenant()
 	to := &Output{
-		Tenant: tenant,
-		O:      out,
+		Tenant:    tenant,
+		ConfigKey: task.Config.Key,
+		O:         out,
 	}
 
 	return NewPipeline(task, baseConf, i, to)

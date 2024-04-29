@@ -1,0 +1,70 @@
+{
+  "json": {
+    "select": {
+    },
+    "from": {
+      "type": "log",
+      "log": {
+        "path": [
+          {
+            "type": "sls"
+          }
+        ]
+      }
+    },
+    "groupBy": {
+      "groups": [
+        {
+          "name": "value",
+          "elect": {
+            "type": "line"
+          }
+        }
+      ],
+      "details": {
+        "enabled": true
+      }
+    },
+    "window": {
+      "interval": 60000
+    },
+    "output": {
+      "type": "sls",
+      "sls": {
+        "endpoint": "",
+        "project": "",
+        "logstore": "",
+        "ak": "",
+        "sk": ""
+      }
+    }
+  },
+  "collectRange": {
+    "type": "cloudmonitor",
+    "cloudmonitor": {
+      "table": "sls_shard",
+      "condition": [
+        {
+          "endpoint": [
+            ""
+          ],
+          "sk": [
+            ""
+          ],
+          "project": [
+            ""
+          ],
+          "ak": [
+            ""
+          ],
+          "logstore": [
+            ""
+          ]
+        }
+      ]
+    }
+  },
+  "executeRule": {
+    "fixedRate": 0
+  }
+}

@@ -46,12 +46,13 @@ func (c *gatewayOutput) WriteMetricsV1(metrics []*model.Metric, oe output.Extens
 		NoMerge:   false,
 	}
 
+	request.Extension = make(map[string]string)
 	if oe.Tenant != "" {
-
-		request.Extension = map[string]string{
-			"tenant": oe.Tenant,
-		}
+		request.Extension["tenant"] = oe.Tenant
 		request.NoMerge = true
+	}
+	if oe.ConfigKey != "" {
+		request.Extension["configKey"] = oe.ConfigKey
 	}
 
 	err := GetWriteService().WriteV1(context.Background(), request)
