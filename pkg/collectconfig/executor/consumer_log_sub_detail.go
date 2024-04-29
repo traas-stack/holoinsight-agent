@@ -11,6 +11,7 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/gateway"
+	"github.com/traas-stack/holoinsight-agent/pkg/plugin/output/sls"
 	"github.com/traas-stack/holoinsight-agent/pkg/server/gateway/pb"
 	"github.com/traas-stack/holoinsight-agent/pkg/util"
 	"go.uber.org/zap"
@@ -42,7 +43,9 @@ func (c *detailConsumer) MaybeFlush() {
 			},
 		},
 		Extension: map[string]string{
-			"details": "1",
+			// for ceresdb4
+			"details":   "1",
+			"configKey": c.parent.ct.Config.Key,
 		},
 		Timestamp:    0,
 		Completeness: nil,
@@ -65,7 +68,17 @@ func (c *detailConsumer) MaybeFlush() {
 	}
 
 	begin := time.Now()
-	err := gateway.GetWriteService().WriteV4(context.Background(), &gateway.WriteV4Request{Batch: []*pb.WriteMetricsRequestV4_TaskResult{tr}})
+
+	var err error
+	switch c.parent.task.Output.Type {
+	case "gateway":
+		err = gateway.GetWriteService().WriteV4(context.Background(), &gateway.WriteV4Request{Batch: []*pb.WriteMetricsRequestV4_TaskResult{tr}})
+	case "sls":
+		err = sls.GetOutPut().WriteToSLS(c.parent.ct.Config.Key, c.parent.ct.Target.Key, c.table, c.parent.task.Output.Sls)
+	default:
+		logger.Warnf("detail output type %s is not support!", c.parent.task.Output.Type)
+	}
+
 	sendCost := time.Since(begin)
 	logger.Infoz("detail", zap.String("key", c.parent.key), zap.Int("count", len(c.table.Rows)), zap.Duration("sendCost", sendCost), zap.Error(err))
 	c.table = nil

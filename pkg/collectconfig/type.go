@@ -89,8 +89,16 @@ type (
 		Interval interface{} `json:"interval"`
 	}
 	Output struct {
-		Type    string   `json:"type"`
-		Gateway *Gateway `json:"gateway"`
+		Type    string     `json:"type"`
+		Gateway *Gateway   `json:"gateway"`
+		Sls     *SlsConfig `json:"sls"`
+	}
+	SlsConfig struct {
+		Endpoint string `json:"endpoint"`
+		AK       string `json:"ak"`
+		SK       string `json:"sk"`
+		Project  string `json:"project"`
+		Logstore string `json:"logstore"`
 	}
 	Gateway struct {
 		// 用户可以覆盖, 否则默认使用 tableName

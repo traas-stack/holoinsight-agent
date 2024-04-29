@@ -14,10 +14,8 @@ import (
 	"github.com/traas-stack/holoinsight-agent/pkg/cri"
 	"github.com/traas-stack/holoinsight-agent/pkg/cri/criutils"
 	"github.com/traas-stack/holoinsight-agent/pkg/ioc"
-	"github.com/traas-stack/holoinsight-agent/pkg/logger"
 	"github.com/traas-stack/holoinsight-agent/pkg/model"
 	"github.com/traas-stack/holoinsight-agent/pkg/plugin/api"
-	"go.uber.org/zap"
 )
 
 type (
@@ -51,7 +49,6 @@ func (i *input) Collect(a api.Accumulator) error {
 		return err
 	}
 	data := resp.Data.(map[string]interface{})
-	logger.Infoz("test thread count ", zap.Any("result", data))
 	for metric, value := range data {
 		a.AddMetric(&model.Metric{
 			Name:  metric,

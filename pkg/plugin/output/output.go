@@ -8,7 +8,8 @@ import "github.com/traas-stack/holoinsight-agent/pkg/model"
 
 type (
 	Extension struct {
-		Tenant string
+		Tenant    string
+		ConfigKey string
 	}
 	Output interface {
 		WriteMetricsV1([]*model.Metric, Extension)
