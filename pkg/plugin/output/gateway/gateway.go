@@ -151,6 +151,9 @@ func convertToTaskResult2(configKey, targetKey, metricName string, array []*mode
 
 	a := make([]*pb.WriteMetricsRequestV4_TaskResult, 0, len(taskResultByValueName)+1)
 	for _, r := range taskResultByValueName {
+		r.Extension = map[string]string{
+			"configKey": configKey,
+		}
 		a = append(a, r)
 	}
 
@@ -165,6 +168,9 @@ func convertToTaskResult2(configKey, targetKey, metricName string, array []*mode
 			Timestamp: completeness.TS,
 			Completeness: &pb.WriteMetricsRequestV4_Completeness{
 				Ok: completeness.OK,
+			},
+			Extension: map[string]string{
+				"configKey": configKey,
 			},
 		}
 		a = append(a, r)
