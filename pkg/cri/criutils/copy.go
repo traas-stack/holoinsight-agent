@@ -261,10 +261,8 @@ func CopyToContainerByTar(ctx context.Context, i cri.Interface, c *cri.Container
 	}()
 
 	execErrCh := make(chan error, 1)
-	execCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	go func() {
-		_, err = i.Exec(execCtx, c, cri.ExecRequest{
+		_, err = i.Exec(context.Background(), c, cri.ExecRequest{
 			Cmd:        []string{"tar", "-xmf", "-", "-C", filepath.Dir(dstPath)},
 			Env:        nil,
 			WorkingDir: "",
