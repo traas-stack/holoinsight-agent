@@ -179,7 +179,6 @@ service GatewayService {
   // 查询控制参数
   rpc get_control_configs(GetControlConfigsRequest) returns(GetControlConfigsResponse) {}
 
-  // deprecated
   rpc write_metrics_v1 (WriteMetricsRequestV1) returns (WriteMetricsResponse) {}
 
   // deprecated
