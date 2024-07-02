@@ -30,7 +30,6 @@ type GatewayServiceClient interface {
 	Ping(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// 查询控制参数
 	GetControlConfigs(ctx context.Context, in *GetControlConfigsRequest, opts ...grpc.CallOption) (*GetControlConfigsResponse, error)
-	// deprecated
 	WriteMetricsV1(ctx context.Context, in *WriteMetricsRequestV1, opts ...grpc.CallOption) (*WriteMetricsResponse, error)
 	// deprecated
 	WriteMetricsV2(ctx context.Context, in *WriteMetricsRequestV2, opts ...grpc.CallOption) (*WriteMetricsResponse, error)
@@ -108,7 +107,7 @@ type GatewayServiceServer interface {
 	Ping(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	// 查询控制参数
 	GetControlConfigs(context.Context, *GetControlConfigsRequest) (*GetControlConfigsResponse, error)
-	// deprecated
+
 	WriteMetricsV1(context.Context, *WriteMetricsRequestV1) (*WriteMetricsResponse, error)
 	// deprecated
 	WriteMetricsV2(context.Context, *WriteMetricsRequestV2) (*WriteMetricsResponse, error)
